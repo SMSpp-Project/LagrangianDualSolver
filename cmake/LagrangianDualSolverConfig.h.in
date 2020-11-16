@@ -1,0 +1,20 @@
+/** @file
+ * Configuration header of the LagrangianDualSolver library.
+ *
+ * \author Niccolò Iardella \n
+ *         Operations Research Group \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; Niccolò Iardella
+ */
+
+#ifndef __LAGRANGIANDUALSOLVER_CONFIG_H
+#define __LAGRANGIANDUALSOLVER_CONFIG_H
+
+#define LagrangianDualSolver_VERSION       "@LagrangianDualSolver_VERSION@"
+#define LagrangianDualSolver_VERSION_MAJOR "@LagrangianDualSolver_VERSION_MAJOR@"
+#define LagrangianDualSolver_VERSION_MINOR "@LagrangianDualSolver_VERSION_MINOR@"
+#define LagrangianDualSolver_VERSION_PATCH "@LagrangianDualSolver_VERSION_PATCH@"
+
+#endif
