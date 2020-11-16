@@ -49,9 +49,11 @@ problem may be infeasible even if the primal does have an optimal solution.
 We assume that these cases are either dealt with by the user of
 LagrangianDualSolver.
 
+
 ## Getting started
 
 These instructions will let you build LagrangianDualSolver.
+
 
 ### Requirements
 
@@ -60,9 +62,11 @@ These instructions will let you build LagrangianDualSolver.
 - A SMS++ Solver capable of solving the Lagrangian Dual, such as
   [BundleSolver](https://gitlab.com/smspp/bundlesolver)
 
-### Build and install
+
+### Build and install with Cmake
 
 Configure and build the library with:
+
 ```sh
 mkdir build
 cd build
@@ -71,17 +75,72 @@ make
 ```
 
 Optionally, install the library in the system with:
+
 ```sh
 sudo make install
 ```
 
-## Usage
+### Usage with Cmake
 
 After the library is configured and built, you can use it in your CMake project with:
+
 ```cmake
 find_package(LagrangianDualSolver)
 target_link_libraries(<my_target> SMS++:: LagrangianDualSolver)
 ```
+
+### Build and install with makefiles
+
+Carefully hand-crafted makefiles have also been developed for those unwilling
+to use Cmake. General instructions are:
+
+- The arrangements of folders must be that envisioned by the
+  [Umbrella SMS++ Project](https://gitlab.com/smspp/smspp-project)
+
+- The main step is to edit the makefiles into ../extlib/. There is one for
+  each of the external libraries that any module requires, starting with
+  Boost, Eigen and netCDF-C++. Setting the
+
+```make
+lib*INC = -I<paths to include files directories>
+lib*LIB = -L<paths to lib files directories> -l<libs>
+```
+
+  in each allows one to set any non-standard path if the library is not
+  installed in the system (or leave them empty if they are).
+
+- A makefile for building the "core" SMS++ library in available in
+
+```sh
+SMS++/lib/makefile-lib
+```
+
+  The makefile allow to choose the compiler name and the optimization/debug.
+  This builds the lib/libSMS++.a that can be linked upon. Also, the
+
+```sh
+SMS++/lib/makefile-inc
+```
+
+  file is provided for allowing external makefiles to ensure that the library
+  is up-to-date (useful in case one is actually developing it). The simplest
+  way to learn how to use it is to check e.g. the makefiles of the tester
+
+```sh
+test/makefile
+```
+
+  Note that the "basic" makefile macros
+
+```make
+CC =
+SW =
+```
+
+  for setting the c++ compiler and its options are "automatically forwarded"
+  from the makefile to these of the other SMS++ components, and therefore
+  (possibly at the cost of a make clean) ensure consistency during the
+  building process.
 
 
 ## Contributing
