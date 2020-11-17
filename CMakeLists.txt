@@ -29,7 +29,7 @@ project(LagrangianDualSolver VERSION 0.1.0 LANGUAGES CXX)
 include(CTest)
 
 # ----- Requirements -------------------------------------------------------- #
-find_package(SMSpp REQUIRED)
+#find_package(SMSpp REQUIRED)
 find_package(BundleSolver REQUIRED)
 
 # ----- Configuration header ------------------------------------------------ #
@@ -71,7 +71,7 @@ target_include_directories(
 # library, INTERFACE means they will be linked only to the targets that depend
 # on this library.
 target_link_libraries(LagrangianDualSolver PUBLIC
-                      SMS++::SMSpp
+                      # SMS++::SMSpp
                       SMS++::BundleSolver)
 
 # This alias is defined so that executables in this same project can use
