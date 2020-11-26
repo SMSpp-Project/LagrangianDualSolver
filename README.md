@@ -63,7 +63,7 @@ These instructions will let you build LagrangianDualSolver.
   [BundleSolver](https://gitlab.com/smspp/bundlesolver)
 
 
-### Build and install with Cmake
+### Build and install with CMake
 
 Configure and build the library with:
 
@@ -74,25 +74,28 @@ cmake ..
 make
 ```
 
+The library has the same configuration options of
+[SMS++](https://gitlab.com/smspp/smspp/wikis/custom).
+
 Optionally, install the library in the system with:
 
 ```sh
 sudo make install
 ```
 
-### Usage with Cmake
+### Usage with CMake
 
-After the library is configured and built, you can use it in your CMake project with:
+After the library is built, you can use it in your CMake project with:
 
 ```cmake
 find_package(LagrangianDualSolver)
-target_link_libraries(<my_target> SMS++:: LagrangianDualSolver)
+target_link_libraries(<my_target> SMS++::LagrangianDualSolver)
 ```
 
 ### Build and install with makefiles
 
 Carefully hand-crafted makefiles have also been developed for those unwilling
-to use Cmake. General instructions are:
+to use CMake. General instructions are:
 
 - The arrangements of folders must be that envisioned by the
   [Umbrella SMS++ Project](https://gitlab.com/smspp/smspp-project)
