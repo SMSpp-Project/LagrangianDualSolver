@@ -20,16 +20,26 @@ This can "solve" (see below for the reason of the scare quotes) any Block
   "external" Variable, i.e., a Variable that does not belong to the sub-Block
   (or any of its sub-Block, recurively)
 
+- all the Constraint in (B) are "linear constraint", i.e., FRowConstraint
+  with a LinearFunction inside. Note that OneVarConstraint are "linear
+  constraint" as well, but since they only concern one variable they cannot
+  be "linking constraints". Although it may in principle be that one may want
+  to deal with them in a Lagrangian fashion, in most of the cases including
+  them in the subproblem is better, and therefore LagrangianDualSolver
+  currently do not support them (although this may change later if a serious
+  use case arises)
+
 - each sub-Block may never make any assumption on which type (B) is or make
-  any reference to any of its data
+  any direct reference to any of its data
 
 The reason for the last requirement is that LagrangianDualSolver "cheats" on
 (B): it stealthily constructs a new Block corresponding to its Lagrangian Dual,
-physically moving the sub-Block of (B) inside it while not changing the
+"physically moving" the sub-Block of (B) inside it while not changing the
 pointers in (B). That is, the sub-Block of (B) (temporarily) change father
 Block to a new Block that remains hidden inside the LagrangianDualSolver (this
 is undone when the LagrangianDualSolver is unregistered from (B)), while (B)
-still "believes" that they remain its sub-Block.
+still "believes" that they remain its sub-Block. For this, consistency is kept:
+any Modification coming from the sub-Block is forwarded to (B).
 
 The new Lagrangian Dual Block keeps consistency, in particular by
 forwarding to (B) any Modification coming from the sub-Block.
@@ -46,9 +56,8 @@ A different issue is that (B) may represent a convex program which is
 "nonlinear enough" so that strong duality does not hold; say, the primal
 problem may not have finite optimum (and not be unbounded), or the dual
 problem may be infeasible even if the primal does have an optimal solution.
-We assume that these cases are either dealt with by the user of
-LagrangianDualSolver.
-
+We assume that these cases either do not occur or are dealt with by the
+user of LagrangianDualSolver.
 
 ## Getting started
 

@@ -2,7 +2,9 @@
 /*--------------------- File LagrangianDualSolver.cpp ----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * Implementation of the LagrangianDualSolver class.
+ * Implementation of the LagrangianDualSolver class, which implements the
+ * CDASolver interface within the SMS++ framework for a "generic"
+ * Lagrangian-based Solver.
  *
  * \version 0.01
  *
@@ -28,19 +30,23 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include "AbstractBlock.h"
+
+#include "BlockSolverConfig.h"
+
 #include "LagrangianDualSolver.h"
+
+#include "FRealObjective.h"
+
+#include "FRowConstraint.h"
 
 #include "LagBFunction.h"
 
-#include "QPPnltMP.h"
+#include "LinearFunction.h"
 
-#include "OSIMPSolver.h"
+#include "RBlockConfig.h"
 
-#include "ilcplex/cplex.h"
-
-#include "OsiCpxSolverInterface.hpp"
-
-#include "OsiClpSolverInterface.hpp"
+#include "UpdateSolver.h"
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
@@ -59,182 +65,95 @@ using namespace SMSpp_di_unipi_it;
 using p_LF = LinearFunction *;
 
 /*--------------------------------------------------------------------------*/
+/*---------------------------------- TYPES ---------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+using VarValue = Function::FunctionValue;
+using c_VarValue = Function::c_FunctionValue;
+using Vec_FunctionValue = Function::Vec_FunctionValue;
+
+using Vec_VarValue = Function::Vec_FunctionValue;
+using c_Vec_VarValue = Function::c_Vec_FunctionValue;
+
+using LinearCombination = C05Function::LinearCombination;
+using c_LinearCombination = C05Function::c_LinearCombination;
+
+using dual_pair = LagBFunction::dual_pair;
+using v_dual_pair = std::vector< dual_pair >;
+using v_c_dual_pair = const v_dual_pair;
+
+using SConf_p_p = SimpleConfiguration< std::pair< Configuration * ,
+						  Configuration * > >;
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
+
+static constexpr VarValue NaNshift
+                              = std::numeric_limits< VarValue >::quiet_NaN();
+ ///< convenience constexpr for "NaN", *not* to be used with ==
+
+static constexpr VarValue INFshift
+                               = std::numeric_limits< VarValue >::infinity();
+ ///< convenience constexpr for "Infty"
+
+static constexpr cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
-
-static void Compact( LagrangianDualSolver::Vec_VarValue & g ,
-		     LagrangianDualSolver::c_Subset & B )
-{
- // takes a "dense" n-vector g and "compacts" it deleting the elements whose
- // indices are in B; all elements of B must be in the range 0 .. n, B must
- // be ordered in increasing sense
- // the remaining entries in g are shifted left of the minimum possible
- // amount in order to fill the holes left by the deleted ones
- // g is *not* resized in here
-
- auto Bit = B.begin();
- auto i = *(Bit++);
- auto git = g.begin() + (i++);
-
- for( ; Bit != B.end() ; ++i ) {
-  auto h = *(Bit++);
-  while( i < h )
-   *(git++) = g[ i++ ];
-  }
-
- std::copy( g.begin() + i , g.end() , git );
-
- }  // end( Compact )
-
-/*--------------------------------------------------------------------------*/
-
-static void set_difference_in_place( LagrangianDualSolver::Subset & S1 ,
-				     LagrangianDualSolver::c_Subset & S2 )
-{
- // removes from S1 all elements in S2, resizing it accordingly
- // both S1 and S2 are assumed to be ordered and with unique elements
-
- if( S1.empty() )  // nothing to delete from
-  return;          // nothing to do
-
- auto S1it = S1.begin();
- auto S2it = S2.begin();
-
- // first phase: find the first element present in both S1 and S2
-
- for( ; ; ) {
-  while( ( S1it != S1.end() ) && ( *S1it < *S2it ) )
-   ++S1it;
-  if( S1it == S1.end() )
-   break;
-  while( ( S2it != S2.end() ) && ( *S1it > *S2it ) )
-   ++S2it;
-  if( S2it == S2.end() )
-   break;
-  if( *S1it == *S2it )
-   break;
-  }
-
- if( ( S1it == S1.end() ) || ( S2it == S2.end() ) ) // if there are none
-  return;                                           // all done
-
- // now S1it points to the first element in S1 == than the first in S2
- // elements in S1 after the common one(s) will have to be moved
- auto S1wit = S1it++;  // skip the first equal element
- S2it++;
-
- for( ; ( S1it != S1.end() ) && ( S2it != S2.end() ) ; ) {
-  while( ( S1it != S1.end() ) && ( *S1it < *S2it ) )
-   *(S1wit++) = *(S1it++);
-  if( S1it == S1.end() )
-   break;
-  while( ( S2it != S2.end() ) && ( *S1it > *S2it ) )
-   ++S2it;
-  if( S2it == S2.end() )
-   break;
-  if( *S1it == *S2it ) { ++S1it; ++S2it; }
-  }
-
- while( S1it != S1.end() )  // copy the part remaining after the end of S2
-  *(S1wit++) = *(S1it++);
- 
- S1.resize( std::distance( S1.begin() , S1wit ) );
-
- }  // end( set_difference_in_place )
-
-/*--------------------------------------------------------------------------*/
-
-static void set_union_in_place( LagrangianDualSolver::Subset & S1 ,
-				LagrangianDualSolver::c_Subset & S2 )
-{
- // make S1 to be the union of S1 and S2
- if( S2.empty() )
-  return;
-
- if( S1.empty() )
-  S1 = S2;
- else {
-  LagrangianDualSolver::Subset tmp;
-  std::set_union( S1.begin() , S1.end() , S2.begin() , S2.end() ,
-		  std::back_inserter( tmp ) );
-  S1 = std::move( tmp );
-  }
- }  // end( set_union_in_place )
-
-/*--------------------------------------------------------------------------*/
-
-static void set_union_in_place( LagrangianDualSolver::Subset & S1 ,
-				LagrangianDualSolver::Subset && S2 )
-{
- // make S1 to be the union of S1 and S2, if useful destroy S2 in the process
- if( S2.empty() )
-  return;
-
- if( S1.empty() )
-  S1 = std::move( S2 );
- else {
-  LagrangianDualSolver::Subset tmp;
-  std::set_union( S1.begin() , S1.end() , S2.begin() , S2.end() ,
-		  std::back_inserter( tmp ) );
-  S1 = std::move( tmp );
-  }
- }  // end( set_union_in_place )
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
 // register LagrangianDualSolver to the Solver factory
+
 SMSpp_insert_in_factory_cpp_0( LagrangianDualSolver );
 
 /*--------------------------------------------------------------------------*/
 // define and initialize here the vector of int parameters names
+
 const std::vector< std::string > LagrangianDualSolver::int_pars_str = {
  "intLPar1" ,
  };
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 // define and initialize here the vector of double parameters names
+
 const std::vector< std::string > LagrangianDualSolver::dbl_pars_str = {
  };
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 // define and initialize here the map for int parameters names
+
 const std::map< std::string , LagrangianDualSolver::idx_type >
  LagrangianDualSolver::int_pars_map = {
  { "intLPar1" , LagrangianDualSolver::intLPar1  } ,
  };
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 // define and initialize here the map for double parameters names
+
 const std::map< std::string , LagrangianDualSolver::idx_type >
  LagrangianDualSolver::dbl_pars_map = {
  };
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 // define and initialize here the default int parameters
+
 const std::vector< int > LagrangianDualSolver::dflt_int_par = {
-  0 ,  // intLPar1
+  0  // intLPar1
  };
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 // define and initialize here the default double parameters
+
 const std::vector<double> LagrangianDualSolver::dflt_dbl_par = {
  };
 
 /*--------------------------------------------------------------------------*/
-
-static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
-
-/*--------------------------------------------------------------------------*/
-/*----------------------- METHODS OF LagrangianDualSolver --------------------------*/
-/*--------------------------------------------------------------------------*/
-
-int LagrangianDualSolver::compute( bool changedvars )
-{
- // !ToDO: to be completed
- return( BndSlv->compute() );
- }  // end( LagrangianDualSolver::compute )
-
+/*-------------------- METHODS OF LagrangianDualSolver ---------------------*/
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -440,21 +359,60 @@ void LagrangianDualSolver::set_par( const idx_type par , const double value )
  }  // end( LagrangianDualSolver::set_par( double ) )
 
 /*--------------------------------------------------------------------------*/
-/*--------------------------------- METHODS --------------------------------*/
+
+void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
+{
+ ThinComputeInterface::set_ComputeConfig( scfg );
+
+
+
+ 
+
+ }  // end( LagrangianDualSolver::set_ComputeConfig )
+
+/*--------------------------------------------------------------------------*/
+/*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
 /*--------------------------------------------------------------------------*/
 
-void LagrangianDualSolver::set_log( std::ostream * log_stream )
+int LagrangianDualSolver::compute( bool changedvars )
 {
- f_log = log_stream;
- }
+ #ifndef NDEBUG
+  if( ! InnrSlv )
+   throw( std::logic_error( "inner CDASolver not initialised yet" ) );
+ #endif
+
+ // !ToDO: to be completed
+ return( InnrSlv->compute() );
+
+
+
+ }  // end( LagrangianDualSolver::compute )
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
+void LagrangianDualSolver::get_var_solution( Configuration *solc )
+{
+ #ifndef NDEBUG
+  if( ! InnrSlv )
+   throw( std::logic_error( "inner CDASolver not initialised yet" ) );
+ #endif
+ // !TODO: to be implemented
+
+ }  // end( LagrangianDualSolver::get_var_solution() )
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualSolver::get_dual_solution( Configuration *solc )
 {
+ #ifndef NDEBUG
+  if( ! InnrSlv )
+   throw( std::logic_error( "inner CDASolver not initialised yet" ) );
+ #endif
+
  // !TODO: to be implemented
+
  }  // end( LagrangianDualSolver::get_dual_solution() )
 
 /*--------------------------------------------------------------------------*/
@@ -468,9 +426,6 @@ int LagrangianDualSolver::get_int_par( const idx_type par ) const
   default:
    return( CDASolver::get_dflt_int_par( par ) );
   }
-
- // !TODO: to be completed
-
  }  // end( LagrangianDualSolver::get_int_par )
 
 /*--------------------------------------------------------------------------*/
@@ -481,14 +436,10 @@ double LagrangianDualSolver::get_dbl_par( const idx_type par ) const
   default:
    return( CDASolver::get_dflt_dbl_par( par ) );
   }
-
- // !TODO: to be completed
  }  // end( LagrangianDualSolver::get_dbl_par )
 
 /*--------------------------------------------------------------------------*/
-/*----------------------- OTHER PROTECTED METHODS --------------------------*/
-/*--------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------*/
+/*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
 void LagrangianDualSolver::Log1( void )
@@ -511,14 +462,36 @@ void LagrangianDualSolver::Log2( void )
  } // end( LagrangianDualSolver::Log2 )
 
 /*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::set_default_inner_BlockSolverConfig( void )
+{
+ if( auto inner_block = get_inner_block() ) {
+  auto solver_config = new RBlockSolverConfig( inner_block );
+  solver_config->clear();
+  solver_config->apply( inner_block );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::configure_LagrangianDualBlock( void )
+{
+ if( ! f_LDBConfig )
+  return;
+
+ 
+}
+
+
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 void LagrangianDualSolver::guts_of_destructor( void )
 {
  
- Lambda.clear();
- LamVcblr.clear();
+ //!!LamVcblr.clear();
 
  // !TODO: to be completed
 
@@ -528,10 +501,11 @@ void LagrangianDualSolver::guts_of_destructor( void )
 
 void LagrangianDualSolver::process_outstanding_Modification( void )
 {
-
  // !TODO: to be done
- }  // end( LagrangianDualSolver::process_outstanding_Modification )
+
+
+}  // end( LagrangianDualSolver::process_outstanding_Modification )
 
 /*--------------------------------------------------------------------------*/
-/*----------------------- End File LagrangianDualSolver.cpp ------------------------*/
+/*------------------- End File LagrangianDualSolver.cpp --------------------*/
 /*--------------------------------------------------------------------------*/
