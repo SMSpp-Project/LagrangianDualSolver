@@ -14,16 +14,15 @@
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-get_filename_component(LagrangianDualSolver_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+get_filename_component(@modName@_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 include(CMakeFindDependencyMacro)
 
 # ----- Requirements -------------------------------------------------------- #
-#find_dependency(SMSpp)
 find_dependency(BundleSolver)
 
 # ----- Import target ------------------------------------------------------- #
-if (NOT TARGET SMS++::LagrangianDualSolver)
-    include("${LagrangianDualSolver_CMAKE_DIR}/LagrangianDualSolverTargets.cmake")
-endif ()
+if (NOT TARGET @modNamespace@::@modName@)
+    include("${@modName@_CMAKE_DIR}/@modName@Targets.cmake")
+endif()
 
-set(LagrangianDualSolver_LIBRARIES SMS++::LagrangianDualSolver)
+set(@modName@_LIBRARIES @modNamespace@::@modName@)
