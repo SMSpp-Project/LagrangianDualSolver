@@ -75,12 +75,19 @@ using Vec_FunctionValue = Function::Vec_FunctionValue;
 using Vec_VarValue = Function::Vec_FunctionValue;
 using c_Vec_VarValue = Function::c_Vec_FunctionValue;
 
+using v_coeff_pair = LinearFunction::v_coeff_pair;
+using v_c_coeff_pair = LinearFunction::v_c_coeff_pair;
+
 using LinearCombination = C05Function::LinearCombination;
 using c_LinearCombination = C05Function::c_LinearCombination;
 
 using dual_pair = LagBFunction::dual_pair;
 using v_dual_pair = std::vector< dual_pair >;
 using v_c_dual_pair = const v_dual_pair;
+
+using p_AB = AbstractBlock *;
+using p_LF = LinearFunction *;
+using p_LBF = LagBFunction *;
 
 using SConf_p_p = SimpleConfiguration< std::pair< Configuration * ,
 						  Configuration * > >;
@@ -160,9 +167,8 @@ const std::vector<double> LagrangianDualSolver::dflt_dbl_par = {
 
 void LagrangianDualSolver::set_Block( Block * block )
 {
-    
- if( f_Block ) {  // changing from a previous oracle - - - - - - - - - - - - -
-                 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( f_Block ) {  // changing from a previous Block- - - - - - - - - - - - - -
+                  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   guts_of_destructor();   // deallocate memory
   }
 
@@ -170,167 +176,378 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  if( ! f_Block )  // that was actually clearing the Block
   return;         // all done
-  
- // the block does not contain any variable
+
+ // lock the Block - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    
- if( f_Block->get_static_variables().size() )
-  throw( std::logic_error( "static Variable are not allowed" ) );
-    
- if( f_Block->get_dynamic_variables().size() )
-  throw( std::logic_error( "dynamic Variable are not allowed" ) );
-    
- // children are required to exist   - - - - - - - - - - - - - - - - - - - -
+ 
+ bool owned = f_Block->is_owned_by( f_id );
+ if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
+  throw( std::runtime_error(
+                       "LagrangianDualSolver: unable to lock the Block" ) );
+
+
+ // check conditions on the Block- - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ // the Block must not contain any variable- - - - - - - - - - - - - - - - -
+    
+ if( ! f_Block->get_static_variables().empty() )
+  throw( std::invalid_argument(
+		    "LagrangianDualSolver: static Variable not allowed" ) );
+    
+ if( ! f_Block->get_dynamic_variables().empty() )
+  throw( std::invalid_argument(
+		   "LagrangianDualSolver: dynamic Variable not allowed" ) );
+    
+ // there must be no Objective- - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( f_Block->get_objective() )
+  throw( std::invalid_argument(
+			   "LagrangianDualSolver: Objective not allowed" ) );
+
+ // children are required to exist - - - - - - - - - - - - - - - - - - - - -
 
  const auto & sb = f_Block->get_nested_Blocks();
- if( sb.empty() )
-  throw( std::logic_error( "children are required to exist" ) );
+ f_nsb = sb.size();
+ if( ! f_nsb )
+  throw( std::logic_error( "LagrangianDualSolver: no sub-Block" ) );
 
- // the objective function of the block must be a LinearFunction- - - - - - -
+ // children must have a FRealObjective with a LinearFunction inside, all
+ // of them must have the same "verse"- - - - - - - - - - - - - - - - - - - -
+
+ for( Index i = 0 ; i < f_nsb ; ++i ) {
+  // generate the Objective (if not there already)
+  sb[ i ]->generate_objective();
+  auto osbi = dynamic_cast< cost FRealObjective * >(
+						  sb[ i ]->get_objective() );
+  if( ! osbi )
+   throw( std::invalid_argument(
+		       "LagrangianDualSolver: wrong sub-Block Objective" ) );
+  if( ! i )
+   f_convex = ( osbi->get_sense() == Objective::eMax );
+  else
+   if( f_convex != ( osbi->get_sense() == Objective::eMax ) )
+    throw( std::invalid_argument(
+	  "LagrangianDualSolver: sub-Block Objective with mixed min/max" ) );
+  }
+ 
+ // count and check the FRowConstraint in the Block - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( !f_Block->get_objective() )  {
+ NumVar = 0;
 
-  auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
-  if( ! obj )
-   throw( std::logic_error( "the objective is not a real function" ) );
+ // count and check the static FRowConstraint - - - - - - - - - - - - - - - -
+ // meanwhile construct the static dictionaries
+
+ // number of groups of static constraints
+ auto scn = f_Block->get_static_constraints().size();
+
+ // resize the static constraints<-->Lagrangian-variables dictionaries
+ scon_to_idx.resize( scn );
+ idx_to_scon.resize( scn );
+
+ {
+  Index pos = 0;
+  for( const auto & el : f_Block->get_static_constraints() ) {
+   // Singles
+   if( un_any_thing_0( FRowConstraint , el ,
+		       {
+			scon_to_idx[ pos ] = std::make_pair( & var , NumVar );
+			idx_to_scon[ pos++ ] =
+			 std::make_pair( NumVar++ , & var );
+		        } ) )
+    continue;
+   // Vectors
+   if( un_any_thing_1( FRowConstraint , el ,
+		       {
+			scon_to_idx[ pos ] =
+			 std::make_pair( var.data() , NumVar );
+			idx_to_scon[ pos++ ] =
+			 std::make_pair( NumVar , var.data() );
+			NumVar += var.size();
+		        } ) )
+    continue;
+   // Multiarrays
+   if( un_any_thing_K( FRowConstraint , el ,
+		       {
+			scon_to_idx[ pos ] =
+			 std::make_pair( var.data() , NumVar );
+			idx_to_scon[ pos++ ] =
+			 std::make_pair( NumVar , var.data() );
+			NumVar += var.num_elements();
+		        } ) )
+    continue;
+   throw( std::invalid_argument(
+    "LagrangianDualSolver: some static constraint not a FRowConstraint" ) );
+   }
   }
 
- // create a father block as an abstract one (it is a copy of
- // f_Block), if LDSPar1 is true make a copy of
- // the r3 block type
+ static_cons = NumVar;
+
+ // sort the static constraints-->Lagrangian-variables dictionary
+ // this is not necessary for the Lagrangian-variables-->static constraints
+ // one since it's surely sorted already
+ std::sort( scon_to_idx.begin() , scon_to_idx.end() );
+
+ for( const auto & el : f_Block->get_dynamic_constraints() ) {
+  // Singles lists
+  if( un_any_thing_0( FRowConstraint , el , { NumVar += var.size() } ) )
+   continue;
+  // Vectors of lists
+  if( un_any_thing_1( FRowConstraint , el ,
+                      {
+		       for( auto & el: var )
+			NumVar += el.size();
+		       } ) )
+    continue;
+  // Multiarrays of lists
+  if( un_any_thing_K( FRowConstraint , el ,
+		      {
+		       auto it = var.data();
+		       for( auto i = var.num_elements() ; i-- ; ++it )
+			NumVar += it->size();
+		       } ) )
+   continue;
+  throw( std::invalid_argument(
+   "LagrangianDualSolver: some dynamic constraint not a FRowConstraint" ) );
+  }
+
+ // create the Lagrangian Dual and its sub-Block- - - - - - - - - - - - - - - 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- AbstractBlock *NB; // the copy of the father block
- LagBvect.resize( sb.size() ); // LagBFunction
+ LagrDual = new AbstractBlock;  // create the AbstractBlock
 
- if( LPar1 ) { // using the r3 blocks
+ // resize the sub-Block dictionary
+ blck_to_idx.resize( f_nsb );
 
-  AbstractBlock *r3b = dynamic_cast< AbstractBlock * >(
-	   f_Block->get_R3_Block( nullptr , new AbstractBlock() ) );
+ // first loop: create the sub-Block and their LagBFunction - - - - - - - - -
+ // here comes the crucial decision: copy the sub-Block or "evict" them
 
-  for( Index i = 0 ; i < sb.size() ; ++i ) {
-   sb[ i ]->register_Solver( new UpdateSolver( f_Block ) );
-   LagBvect[ i ]->set_inner_block( r3b->get_nested_Blocks()[ i ] );
+ for( Index i = 0 ; i < f_nsb ; ++i ) {
+  auto sbi = new AbstractBlock;
+  std::get< 0 >( blck_to_idx[ i ] ) = sbi;
+  std::get< 1 >( blck_to_idx[ i ] ) = i;
+
+  Block * csbi;
+  if( LPar1 ) {  // copying the sub-Block
+   csbi = sb[ i ]->get_R3_Block( nullptr );  // the copy R3B
+   // immediately register an UpdateSolver to the original sub-Block so
+   // that any Modification to the original sub-Block is immediately
+   // forwarded to the copy
+   sb[ i ]->register_Solver( new UpdateSolver( csbi ) );
+   }
+  else {         // evicting the sub-Block
+   csbi = sb[ i ];  // use the original sub-Block; note that its father
+                    // will be changed when used in LagBFunction constructor
+   csbi->register_Solver( new UpdateSolver( f_Block ) );
+   // immediately register an UpdateSolver to the original sub-Block so
+   // that any Modification to the original sub-Block is immediately
+   // forwarded to the former father as it it were still its son
    }
 
-  NB = dynamic_cast< AbstractBlock * >( r3b );
-  }
- else {
-  NB = dynamic_cast< AbstractBlock * >( f_Block );
-  for( Index i = 0 ; i < sb.size() ; ++i )
-   LagBvect[ i ]->set_inner_block( sb[ i ] );
-  }
+  auto lbfi = new LagBFunction( csbi );
+  std::get< 2 >( blck_to_idx[ i ] ) = lbfi;
+  auto osbi = new FRealObjective( sbi , lbfi );
+  osbi->set_sense( f_convex ? Objective::eMin : Objective::eMax , eNoMod );
+  sbi->set_objective( osbi );
 
- // construct the Lagrangian variables: lambda
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- Vec_any sc = f_Block->get_static_constraints();
- auto LagVars = new std::vector< ColVariable >( sc.size() );
-
- // set the variables in the father abstract block
- NB->add_static_variable( *LagVars , "" , true );
-
- // the relaxed constraints are in the form of
- // sum_h A_h x_h = b, so the objective function
- // of the father block has to be the linear function
- // lambda * b;
-
- // construct the objective function of the abstract block
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- Function::Vec_FunctionValue bVector( sc.size() );
-
- double bterm;  // read the b vector from
- for( Index i = 0 ; i < sc.size() ; ++i ) {
-  if( un_any_const_static( sc[ i ] ,
-	 [&bterm]( LinearConstraint & cnst ) {
-	  bterm = (cnst.get_linear_function())->get_constant_term(); } ,
-	  un_any_type< LinearConstraint >() ) );
-  bVector[i] = bterm;
+  LagrDual->add_nested_Block( sbi );  // add the sub-Block
   }
 
- LinearFunction::v_coeff_pair vars( sc.size() );
- for( Index i = 0; i < sc.size() ; ++i )
-  vars[ i ] = std::make_pair( &(*LagVars)[i] , bVector[i] );
+ // sort the sub-Block dictionary by Block address
+ std::sort( blck_to_idx.begin() , blck_to_idx.end() );
 
- NB->set_objective( new FRealObjective( NB ,
-			new LinearFunction( std::move( vars ) ) ) , eNoMod );
-
- // create the children of NB as many as the children
- // of f_Block
+ // create the static and dynamic Lagrangian variables- - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- for( Index h = 0 ; h < sb.size() ; ++h ) {
+ auto Ls = new std::vector< ColVariable >( static_cons );
+ auto Ld = new std::list< ColVariable >( NumVar - static_cons );
 
-  (LagBvect[ h ]->get_inner_block())->set_f_Block( NB );
+ // pass the Lagrangian variables to the Lagrangian Dual
+ LagrDual->add_static_variable( *Ls , "Lambda_s" );
+ LagrDual->add_dynamic_variable( *Ld , "Lambda_d" );
 
-  // LagPairs are the pairs to be relaxed in the
-  // h-th child
+ // create the Objective of the Lagrangian Dual - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  v_dual_pair LagPairs( 0 );
-  for( Index i = 0; i < sc.size() ; ++i ) {
+ auto lf = new LinearFunction;
+ auto obj = new FRealObjective( LagrDual , lf );
+ obj->set_sense( f_convex ? Objective::eMin : Objective::eMax , eNoMod );
+ LagrDual->set_objective( obj , eNoMod );
+ v_coeff_pair objcf( NumVar );
+ 
+ // scan all FRowConstraints- - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // meanwhile construct the linear objective function
 
-   LinearFunction * relaxed_function;
-   // relaxed_function represents the linear function
-   // a_i^T x_i, where x_i contains the variables
-   // of the component only
+ auto objit = objcf.begin();
 
-   LinearFunction *gi; // the i-th constraint in the father block
-   un_any_static( sc[i] , [ & ]( LinearFunction & linfun ) { gi = & linfun; } ,
-		  un_any_type<LinearFunction>() );
+ // construct the auxiliary data structure to hold the Lagrangian terms;
+ // LagTerms[ i ][ h ] contains the v_coeff_pair corresponding to the
+ // Lagrangian term of sub-Block h for the i-th variable
 
-   // get the pairs if the constraint gi
-   const auto & rp = gi->get_v_var();
+ std::vector< std::vector< v_coeff_pair > > LagTerms( NumVar );
+ auto LTit = LagTerms.begin();
 
-   // get the objective of the child
-   const auto frobj = LagBvect[ h ]->get_inner_block()->get_objective< FRealObjective >();
-   auto obj = dynamic_cast< p_LF >( frobj->get_function() );
+ // scan all static FRowConstraints - - - - - - - - - - - - - - - - - - - - -
+ {
+  auto Lit = Ls->begin();
 
-   for( Index h = 0 ; h < rp.size() ; ++h ) {
+  // define a lambda that does the job
+  auto scan = [ & ]( FRowConstraint & con ) -> void {
+   // check the LHS/RHS
+   auto con_lhs = con.get_lhs();
+   auto con_rhs = con.get_rhs();
 
-	// if the variable of the constraint is active
-	// in the child, this has to be added to
-	// the relaxed constraint
+   if( ( ( con_lhs == -Inf< double >() ) && ( con_rhs == Inf< double >() ) )
+       || con.is_relaxed() ) {
+    // this constraint is eiter "infinitely loose" or relaxed: its rhs is
+    // 0 and the Lagrangian term is empty
+    *(objit++) = std::make_pair( *(Lit++) , 0 );
+    ++LTit;
+    return;
+    }
 
-    auto j = obj->is_active( rp[ h ].first );
+   if( ( con_lhs > -Inf< double >() ) && ( con_rhs < Inf< double >() ) &&
+       ( con_lhs != con_rhs ) )
+    throw( std::invalid_argument(
+     "LagrangianDualSolver: ranged static constraints not supported yet" ) );
 
-    if( j < obj->get_num_active_var() ) {
-     relaxed_function->add_variable( rp[ h ].first ,
-    		 rp[ h ].second );
-     }
-    } // end scanning of variables
+   // define the sign constraints on the multiplier (if any)
+   if( f_convex ) {  // for a max problem
+    if( con_lhs == -Inf< double >() )     // a <= constraint 
+     Lit->is_positive( true , eNoMod );   // ==> a >= multiplier
+    else
+     if( con_rhs == Inf< double >() )     // a >= constraint 
+      Lit->is_negative( true , eNoMod );  // ==> a <= multiplier     
+    }
+   else {            // for a min problem
+    if( con_lhs == -Inf< double >() )     // a <= constraint 
+     Lit->is_negative( true , eNoMod );   // ==> a <= multiplier
+    else
+     if( con_rhs == Inf< double >() )     // a >= constraint 
+      Lit->is_positive( true , eNoMod );  // ==> a >= multiplier
+    }
 
-   // add the pair to be relaxed in the h-th child
-   if( relaxed_function->get_num_active_var() )
-    LagPairs.push_back( std::make_pair( &(*LagVars)[i] ,
-       	  relaxed_function ) );
+   // write the coefficient in the objective
+   *(objit++) = std::make_pair( *(Lit++) , con_rhs == Inf< double >()
+				           ? con_lhs : con_rhs );
+
+   // split the linear constraint among the sub-Block
+   split_constraint( con , *(LTit++) );
+   };
+
+  // finally apply the lambda to all static constraints
+  for( const auto & el : f_Block->get_static_constraints() )
+   un_any_const_static( el , scan , un_any_type< FRowConstraint >() );
+  }
+
+ // scan all dynamic FRowConstraints- - - - - - - - - - - - - - - - - - - - -
+ // meanwhile construct the dynamic dictionaries
+
+ // resize the dynamic constraints<-->Lagrangian-variables dictionaries
+ dcon_to_idx.resize( NumVar - static_cons );
+ idx_to_dcon.resize( NumVar - static_cons );
+
+ {
+  Index i = static_cons;
+  auto Lit = Ld->begin();
+  auto dc2iit = dcon_to_idx.begin();
+  auto i2dcit = idx_to_dcon.begin();
+
+  // define a lambda that does the job
+  auto scan = [ & ]( FRowConstraint & con ) -> void {
+   // first write the dictonaries
+   *(dc2iit++) = std::make_pair( & con , i );
+   *(i2dcit++) = std::make_pair( i++ , & con );
+
+   // then check the LHS/RHS
+   auto con_lhs = con.get_lhs();
+   auto con_rhs = con.get_rhs();
+
+   if( ( ( con_lhs == -Inf< double >() ) && ( con_rhs == Inf< double >() ) )
+       || con.is_relaxed() ) {
+    // this constraint is eiter "infinitely loose" or relaxed: its rhs is
+    // 0 and the Lagrangian term is empty
+    *(objit++) = std::make_pair( *(Lit++) , 0 );
+    ++LTit;
+    return;
+    }
+
+   if( ( con_lhs > -Inf< double >() ) && ( con_rhs < Inf< double >() ) &&
+       ( con_lhs != con_rhs ) )
+    throw( std::invalid_argument(
+    "LagrangianDualSolver: ranged dynamic constraints not supported yet" ) );
+
+   // define the sign constraints on the multiplier (if any)
+   if( f_convex ) {  // for a max problem
+    if( con_lhs == -Inf< double >() )     // a <= constraint 
+     Lit->is_positive( true , eNoMod );   // ==> a >= multiplier
+    else
+     if( con_rhs == Inf< double >() )     // a >= constraint 
+      Lit->is_negative( true , eNoMod );  // ==> a <= multiplier     
+    }
+   else {            // for a min problem
+    if( con_lhs == -Inf< double >() )     // a <= constraint 
+     Lit->is_negative( true , eNoMod );   // ==> a <= multiplier
+    else
+     if( con_rhs == Inf< double >() )     // a >= constraint 
+      Lit->is_positive( true , eNoMod );  // ==> a >= multiplier
+    }
+
+   // write the coefficient in the objective
+   *(objit++) = std::make_pair( *(Lit++) , con_rhs == Inf< double >()
+				           ? con_lhs : con_rhs );
+
+   // split the linear constraint among the sub-Block
+   split_constraint( con , *(LTit++) );
+   };
+
+  // finally apply the lambda to all dynamic constraints
+  for( const auto & el : f_Block->get_dynamic_constraints() )
+   un_any_const_dynamic( el , scan , un_any_type< FRowConstraint >() );
+  }
+
+ // sort the dynamic constraints-->Lagrangian-variables dictionary
+ // this is not necessary for the Lagrangian-variables-->dynamic constraints
+ // one since it's surely sorted already
+ std::sort( dcon_to_idx.begin() , dcon_to_idx.end() );
+
+ // pass the Lagrangian terms to the LagBFunction - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ for( Index h = 0 ; h < f_nsb ; ++h ) {
+  v_dual_pair dp( NumVar );  // construct the dual pairs
+
+  Index i = 0;
+  for( ; i < static_cons ; ++i ) {
+   dp[ i ].first = & (*Ls)[ i ];
+   dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
    }
-  } // end children creation
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  auto Lit = Ld->begin();
+  for( ; i < NumVar ; ++i ) {
+   dp[ i ].first = & (*Lit++);
+   dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+   }
 
- // the set of "active" Variable
+  auto SBi = static_cast< p_AB >( LagrDual->get_nested_Block( h ) );
+  auto LBF = static_cast< p_LBF >(
+		  SBi->get_objective< FRealObjective >()->get_function() );
+  LBF->set_dual_pairs( std::move( lp ) );
+  }
+
+ // configure the LagrDual Solver- - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- NumVar = sc.size();
- LamVcblr.resize( NumVar );
- for( Index i = 0 ; i < NumVar ; ++i )
-  LamVcblr[ i ] = &(*LagVars)[i];
 
- // allocate memory  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ // finally, release the Block - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- Lambda.resize( NumVar );    // the point
-
- // !TODO: to be completed
-
- // the
- // bundle solver registration - - - - - - - - - - - - - - - - - - - - - - - -
-
- NB->register_Solver(BndSlv, true);
-
+ if( ! owned )
+  f_Block->unlock( f_id );
+ 
  }  // end( LagrangianDualSolver::set_Block )
 
 /*--------------------------------------------------------------------------*/
@@ -483,6 +700,161 @@ void LagrangianDualSolver::configure_LagrangianDualBlock( void )
 }
 
 
+/*--------------------------------------------------------------------------*/
+
+Index LagrangianDualSolver::index_of_constraint( const FRowConstraint * con )
+{
+ auto i = index_of_static_constraint( con );
+ if( i < Inf< Index >() )
+  return( i );
+
+ return( index_of_dynamic_constraint( con ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Index LagrangianDualSolver::index_of_static_constraint(
+						 const FRowConstraint * con )
+{
+ if( scon_to_idx.empty() )
+  return( Inf< Index >() );
+
+ assert( std::is_sorted( scon_to_idx.begin() , scon_to_idx.end() ) );
+ auto it = upper_bound( scon_to_idx.begin() , scon_to_idx.end() ,
+                        std::make_tuple( con , 0 , 0 ),
+                        []( auto & p1 , auto & p2 ) {
+                         return( std::get< 0 >( p1 ) < std::get< 0 >( p2 ) );
+                         } );
+
+ // it now refers to the first (group of) element(s) greater than i
+ if( it == scon_to_idx.begin() )  // all elements are greater
+  return( Inf< Index >() );       // it is not there
+
+ --it;  // the previous group is the one it belongs to
+
+ // first element of the constraint group
+ //const auto first = std::get< 0 >( *it );
+ //auto distance = std::distance( first , con );
+ auto dist = std::distance( first , std::get< 0 >( *it ) );
+
+ if( ( dist >= 0 ) && ( Index( dist ) < std::get< 2 >( *it ) ) )
+  return( std::get< 1 >( *it ) + Index( dist ) );  // it belongs to this group
+
+ return( Inf< Index >() );  // it doesn't exist
+
+ }  // end( LagrangianDualSolver::index_of_static_constraint )
+
+/*--------------------------------------------------------------------------*/
+
+Index LagrangianDualSolver::index_of_dynamic_constraint(
+						  const FRowConstraint * con )
+{
+ assert( std::is_sorted( dcon_to_idx.begin() , dcon_to_idx.end() ) );
+ auto it = lower_bound( dcon_to_idx.begin() , dcon_to_idx.end() ,
+                        std::make_pair( con , 0 ) ,
+                        []( auto & p1 , auto & p2 ) {
+                         return( p1.first < p2.first );
+                         } );
+
+ if( ( it != dcon_to_idx.end() ) && ( it->first == con ) )
+  return( it->second );
+
+ return( Inf< int >() );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+FRowConstraint * LagrangianDualSolver::constraint_with_index( Index i )
+{
+ #ifdef NDEBUG
+  if( i >= NumVar )
+   throw( std::invalid_argument(
+		     "LagrangianDualSolver::invalid index of constraint" ) );
+ #endif
+
+ if( i < static_cons )
+  return( static_constraint_with_index( i ) );
+
+ return( dynamic_constraint_with_index( i ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+FRowConstraint * LagrangianDualSolver::static_constraint_with_index( Index i )
+{
+ #ifdef NDEBUG
+  if( ( i >= static_cons ) || idx_to_scon.empty() )
+   throw( std::invalid_argument(
+	       "LagrangianDualSolver::invalid index of static constraint" ) );
+
+  assert( std::is_sorted( idx_to_scon.begin() , idx_to_scon.end() ) );
+ #endif
+
+ auto it = upper_bound( idx_to_scon.begin() , idx_to_scon.end() ,
+                        std::make_pair( i , nullptr ) ,
+                        [ & ]( auto & p1 , auto & p2 ) {
+                         return( p1.first < p2.first );
+                         } );
+
+ // it now refers to the first (group of) element(s) greater than i
+ #ifdef NDEBUG
+  if( it == idx_to_scon.begin() )  // all elements are greater
+   throw( std::invalid_argument(
+			 "LagrangianDualSolver::inconsistent idx_to_scon" ) );
+ #endif
+
+ --it;  // the previous group is the one it belongs to
+
+ return( it->second + ( i - it->first ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+FRowConstraint * LagrangianDualSolver::dynamic_constraint_with_index(
+								    Index i )
+{
+ #ifdef NDEBUG
+  if( ( i < static_cons ) || ( i < NumVar ) || idx_to_dcon.empty() )
+   throw( std::invalid_argument(
+	     "LagrangianDualSolver::invalid index of dynamic constraint" ) );
+
+  assert( std::is_sorted( idx_to_dcon.begin() , idx_to_dcon.end() ) );
+ #endif
+
+ auto it = lower_bound( idx_to_dcon.begin() , idx_to_dcon.end() ,
+                        std::make_pair( i , nullptr ),
+                        [ & ]( auto & p1 , auto & p2 ) {
+                         return( p1.first < p2.first );
+                         } );
+ #ifdef NDEBUG
+  if( ( it == idx_to_dcon.end() ) || ( it->first != i ) )  // not there
+   throw( std::invalid_argument(
+			 "LagrangianDualSolver::inconsistent idx_to_dcon" ) );
+ #endif
+
+ return( it->second );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::split_constraint( FRowConstraint & con ,
+			 std::vector< LinearFunction::v_coeff_pair > & split )
+{
+ auto lf = dynamic_cast< const LinearFunction * >( con.get_function() );
+ if( ! lf )
+  throw( std::invalid_argument(
+			"LagrangianDualSolver: FRowConstraint not linear" ) );
+
+ auto & vc = lf->get_v_var();
+
+ split.resize( f_nsb );
+
+ if( f_nsb == 1 ) {    // easy case: nothing to split
+  split.front() = vc;
+  return;
+  }
+
+ }  // end( LagrangianDualSolver::split_constraint )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/

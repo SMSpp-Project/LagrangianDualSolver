@@ -62,18 +62,24 @@ namespace SMSpp_di_unipi_it
  * This can "solve" (see below for the reason of the scare quotes) any Block
  * (B) with the following structure:
  *
- * - no Variable in (B)
- *
- * - (B) does not depend on any "external" Variable, i.e., a Variable that
- *   does not belong to (B) (or any of its sub-Block, recurively)
+ * - No Variable in (B).
  *
  * - (B) has at least one sub-Block (necessarily, for otherwise it would be
- *   "completely empty")
+ *   "completely empty").
  *
- * - if there is more than one sub-Block, the Constraint in (B) are all and
- *   only the ones that link its sub-Block; that is, no sub-Block must depend
- *   on any "external" Variable, i.e., a Variable that does not belong to the
- *   sub-Block (or any of its sub-Block, recurively)
+ * - No Objective in (B) (which makes sense: since all Variable in (B)
+ *   actually belong to the sub-Block, recurively, it's them who define
+ *   the Objective for these Variable: no need for (B) to do it).
+ *
+ * - (B) and all its sub-Block, recursively, do not depend on any "external"
+ *   Variable, i.e., a Variable that does not belong to (B) (actually, to any
+ *   of its sub-Block, recurively, since (B) cannot have any Variable of its
+ *   own).
+ *
+ * - If there is more than one sub-Block, the Constraint in (B) are all and
+ *   only the ones that link the sub-Block between them; that is, no sub-Block
+ *   must depend on any "external" Variable, i.e., a Variable that does not
+ *   belong to the sub-Block (or any of its sub-sub-Block, recurively).
  *
  * - All the Constraint in (B) are "linear constraint", i.e., FRowConstraint
  *   with a LinearFunction inside. Note that OneVarConstraint are "linear
@@ -84,18 +90,18 @@ namespace SMSpp_di_unipi_it
  *   LagrangianDualSolver currently do not support them (although this may
  *   change later if a serious use case arises).
  *
- * - Each sub-Block may never make any assumption on which type (B) is or
- *   make any direct reference to any of its data.
+ * - Each sub-Block of (B) may never make any assumption on which type (B) is
+ *   or make any direct reference to any of its data.
  *
- * The reason for the last requirement is that LagrangianDualSolver "cheats"
- * on (B): it stealthily constructs a new Block corresponding to its
- * Lagrangian Dual, "physically moving" the sub-Block of (B) inside it while
- * not changing the pointers in (B). That is, the sub-Block of (B)
- * (temporarily) change father Block to a new Block that remains hidden 
- * inside the LagrangianDualSolver (this is undone when the
- * LagrangianDualSolver is unregistered from (B)), while (B) still
- * "believes" that they remain its sub-Block. For this, consistency is kept:
- * any Modification coming from the sub-Block is forwarded to (B).
+ * The reason for the last requirement is that LagrangianDualSolver may
+ * "cheat" on (B): it stealthily constructs a new Block corresponding to its
+ * Lagrangian Dual, possibly "physically moving" the sub-Block of (B) inside
+ * it while not changing the pointers in (B). That is, the sub-Block of (B)
+ * temporarily change father Block to a new Block that remains hidden inside
+ * the LagrangianDualSolver, while (B) still "believes" that they remain its
+ * sub-Block. This is undone when the LagrangianDualSolver is unregistered
+ * from (B). Consistency is kept, in that any Modification coming from the
+ * sub-Block is also "forwarded" to (B).
  *
  * An appropriate Solver is then registered to the Lagrangian Dual Block, and
  * it is used to solve it. The solution it used as the dual solution for (B),
@@ -104,6 +110,63 @@ namespace SMSpp_di_unipi_it
  * (say, the sub-Block have integer variables), then the Lagrangian Dual
  * Block is not equivalent to (B) but to its "convexified relaxation", and
  * this is what is solved.
+ *
+ * IMPORTANT NOTE ON TWO-SIDED CONSTRAINTS. The FRowConstraint in (B) in
+ * general have the form l <= ax <= u, i.e., they correspond to *two* linear
+ * constraints. However, in many cases only *one* Lagrangian multiplier need
+ * be defined for them:
+ *
+ * - if l == u, i.e., the equality constraint ax = u (= l); in this case the
+ *   corresponding Lagrangian multiplier is constrained in  sign;
+ *
+ * - if l == -INF and u < INF, i.e., the less-than constraint ax <= u; in
+ *   this case the corresponding Lagrangian multiplier is constrained in
+ *   sign (>= 0 if the (B) is max, <= 0 if (B) is min);
+ *
+ * - if l > -INF and u == INF, i.e., the greater-than constraint ax >= l; in
+ *   this case the corresponding Lagrangian multiplier is constrained in
+ *   sign (<= 0 if the (B) is max, >= 0 if (B) is min);
+ *
+ * Save for the degenerate case l == -INF and u == INF, which is not allowed,
+ * this leves the case -INF < l < u < INF. One possible approach for this
+ * would be to consider the constraint as actually being the two less-than
+ * and greater-then (ax <= u, a >= l) with two different Lagrangian
+ * multipliers, both constrained in sign (in the right way). However, this
+ * would significantly complicate the handling of these constraints since
+ * each original one may give rise to either one or two multipliers, which
+ * would be very though especially if changing the rhs/lhs of the constraint
+ * would change its two-sidedness status (say, an equality constraint becoming
+ * a ranged one, or an INF bound becoming finite). A different approach is to
+ * reformulate the constraint as
+ *
+ *   ax - s = 0  ,  l <= s <= u
+ *
+ * and relax it, with an *unconstrained* multiplier (call it y). This would
+ * lead to the same single Lagrangian term y ( ax ), plus the extra "mini
+ * Lagrangian subproblem"
+ *
+ *   min/max { y ( - s ) : l <= s <= u }
+ *
+ * All these may be gathered into a single very simple LagBFunction, to
+ * which possibly a VerySimpleLPSolver could be attached. Alternatively,
+ * each of these may be represented as a separate one-variable LagBFunction
+ * (again, possibly solved by a VerySimpleLPSolver). In particular for Solver
+ * capable of exploiting the structure of the LagBFunction to properly modify
+ * the Master Problem, such a reformulation would basically be a 0-cost one
+ * and most likely the best approach. If one really wants to handle all the
+ * cases of changes in the lhs/rhs, even those hanging the two-sidedness
+ * status, this (these) extra LagBFunction(s) still should be dynamic and
+ * allow new s variables to be created and destroyed; yet, this is in general
+ * possible.
+ *
+ * Hence, LagrangianDualSolver ASSUMES ONLY ONE MULTIPLIER PER RELAXED
+ * CONSTRAINTS IN ALL CASES. However THE CONSTRUCTION OF THE
+ * "MINI-LagBFunction" FOR THE s VARIABLE IS NOT SUPPORTED YET, WHICH MEANS
+ * THAT TRUE TWO-SIDED FRowConstraint ARE NOT ALLOWED YET. Fortunately, true
+ * two-sided FRowConstraint are rare in practice, and they can always be
+ * avoided by explicitly modelling them as the less-than and greater-than
+ * version if needed. Yet, the mini-LagBFunction will hopefully one day be
+ * actually handled.
  *
  * A different issue is that (B) may represent a convex program which is
  * "nonlinear enough" so that strong duality does not hold; say, the primal
@@ -142,14 +205,14 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the int algorithmic parameters
- /** Public enum describing the different types of algorithmic parameters
-  * of "int" type that LagrangianDualSolver has in addition to these of
-  * CDASolver. The value intLastLDSSlvPar is provided so that the list can be
-  * easily further extended by derived classes. */
+ /** Public enum describing the different algorithmic parameters of int type
+  * that LagrangianDualSolver has in addition to these of CDASolver. The 
+  * value intLastLDSSlvPar is provided so that the list can be easily further
+  * extended by derived classes. */
 
  enum int_par_type_LDSlv {
 
- intLPar1 = CDASolver::intLastParCDAS ,
+ intLPar1 = intLastParCDAS ,
  ///< if the R3Block has be used for the father block
 
  intLastLDSSlvPar  ///< first allowed new int parameter for derived classes
@@ -160,10 +223,10 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the double algorithmic parameters
- /** Public enum describing the different types of algorithmic parameters
-  * of "double" type that LagrangianDualSolver has in addition to these of
-  * CDASolver. The value dblLastLDSSlvPar is provided so that the list can be
-  * easily further extended by derived classes. */
+ /** Public enum describing the different algorithmic parameters of double
+  * type that LagrangianDualSolver has in addition to these of CDASolver. The
+  * value dblLastLDSSlvPar is provided so that the list can be easily further
+  * extended by derived classes. */
 
  enum dbl_par_type_LDSlv {
   dblLastLDSlvPar = dblLastParCDAS ,
@@ -181,8 +244,9 @@ public:
 
  /// constructor: ensure every field is initialized
 
- LagrangianDualSolver( void ) : CDASolver() , NumVar( 0 ) ,
-  f_LDBConfig( nullptr ) , InnrSlv( nullptr )
+ LagrangianDualSolver( void ) : CDASolver() , NumVar( 0 ) , f_nsb( 0 ) ,
+  f_convex( false ) , LagrDual( nullptr ) , f_LDBConfig( nullptr ) ,
+  static_cons( 0 )
  {
   // ensure all parameters are properly given their default value
   LogVerb = CDASolver::get_dflt_int_par( intLogVerb );
@@ -529,6 +593,71 @@ public:
  void configure_LagrangianDualBlock( void );
 
 /*--------------------------------------------------------------------------*/
+ /** Returns the index as active variable of the LagBFunction of the given
+  * FRowConstraint, be it static or dynamic.
+  *
+  * @param con a pointer to a FRowConstraint
+  * @return the corresponding index as active variablee, Int< Index >() if
+  *         \p con does not correspond to any FRowConstraint */
+
+ Index index_of_constraint( const FRowConstraint * con );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /** Returns the index as active variable of the LagBFunction of the given
+  * static FRowConstraint.
+  *
+  * @param con a pointer to a FRowConstraint
+  * @return the corresponding index as active variable, Int< Index >() if
+  *         \p con does not correspond to any static FRowConstraint */
+
+ Index index_of_static_constraint( const FRowConstraint * con );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /** Returns the index as active variable of the LagBFunction of the given
+  * dynamic FRowConstraint.
+  *
+  * @param con a pointer to a FRowConstraint
+  * @return the corresponding index as active variable, Int< Index >() if
+  *         \p con does not correspond to any dynamic FRowConstraint */
+
+ Index index_of_dynamic_constraint( const FRowConstraint * con );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /** Returns the (pointer to) FRowConstraint corresponding to a the active
+  * variable of the LagBFunction with the given index, be it static or dynamic.
+  *
+  * @param i the index of an active variable of the LagBFunction
+  * @return a pointer to the corresponding FRowConstraint
+  * @throws std::invalid_argument if \p i doesn't correspond to a constraint */
+ 
+ FRowConstraint * constraint_with_index( Index i );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /** Returns the (pointer to the) static FRowConstraint corresponding to a the
+  * active variable of the LagBFunction with the given index.
+  *
+  * @param i the index of an active variable of the LagBFunction
+  * @return a pointer to the corresponding FRowConstraint
+  * @throws std::invalid_argument if \p i doesn't correspond to a constraint */
+
+ FRowConstraint * static_constraint_with_index( Index i );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /** Returns the (pointer to the) static FRowConstraint corresponding to a the
+  * active variable of the LagBFunction with the given index.
+  *
+  * @param i the index of an active variable of the LagBFunction
+  * @return a pointer to the corresponding FRowConstraint
+  * @throws std::invalid_argument if \p i doesn't correspond to a constraint */
+
+ FRowConstraint * dynamic_constraint_with_index( Index i );
+
+/*--------------------------------------------------------------------------*/
+
+ void split_constraint( FRowConstraint & con ,
+			std::vector< LinearFunction::v_coeff_pair > & split );
+
+/*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -542,14 +671,75 @@ public:
 
  Index NumVar;      ///< (current) number of variables
 
+ Index f_nsb;       ///< number of sub-Block
+
+ bool f_convex;     ///< true if (B) was a max problem, false otherwise
+
  //!! std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
  AbstractBlock * LagrDual;
 
  Configuration * f_LDBConfig;   ///< the Configuration for LagrDual
- 
- CDASolver * InnrSlv;
 
+ // dictionaries- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+
+
+ Index static_cons;  ///< number of static constraints
+                     /** Total number of static constraints in the Block: the
+		      * first static_cons active variables in the LagBFunction
+		      * will never change. */
+
+ /* The following vectors are used in order to keep track between the
+  * Constraints of the Block and the Lagrangian variables of all the
+  * corresponding Lagrangian functions.
+  *
+  *  - scon_to_idx: vector of tuples that store 1) the address of the first
+  *    element of each group of static constraints, respectively, 2) the
+  *    corresponding index in the set of active variables of the Lagrangian
+  *    functions, and 3) the number of elements in the group. the vector is
+  *    kept sorted in ascending order by address
+  *
+  *  - dcon_to_idx: vector of pairs that store the address of each dynamic
+  *    constraints the corresponding index in the set of active variables of
+  *    the Lagrangian function; the vector is kept sorted in ascending order
+  *    by address
+  *
+  *  - idx_to_scon: vector of pairs that store the index of the first active
+  *    variable of the Lagrangian functions corresponding to each group of
+  *    static constraints and the address of the first constraint of the
+  *    group; the vector is kept sorted in ascending order by index
+  *
+  *  - idx_to_dcon: vector of pairs that store index of each active variable
+  *    of the Lagrangian functions corresponding to a dynamic constraints and 
+  *    the address of that constraint; the vector is kept sorted in ascending
+  *    order by index
+  *
+  * Using these dictionaries we can efficiently find the index of each
+  * constraint as a Lagrangian variable and vice-versa. */
+
+ typedef std::pair< FRowConstraint * , Index > const_int;
+ typedef std::pair< Index , FRowConstraint * > int_const;
+ typedef std::tuple< FRowConstraint * , Index , Index > con_int_int;
+
+ std::vector< con_int_int > scon_to_idx; ///< From static constraint to index
+ std::vector< int_const > idx_to_scon;   ///< From index to static constraint
+
+ std::vector< const_int > dcon_to_idx;   ///< From dynamic constraint to index
+ std::vector< int_const > idx_to_dcon;   ///< From index to dynamic constraint
+
+ typedef std::tuple< AbstractBlock * , Index , LagBFunction * > blck_int_pf;
+
+ /** This is a vector of triples that contain the pointer of a sub-Block of
+  * the LagrangianDual, its index into the vector od sub-Block, and the
+  * pointer to the corresponding LagBFunction in the FRealObjective; this is
+  * ordered by Block. */
+
+ std::vector< blck_int_pf > blck_to_idx;  ///< from Block * to index
+
+
+ 
 /*--------------------------------------------------------------------------*/
 
  const static std::vector<int> dflt_int_par;
