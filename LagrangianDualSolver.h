@@ -201,8 +201,6 @@ public:
  using Subset = Block::Subset;
  using c_Subset = Block::c_Subset;
 
-/*----------------------------- CONSTANTS ----------------------------------*/
-
 /*--------------------------------------------------------------------------*/
  /// public enum for the int algorithmic parameters
  /** Public enum describing the different algorithmic parameters of int type
@@ -245,7 +243,11 @@ public:
 
  enum str_par_type_LDSlv {
   str_LDSlv_ISName = strLastParCDAS ,  ///< classname of the inner Solver
-  
+
+  str_LDBlck_BCfg ,     ///< the filename for the BlockConfig of the LD
+
+  str_LDBlck_BSlvCfg ,  ///< the filename for the BlockSolverConfig of the LD
+
   strLastLDSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of string parameters. */
@@ -261,8 +263,8 @@ public:
  /// constructor: ensure every field is initialized
 
  LagrangianDualSolver( void ) : CDASolver() , NumVar( 0 ) , f_nsb( 0 ) ,
-  f_convex( false ) , LagrDual( nullptr ) , f_LDBConfig( nullptr ) ,
-  static_cons( 0 )
+  f_convex( false ) , LagrDual( nullptr ) , f_BCfg( nullptr ) ,
+  f_BSlvCfg( nullptr ) , static_cons( 0 )
  {
   // ensure all parameters are properly given their default value
   iBCopy  = dflt_int_par[ int_LDSlv_iBCopy - intLastParCDAS ];
@@ -487,56 +489,96 @@ public:
   * parameters, while the inner Solver may have many. It is therefore
   * advantageous to allow to set the algorithmic parameters of the inner
   * 
+  * This is done by "translating" all the indices of the parameters of the
+  * inner Solver, apart from the standard ones that any CDASolver has, so
+  * that they are > than the indices of LagrangianDualSolver parameters (of 
+  * the same type). If necessary *_par_is() and *_par_lds() are provided to
+  * translate an index of the inner Solver into one of LagrangianDualSolver
+  * and vice-versa, respectively, but it is not necessary to use them
+  * directly if the Configuration is made via set_ComputeConfig(), as the
+  * translation is automatically done by the parameters setting / getting
+  * methods. Basically
   *
-
-
+  *     ALL PARAMETERS OF THE INNER Solver BEHAVE AS IF THEY WERE NATIVE
+  *     PARAMETERS OF LagrangianDualSolver WHEN ACCESSED VIA THEIR STRING
+  *     NAME
   *
-  * The method of LagrangianDualSolver calls
-  * ThinComputeInterface::set_ComputeConfig() to do the bulk of the work, and
-  * then manages f_extra_Configuration. The field must be non-nullptr at
-  * least once before compute() and any follow up-method is called, and it
-  * can contain:
+  * Hence, to set the int parameter "intMyParam" of the iner Solver, it is
+  * possible to just use
+  *
+  *     LDS->set_par( LDS->int_par_str2idx( "intMyParam" ) , value );
+  *
+  * as if one would be accessing the inner Solver directly; this allows all
+  * the standard Configuration stuff to work unchanged. When using indices
+  * to access parameters, instead, one has to do either
+  *
+  *     LDS->set_par( LDS->int_par_is( intMyParam ) , value );
+  *
+  * (assuming the enum value intMyParam to correspond to the string name
+  * "intMyParam" as customary) or
+  *
+  *     LDS->get_inner_Solver()->set_par( intMyParam , value );
+  *
+  * In both cases one has to know that it is using a LagrangianDualSolver,
+  * but this is not a big deal since using of an explicit index (intMyParam)
+  * implies compile-time knowledge of the specific solver one is using (in
+  * this case, a specific inner Solver inside a LagrangianDualSolver).
+  *
+  * However, this mechanism has a consequence:
+  *
+  *     THE PARAMETER INDICES CHANGE MEANING IF THE TYPE OF THE INNER Solver
+  *     CHANGES
+  *
+  * which happens changing its classname ("str_LDSlv_ISName"). Hence, if one
+  * wants to change the inner Solver and configure it, it should first do
+  * the change and then set the parameters (which is logically required
+  * anyway). This is why in set_ComputeConfig() first it is checked if
+  * "str_LDSlv_ISName" changes, and only after this is acted upon the
+  * standard ThinComputeInterface::set_ComputeConfig() is called to do the
+  * bulk of the work.
+  *
+  * However, set_ComputeConfig() also manages f_extra_Configuration. If not
+  * nullptr, the field can contain any amongst
   *
   * - a BlockSolverConfig *
   *
+  * - a BlockConfig *
+  *
   * - a SimpleConfiguration< std::pair< Configuration * , Configuration * > >
-  *   there .first is a BlockSolverConfig * and .second is a
+  *   where .first is a BlockSolverConfig * and .second is a
   *   BlockConfig *
   *
-  * The BlockSolverConfig is apply()-ed to the Lagrangian Dual Block; it
-  * has to register *at least* one (appropriate) CDASolver to it, and it
-  * also has the chance to register Solver to the inner Block (inside the
-  * LagBFunction inside the FRealObjective of each sub-Block). The *first*
-  * CDASolver registered to the Lagrangian Dual Block will be used as the
-  * "main" Solver by LagrangianDualSolver, and there typically must be at
-  * least one Solver registered to each sub-Block (unless the "main" Solver
-  * allows not to because it deals with some LagBFunction in specialised
-  * ways), the first of which will be used by the LagBFunction to compute()
-  * themselves.
+  * If any of these are passed, they are apply()-ed to the automatically
+  * constructed Lagrangian Dual Block at the moment it is built (which is
+  * when set_Block() is called). Note that the structure of the Lagrangian
+  * Dual Block is:
   *
-  * If a BlockConfig is provided, it is also apply()-ed to the Lagrangian
-  * Dual Block (and therefore it has the chance to BlockConfig-ure also
-  * all the inner Block inside the LagBFunction inside the FRealObjective of
-  * each sub-Block).
+  * - an AbstractBlock having a linear Objective (a FRealObjective with
+  *   a LinearFunction inside)
   *
-  * The BlockSolverConfig becomes "property" of the LagrangianDualSolver;
-  * it is clear()-ed and used when the LagrangianDualSolver is unregistered
-  * from the Block to clear away all the Solver that it has attached.
+  * - The AbstractBlock has exactly as many sub-Block as the original Block,
+  *   each of them being another AbstractBlock with the Lagrangian function
+  *   of the corresponding sub-Block (a FRealObjective with a LagBFunction
+  *   inside, the LagBFunction containing either the original sub-Block or
+  *   ita R3B copy).
   *
-  * Note that, if the LagrangianDualSolver is not registered to a Block
-  * when set_ComputeConfig() is called, the pointers are stored and the
-  * configuration of the Block is done in set_Block(). For the
-  * BlockSolverConfig, this could be repeated any number of times since a
-  * BlockSolverConfig is not "consumed" when it is apply()-ed. However, a
-  * BlockConfig is "consumed" instead. Thus, for consistency also the
-  * BlockSolverConfig is immediately clear()-ed: registering the
-  * LagrangianDualSolver to a new Block requires a new call to
-  * set_ComputeConfig().
+  * Setting a BlockSolverConfig is a way to register Solver to each
+  * sub-Block inside each LagBFunction, which is necessary for the
+  * LagBFunction to be able to compute() itself and therefore likely
+  * necessary for the inner Solver to work (unless it deals with
+  * LagBFunction in specialised ways).
   *
-  * Note that if multiple calls to set_ComputeConfig() occur before the
-  * LagrangianDualSolver is registered to a Block, all the BlockSolverConfig
-  * / BlockConfig of all calls save the last one are lost and have no effect
-  * (but at least are properly deleted). */
+  * Note that the BlockConfig and BlockSolverConfig become property of the
+  * LagrangianDualSolver, that clear()-s them and uses them to properly
+  * cleanup the Lagrangian Dual Block. If multiple calls to
+  * set_ComputeConfig() occur before the LagrangianDualSolver is registered
+  * to a Block, all the BlockSolverConfig / BlockConfig of all calls save
+  * the last one are lost and have no effect (but at least are properly
+  * deleted).
+  *
+  * This way of setting the Block*Config of the Lagrangian Dual Block takes
+  * precedence over doing the same via the str_LDBlck_BCfg and
+  * str_LDBlck_BSlvCfg parameters. */
 
  void set_ComputeConfig( ComputeConfig * scfg = nullptr ) override;
 
@@ -914,7 +956,29 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- void set_default_inner_BlockSolverConfig( void );
+ void clear_inner_BlockSolverConfig( bool apply = true ) {
+  if( f_BSlvCfg ) {
+   if( LagrDual && apply ) {
+    f_BSlvCfg->clear();
+    f_BSlvCfg->apply( LagrDual );
+    }
+   delete f_BSlvCfg;
+   f_BSlvCfg = nullptr;
+   }
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ void clear_inner_BlockConfig( bool apply = true ) {
+  if( f_BCfg ) {
+   if( LagrDual && apply ) {
+    f_BCfg->clear();
+    f_BCfg->apply( LagrDual );
+    }
+   delete f_BCfg;
+   f_BCfg = nullptr;
+   }
+  }
 
 /*--------------------------------------------------------------------------*/
 
@@ -1034,6 +1098,11 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  std::string ISName;  ///< classname of the inner Solver
 
+ std::string f_BCfg_name;  ///< the filename for the BlockConfig of the LD
+
+ std::string f_BSlvCfg_name;
+ ///< the filename for the BlockSolverConfig of the LD
+ 
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  Index NumVar;      ///< (current) number of variables
@@ -1046,12 +1115,13 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  CDASolver * InnerSolver;   ///< the Solver attached to LagrDual
 
- Configuration * f_LDBConfig;   ///< the Configuration for LagrDual
+ BlockConfig * f_BCfg;      ///< the BlockConfig for LagrDual
+
+ BlockSolverConfig * f_BSlvCfg;   ///< the BlockSolverConfig for LagrDual
+
+ std::vector< UpdateSolver * > v_US;  /// the UpdateSolvers
 
  // dictionaries- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-
-
 
  Index static_cons;  ///< number of static constraints
                      /** Total number of static constraints in the Block: the
