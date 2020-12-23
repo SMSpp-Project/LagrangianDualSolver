@@ -188,9 +188,8 @@ public:
 /*--------------------------------------------------------------------------*/
 /** @name Public Types
  *
- * "Import" basic types from Function and C05Function.
- *
- *  @{ */
+ * "Import" basic types from Block
+ * @{ */
 
  using Index = Block::Index;
  using c_Index = Block::c_Index;
@@ -669,13 +668,86 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// write the "current" solution
+ /** Write the current solution in the Variable of the Block. This is the
+  * solution of the "convexified" problem corresponding to the Lagrangian
+  * Dual, and therefore the *dual* solution of the  Lagrangian Dual itself;
+  * basically, this is the "important linearization" of the LagBFunction.
+  *
+  * Note that it is possible for each sub-Block to only generate "a part" of
+  * the solution in case this is all the user wants and time/memory can be
+  * saved by not dealing with the whole solution. This can be controlled via
+  * the BlockConfiguration of each sub-Block, and therefore via the parameters
+  * of LagrangianDualSolver that allow to set it. As a consequence, \p solc
+  * does not control this aspect.
+  *
+  * However, \p solc can be used to control which of the sub-Block
+  * actually have their solution computed, in case the user is not interested
+  * in them all. If *solc is a SimpleConfiguration< std::vector< int > >,
+  * it is supposed to be the vector of indices of sub-Block whose variable
+  * solution needs be computed (ordered in increasing sense and without
+  * replication); the solution of the i-th sub-Block is computed only if i
+  * is found anywhere in solc->value.
+  *
+  * If solc == nullptr, the variable solution is constructed for all the
+  * sub-Block. */
 
- void get_var_solution( Configuration *solc = nullptr ) override;
+ void get_var_solution( Configuration * solc = nullptr ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// write the "current" dual solution
+ /** Write the current dual solution in the dual values of the RowConstraint
+  * of the Block.
+  *
+  * The dual solution is actually made by different "pieces":
+  *
+  * - the dual solution of the relaxed constraints in the father Block;
+  *
+  * - the dual solution of the constraints inside each individual sub-Block.
+  *
+  * The former is immediately available from the ColVariable of the Lagrangian
+  * Dual, whereas the latter can be written in the sub-Block directly by the
+  * Solver that is used to compute() the LagBFunction, provided this is a
+  * CDASolver; then, if the sub-Block are a R3B copy, they must be map_back-ed
+  * to the original sub-Block.
+  *
+  * The \p solc Configuration controls which of these pieces is written:
+  *
+  * - If \p solc is nullptr, then only the dual solution of the relaxed
+  *   constraints in the father Block is written.
+  *
+  * - If \p solc is not nullptr, then it must be a pointer to a
+  *   SimpleConfiguration< std::vector< Configuration * > >. In this case
+  *   solc[ i ] is passed to get_dual_solution() of the i-th sub-Block,
+  *   irrespectively of the fact that solc[ i ] == nullptr or not. Note that
+  *   this may seem to impose that the dual solution of all the sub-Block is
+  *   written, but this is not necessarily true in that an appropriate
+  *   Configuration passed to get_dual_solution() can be used to encode also
+  *   a "dry run" (actually write nothing). Clearly solc->value.size() must
+  *   be at least equal to the number of sub-Block; in fact it can be
+  *   *strictly larger than that", which is taken to mean that *also* the
+  *   dual solution of the relaxed constraints in the father Block will be
+  *   written. If, instead, solc->value.size() is equal to the number of
+  *   sub-Block, then only the dual solution of the constraints inside the
+  *   individual sub-Block will be written.
+  *
+  * Note that in order to get the dual solution of the constraints inside a
+  * specific sub-Block a CDASolver need be registered there and having been
+  * used to compute() the LagBFunction. If there are no Solver registered to
+  * the sub-Block, or the one that is used to compute() it (the first one)
+  * is not a CDASolver, then the dual solution of the constraints inside that
+  * specific sub-Bloc will not be written, and no warning will be issued.
+  *
+  * Note that if the sub-Block are copies, the dual solution will have to be
+  * map_back-ed to the originals. For this
+  *
+  *     THE SAME Configuration IN solc->value[ i ] WILL BE PASSED TO
+  *     map_back_solution(), AS THIS SHOULD REASONABLY IDENTIFY THE SAME
+  *     SUBSET OF THE DUAL SOLUTION IT DOES IN get_dual_solution().
+  *
+  * In fact, the "solution Configuration" is the same for both variable and
+  * dual solutions. */
 
- void get_dual_solution( Configuration *solc = nullptr ) override;
+ void get_dual_solution( Configuration * solc = nullptr ) override;
 
 /*--------------------------------------------------------------------------*/
 
@@ -948,17 +1020,25 @@ public:
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
- void register_inner_Solver( void );
+ void register_inner_Solver( void ) {
+  if( ! LagrDual )
+   return;
+
+  LagrDual->register_Solver( InnerSolver );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- void unregister_inner_Solver( void );
+ void unregister_inner_Solver( void ) {
+  if( InnerSolver && LagrDual )
+   LagrDual->unregister_Solver( InnerSolver );
+  }
 
 /*--------------------------------------------------------------------------*/
 
- void clear_inner_BlockSolverConfig( bool apply = true ) {
+ void clear_inner_BlockSolverConfig( void ) {
   if( f_BSlvCfg ) {
-   if( LagrDual && apply ) {
+   if( LagrDual ) {
     f_BSlvCfg->clear();
     f_BSlvCfg->apply( LagrDual );
     }
@@ -969,9 +1049,9 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- void clear_inner_BlockConfig( bool apply = true ) {
+ void clear_inner_BlockConfig( void ) {
   if( f_BCfg ) {
-   if( LagrDual && apply ) {
+   if( LagrDual ) {
     f_BCfg->clear();
     f_BCfg->apply( LagrDual );
     }
@@ -979,10 +1059,6 @@ public:
    f_BCfg = nullptr;
    }
   }
-
-/*--------------------------------------------------------------------------*/
-
- void configure_LagrangianDualBlock( void );
 
 /*--------------------------------------------------------------------------*/
  /** Returns the index as active variable of the LagBFunction of the given
@@ -1070,11 +1146,10 @@ FRowConstraint * constraint_with_index( Index i ) {
    auto fb = blck->get_f_Block();
    if( fb == LagrDual ) {
     auto it = std::lower_bound( blck_to_idx.begin() , blck_to_idx.end() ,
-				blck_int_pf( blck , 0 , nullptr ) ,
+				blck_int_pf( blck , 0 ) ,
 				[]( const auto & a , const auto & b ) {
-				 return( std::get< 0 >( a ) <
-					 std::get< 0 >( b ) ); } );
-    return( std::get< 1 >( *it ) );
+				 return( a.first < b.first ); } );
+    return( it->first );
     }
    blck = fb;
    if( ! blck )
@@ -1095,7 +1170,7 @@ FRowConstraint * constraint_with_index( Index i ) {
  // algorthmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  bool iBCopy;         ///< if the R3Block conversion has to be done
-
+ 
  std::string ISName;  ///< classname of the inner Solver
 
  std::string f_BCfg_name;  ///< the filename for the BlockConfig of the LD
@@ -1120,6 +1195,8 @@ FRowConstraint * constraint_with_index( Index i ) {
  BlockSolverConfig * f_BSlvCfg;   ///< the BlockSolverConfig for LagrDual
 
  std::vector< UpdateSolver * > v_US;  /// the UpdateSolvers
+
+ std::vector< LagBFunction * > v_LBF;  /// the LagBFunction
 
  // dictionaries- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1167,17 +1244,14 @@ FRowConstraint * constraint_with_index( Index i ) {
  std::vector< FRowConstraint * > idx_to_dcon;
  ///< From index to dynamic constraint
 
- typedef std::tuple< AbstractBlock * , Index , LagBFunction * > blck_int_pf;
+ typedef std::pair< AbstractBlock * , Index > blck_int;
 
- /** This is a vector of triples that contain the pointer of a sub-Block of
-  * the LagrangianDual, its index into the vector od sub-Block, and the
-  * pointer to the corresponding LagBFunction in the FRealObjective; this is
+ /** This is a vector of pairs that contain the pointer of a sub-Block of
+  * the LagrangianDual and its index into the vector of sub-Block; this is
   * ordered by Block. */
 
- std::vector< blck_int_pf > blck_to_idx;  ///< from Block * to index
+ std::vector< blck_int > blck_to_idx;  ///< from Block * to index
 
-
- 
 /*--------------------------------------------------------------------------*/
 
  const static std::vector< int > dflt_int_par;
