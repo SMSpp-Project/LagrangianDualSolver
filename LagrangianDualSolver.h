@@ -1299,6 +1299,10 @@ FRowConstraint * constraint_with_index( Index i ) {
 
 /*--------------------------------------------------------------------------*/
 
+ void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
+
+/*--------------------------------------------------------------------------*/
+
  void process_outstanding_Modification( void );
 
 /*--------------------------------------------------------------------------*/

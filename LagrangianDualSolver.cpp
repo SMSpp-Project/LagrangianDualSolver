@@ -80,6 +80,8 @@ using v_dual_pair = std::vector< dual_pair >;
 using v_c_dual_pair = const v_dual_pair;
 
 using p_AB = AbstractBlock *;
+using p_FRC = FRowConstraint *;
+using p_FRO = FRealObjective *;
 using p_LF = LinearFunction *;
 using p_LBF = LagBFunction *;
 
@@ -734,7 +736,7 @@ int LagrangianDualSolver::compute( bool changedvars )
  if( ! owned )
   f_Block->unlock( f_id );
  
- return( InnerSolver->compute() );
+ return( InnerSolver->compute( changedvars ) );
 
  }  // end( LagrangianDualSolver::compute )
 
@@ -993,6 +995,10 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
   throw( std::invalid_argument(
 			"LagrangianDualSolver: FRowConstraint not linear" ) );
 
+ if( lf->get_constant_term() != 0 )
+  throw( std::invalid_argument(
+	   "LagrangianDualSolver: nonzero constant term not handled yet" ) );
+ 
  auto & vc = lf->get_v_var();
 
  split.resize( f_nsb );
@@ -1021,10 +1027,11 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
   }
 
  // properly size all split[ h ]; meanwhile, reset the counter
- for( Index h = 0 ; h < f_nsb ; ) {
-  split[ h ].resize( cntr[ h ] );
-  cntr[ h++ ] = 0;
-  }
+ for( Index h = 0 ; h < f_nsb ; ++h )
+  if( cntr[ h ] ) {
+   split[ h ].resize( cntr[ h ] );
+   cntr[ h ] = 0;
+   }
  
  // second pass: construct all split[ h ]
  for( Index i = 0 ; i < vc.size() ; ++i )
@@ -1108,12 +1115,414 @@ void LagrangianDualSolver::guts_of_destructor( void )
 
 /*--------------------------------------------------------------------------*/
 
+void LagrangianDualSolver::flatten_Modification_list( Lst_sp_Mod & vmt ,
+						      sp_Mod mod )
+{
+ if( const auto tmod = std::dynamic_pointer_cast< GroupModification >( mod ) )
+  for( auto submod : tmod->sub_Modifications() )
+   flatten_Modification_list( vmt , submod );
+ else
+  // keep only Modification coming directly from f_Block, i.e., discard all
+  // those coming from the sub-Block
+  if( mod->get_Block() == f_Block )
+   vmt.push_back( mod );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualSolver::process_outstanding_Modification( void )
 {
- // !TODO: to be done
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // 0-th loop: "atomically flatten" v_mod into a temporary list to better
+ // handle it, then clear it; meanwhhile discard all Modification not
+ // coming directly from f_Block (i.e., coming from its sub-Block)
+
+ Lst_sp_Mod v_mod_tmp;
+
+ while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
+  ;  // try to acquire lock, spin on failure
+
+ for( auto mod : v_mod )
+  flatten_Modification_list( v_mod_tmp , mod );
+
+ v_mod.clear();
+
+ f_mod_lock.clear( std::memory_order_release );  // release lock
+
+ if( v_mod_tmp.empty() )  // no Modification coming directly from f_Block
+  return;                 // all done
+
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // 1st loop: only consider addition and deletion of (dynamic) FRowConstraint
+ // Only consider addition and removal of constraints; changes to existing
+ // constrants will be considered in the second loop, so that changes to
+ // constraints that are going to be deleted or changes to added constraints
+ // can be ignored. indeed, constraints will only be added at the end, hence
+ // directly in their current state
+ //
+ // IMPORTANT NOTE: since deleted constraints are kept in the Modification
+ // up until it is processed and destroyed, a deleted Constraint cannot be
+ // found in the added list, and an added Constraint can only be deleted at
+ // most once
+
+ std::set< p_FRC > Dltds;  // set of pointers to deleted constraints
+ std::vector< p_FRC > Addd;
+ // pointers to added constraints in the order they have been added
+ std::set< p_FRC > Addds;  // set of pointers to added constraints
+ std::set< p_FRC > AddDltd;
+ // set of pointers to constraints that have been added and then deleted
+ 
+ bool to_delete;  // should have been defined inside, but there is not
+                  // visible by the lambda
+
+ for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
+      // note the iterator_expression of the for() obtained by defining
+      // a lambda and then immediately applying it to imod
+      [ & to_delete , & v_mod_tmp ]( decltype( imod ) & it ) {
+       if( to_delete )
+	it =  v_mod_tmp.erase( it );
+       else
+	++it;
+       }( imod ) ) {
+  // patiently sift through the possible Modification types to find what mod
+  // exactly is and react accordingly
+
+  // adding new (dynamic) FRowConstraint == (dynamic) Lagrangian variables
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  if( const auto tmod = std::dynamic_pointer_cast<
+                                   BlockModAdd< FRowConstraint > >( *imod ) ) {
+
+   Addd.insert( Addd.end() , mod->added().begin() , mod->added().end() );
+   Addds.insert( mod->added().begin() , mod->added().end() );
+   to_delete = true;
+   continue;
+   }
+
+  // removing new (dynamic) FRowConstraint == (dynamic) Lagrangian variables
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  if( const auto tmod = std::dynamic_pointer_cast<
+                                   BlockModRmv< FRowConstraint > >( *imod ) ) {
+
+   if( Addd.empty() )  // nothing added yet, they can only be original constr
+    Dltds.insert( mod->removed().begin() , mod->removed().end() );
+   else {  // have to check if some was a just added constraints
+    for( auto el : mod->removed() ) {
+     auto sit = Addds.find( el );
+     if( sit == Addds.end() )  // one of the original constraints
+      Dltds.insert( el );      // just mark it as removed
+     else {                    // a previously added constraint
+      AddDltd.insert( el );    // mark it so
+      Addds.erase( sit );      // remove it from the set of added
+      // note: the element is *not* removed from the *vector* of added
+      // ones since this would be a costly operation, this is done only
+      // once at the end
+      }
+     }
+    }
+   
+   to_delete = true;
+   continue;
+   }
+
+  // any other Modification: no nothing, it'll be dealt with later
+  to_delete = false;
+
+  }  // end( first loop )
+
+ // if necessary, adjust the std::vector of added constraints - - - - - - - -
+ if( ( ! Addd.empty() ) && ( ! AddDltd.empty() ) ) {
+  auto Awit = Addd.begin();
+
+  // look up first added-then-deleted constraint
+  while( AddDltd.find( *Awit ) == AddDltd.end() )
+   ++Awit;
+
+  // now copy skipping all the added-then-deleted constraints
+  auto Arit = ++Awit;
+  for( Index cnt = 1 ; cnt < AddDltd.size() ; ++Arit )
+   if( AddDltd.find( *Awit ) == AddDltd.end() )
+    *(Awit++) = *Arit;
+   else
+    ++cnt;
+
+  // finish copying the last part after the last added-then-deleted constraint
+  while( Arit != Addd.end() )
+   *(Awit++) = *(Arit++);
+
+  // consistency check
+  assert( std::distance( Addd.begin() , Awit ) ==
+	  Addd.size() - AddDltd.size() );
+
+  // resize the set of added constraints
+  Addd.resize( std::distance( Addd.begin() , Awit ) );
+  }
+
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // 2nd loop: only consider Modification coming from the LinearFunction
+ // inside the FRowConstraint or from changes of the LHS/RHS of the
+ // FRowConstraint, ignoring any coming from a FRowConstraint that
+ // has been added, deleted or both
+ //
+ // No particular care is taken into trying to bunch the Modification: each
+ // Modification is "immediately reflected" into the LinearFunction inside
+ // the LagBFunction, even if multiple Modification may in principle change
+ // the same LinearFunction. The idea is that the InnerSolver will do this
+ // anyway. The only care that is taken is to bunch all the Modification of
+ // this type to the same LagBFunction into a single GroupModification, so
+ // that the check if it is necessary to check if the Solutions remained
+ // feasible (answer: no, the inner Block is not touched) is only done once
+ //
+ // note that we don't care to remove acted-upon Modification from the list:
+ // everything that remains there at the end of the looop is anyway ignored
+
+ // the chanel opened in each sub-Block (if any)
+ std::vector< Block::ChnlName > chnls( f_nsb , 0 );
+
+ std::set< Index > lrhschgd;
+ // set of indices of (variables corresponding to) changed LHS/RHS
+ Subset nms;  // indices of (variables ...) in the order they have been found
+ LinearFunction::Vec_FunctionValue lrhsval;  // values of new LHS/RHS
+ 
+ for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ; ++imod ) {
+
+  // the LHS/RHS of a FRowConstraint is changed - - - - - - - - - - - - - - -
+  if( auto tmod = std::dynamic_pointer_cast< const RowConstraintMod >
+                                             >( *imod ) ) {
+   auto cnst = static_cast< const p_FRC >( tmod->constraint() );
+   // if the FRowConstraint is deleted or added (or both), do nothing
+   if( ( Dltds.find( cnst ) != Dltds.end() ) ||
+       ( Addds.find( cnst ) != Addds.end() ) ||
+       ( AddDltd.find( cnst ) != AddDltd.end() ) )
+    continue;
+
+   auto pos = index_of_dynamic_constraint( cnst );
+   if( lrhschgd.find( pos ) != lrhschgd.end() )  // changed more than once
+    continue;                                    // done already
+
+   lrhschgd.insert( pos );
+   nms.push_back( pos );
+   RowConstraint::RHSValue lrhs;
+   switch( tmod->type() ) {
+    case( FRowConstraintMod::eChgLHS ):
+     lrhs = cnst->get_lhs();
+     if( lrhs == -INFshift )
+      throw( std::logic_error( "LagrangianDualSolver: changing -INF LHS" ) );
+     break;
+    case( FRowConstraintMod::eChgRHS ):
+     lrhs = cnst->get_rhs();
+     if( lrhs == INFshift )
+      throw( std::logic_error( "LagrangianDualSolver: changing INF RHS" ) );
+     break;
+    case( FRowConstraintMod::eChgBTS ):
+     #indef NDEBUG
+      auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
+      auto lvit = std::next( Ld->begin() , pos - static_cons );
+      if( lvit->is_positive() || lvit->is_negative() )
+       throw( std::logic_error(
+            "LagrangianDualSolver: changing inequality constraint to equality"
+			       ) );
+     #endif
+     lrhs = cnst->get_rhs();
+     break;
+    default:
+     throw( std::logic_error(
+        "LagrangianDualSolver: relaxing/enforcing constraints not handled yet"
+			     ) );
+    }
+
+   lrhsval.push_back( lrhs );
+
+   }  // end( RowConstraintMod )
+
+  // some new coefficients added to the LinearFunction- - - - - - - - - - - -
+  if( auto tmod = std::dynamic_pointer_cast< const C05FunctionModVarsAddd >
+                                             >( *imod ) ) {
+   auto lf = static_cast< const p_LF >( tmod->function() );
+   auto cnst = static_cast< const p_FRC >( lf->get_Observer() );
+   // if the FRowConstraint is deleted or added (or both), do nothing
+   if( ( Dltds.find( cnst ) != Dltds.end() ) ||
+       ( Addds.find( cnst ) != Addds.end() ) ||
+       ( AddDltd.find( cnst ) != AddDltd.end() ) )
+    continue;
+
+   // have to split the added ColVariable among the sub-Block
+   std::vector< v_coeff_pair > split( f_nsb );
+   std::vector< Index > blckidx( tmod->vars().size() );
+   // Block to which the var belongs
+   std::vector< Index > cntr( f_nsb , 0 );
+
+   // first pass: count the size of each split[ h ]; meanwhile save the
+   // Variable-to-sub-Block-index information in blckidx to avoid computing
+   // it twice;
+   for( Index i = 0 ; i < tmod->vars().size() ; ) {
+    auto bi = Block2Index( tmod->vars()[ i ]->get_Block() );
+    blckidx[ i++ ] = bi;
+    ++cntr[ bi ];
+    }
+
+   // properly size all split[ h ]; meanwhile, reset the counter
+   for( Index h = 0 ; h < f_nsb ; ++h )
+    if( cntr[ h ] ) {
+     split[ h ].resize( cntr[ h ] );
+     cntr[ h ] = 0;
+     }
+
+   // second pass: construct all split[ h ]
+   for( Index i = 0 ; i < tmod->vars().size() ; ++i )
+    split[ blckidx[ i ] ][ cntr[ blckidx[ i ]++ ] ] =
+     coeff_pair( tmod->vars()[ i ] ,
+		 lf->get_coefficient( lf->is_active( tmod->vars()[ i ] ) )
+		 );
+
+   // now call add_variables() for all the appropriate LinearFunction
+   auto pos = index_of_dynamic_constraint( cnst );
+   for( Index h = 0 ; h < f_nsb ; ++h ) {
+    if( ! cntr[ h ] )
+     continue;
+
+    if( ! chnls[ h ] )
+     chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
+
+    static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos )
+			 )->add_variables( std::move( split[ h ] ) ,
+					   Observer::make_par( eModBlck ,
+							       chnls[ h ] ) );
+    }
+   }  // end( C05FunctionModVarsAddd )
+
+  // some coefficients removed from the LinearFunction- - - - - - - - - - - -
+  // we capture any FunctionModVars; since the C05FunctionModVarsAddd have
+  // been captured yet, all that remains are the C05FunctionModVarsRngd and
+  // C05FunctionModVarsSbst, that we don't need to distinguish
+  if( auto tmod = std::dynamic_pointer_cast< const FunctionModVars >
+                                             >( *imod ) ) {
+   auto lf = static_cast< const p_LF >( tmod->function() );
+   auto cnst = static_cast< const p_FRC >( lf->get_Observer() );
+   // if the FRowConstraint is deleted or added (or both), do nothing
+   if( ( Dltds.find( cnst ) != Dltds.end() ) ||
+       ( Addds.find( cnst ) != Addds.end() ) ||
+       ( AddDltd.find( cnst ) != AddDltd.end() ) )
+    continue;
+
+   // have to split the removed ColVariable among the sub-Block
+   std::vector< Subset > split( f_nsb );
+   std::vector< Index > blckidx( tmod->vars().size() );
+   // Block to which the var belongs
+   std::vector< Index > cntr( f_nsb , 0 );
+
+   // first pass: count the size of each split[ h ]; meanwhile save the
+   // Variable-to-sub-Block-index information in blckidx to avoid computing
+   // it twice;
+   for( Index i = 0 ; i < tmod->vars().size() ; ) {
+    auto bi = Block2Index( tmod->vars()[ i ]->get_Block() );
+    blckidx[ i++ ] = bi;
+    ++cntr[ bi ];
+    }
+
+   // properly size all split[ h ]; meanwhile, reset the counter
+   for( Index h = 0 ; h < f_nsb ; ++h )
+    if( cntr[ h ] ) {
+     split[ h ].resize( cntr[ h ] );
+     cntr[ h ] = 0;
+     }
+
+   // second pass: construct all split[ h ]
+   for( Index i = 0 ; i < tmod->vars().size() ; ++i )
+    split[ blckidx[ i ] ][ cntr[ blckidx[ i ]++ ] ] =
+     lf->is_active( tmod->vars()[ i ] );
+
+   // now call remove_variables() for all the appropriate LinearFunction
+   auto pos = index_of_dynamic_constraint( cnst );
+   for( Index h = 0 ; h < f_nsb ; ++h ) {
+    if( cntr[ h ] )
+     continue;
+
+    if( ! chnls[ h ] )
+     chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
+
+    static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos )
+			 )->remove_variables( std::move( split[ h ] ) , false ,
+					      Observer::make_par( eModBlck ,
+								  chnls[ h ] )
+					      );
+    }
+   }  // end( FunctionModVars )
+
+  // if it's anything else, ignore it - - - - - - - - - - - - - - - - - - - -
+
+  }  // end( 2nd loop )
+
+ // close any channel that has actually been opened - - - - - - - - - - - - -
+ for( Index h = 0 ; h < f_nsb ; ++h )
+  if( chnls[ h ] )
+   LagrDual->get_nested_Block( h )->close_channel( chnls[ h ] );
+
+ // if any LHS/RHS has changed, do the change in the Objective of LagrDual
+ // note that nms is not ordered
+ if( ! lrhschgd.empty() )
+  static_cast< p_LF >( static_cast< p_FRO >( LagrDual->get_objective()
+					     )->get_function()
+		       )->modify_coefficients( std::move( lrhsvar ) ,
+					       std::move( nms ) , false );
+
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // now actually remove all Lagrangian variables from all the LagBFunction
+ // and the LinearFunction: ensure that all the corresponding Modification
+ // are bunched into a unique GroupModification of the LagrDual
+
+ 
+ if( ! Dltds.empty() ) {
+  // construct the ordered set of deleted (* to) constraint; it is naturally
+  // ordered since it is estracted from a set
+  std::vector< p_FRC > Dltd( Dltds.size() );
+  std::copy( Dltds.begin() , Dltds.end() , Dltd.begin() );
+
+  Subset Dltdn( Dltds.size() );  // set of indices of deleted constraint
+  auto Dnit = Dltdn.begin();
+  for( auto el : Dltd )
+   *(Dnit++) = index_of_dynamic_constraint( el );
+
+  std::sort( Dltdn.begin() , Dltdn.end() );
+  
+  // open a channel where to bunch all the removal Modifications
+  auto chnl = LagrDual->open_channel();
+  auto mp = Observer::make_par( eModBlck , chnl );
+
+  // remove the variables in the LagBFunction (copy the names)
+  for( Index h = 0 ; h < f_nsb ; )
+   v_LBF[ h++ ]->remove_variables( Subset( Dltdn ) , true , mp );
+
+  // remove the variables in the Objective (give away the names)
+  static_cast< p_LF >( static_cast< p_FRO >( LagrDual->get_objective()
+					     )->get_function()
+		       )->remove_variables( std::move( Dltdn ) , true , mp );
+
+  // close the cannel
+  LagrDual->close_channel( chnl );
+
+  // now adjust the dictionaries
+
+  
+  }
 
 
-}  // end( LagrangianDualSolver::process_outstanding_Modification )
+ std::vector< FRowConstraint * > Addd;
+ // pointers to added constraints in the order they have been added
+ std::set< FRowConstraint * > Addds;  // set of pointers to added constraints
+
+
+  
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // now actually add all Lagrangian variables to all the LagBFunction and
+ // the LinearFunction: ensure that all the corresponding Modification are
+ // bunched into a unique GroupModification of the LagrDual
+
+ // an now, finally, all is done- - - - - - - - - - - - - - - - - - - - - - -
+  
+ }  // end( LagrangianDualSolver::process_outstanding_Modification )
 
 /*--------------------------------------------------------------------------*/
 /*------------------- End File LagrangianDualSolver.cpp --------------------*/
