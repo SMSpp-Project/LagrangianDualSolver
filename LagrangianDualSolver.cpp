@@ -109,31 +109,6 @@ static constexpr cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-template< class T >
-static void Compact( std::vector< T > & g , Block::c_Subset & B )
-{
- // takes a "dense" n-vector g and "compacts" it deleting the elements whose
- // indices are in B; all elements of B must be in the range 0 .. n, B must
- // be ordered in increasing sense
- // the remaining entries in g are shifted left of the minimum possible
- // amount in order to fill the holes left by the deleted ones
- // g is *not* resized in here
-
- auto Bit = B.begin();
- auto i = *(Bit++);
- auto git = g.begin() + (i++);
-
- for( ; Bit != B.end() ; ++i ) {
-  auto h = *(Bit++);
-  while( i < h )
-   *(git++) = g[ i++ ];
-  }
-
- std::copy( g.begin() + i , g.end() , git );
-
- }  // end( Compact )
-
-
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -159,7 +134,7 @@ const std::vector< std::string > LagrangianDualSolver::dbl_pars_str = {
 // define and initialize here the vector of string parameters names
 
 const std::vector< std::string > LagrangianDualSolver::str_pars_str = {
- "str_LDSlv_ISName"
+ "str_LDSlv_ISName" , "str_LDBlck_BCfg" , "str_LDBlck_BSlvCfg"
  };
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -1682,15 +1657,16 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 					       )->get_function()
 			 )->remove_variables( rng , mp );
 
+    // shift range so that it is in [ 0 , n. dynamic cnstraints )
     rng.first -= static_cons;
     rng.second -= static_cons;
 
-    // now actually remove the dynamic variable
-    LagrDual->remove_dynamic_variable( *Ld , rng );    
-
-    // now adjust the index to dynamic constraint dictionary
+    // adjust the index to dynamic constraint dictionary
     std::copy( idx_to_dcon.begin() + rng.second , idx_to_dcon.end() ,
 	       idx_to_dcon.begin() + rng.first );
+
+    // now actually remove the dynamic variable
+    LagrDual->remove_dynamic_variable( *Ld , rng );
     }
    else {  // it was a generic subset
     // remove the variables in the LagBFunction (copy the names)
@@ -1702,10 +1678,17 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 					       )->get_function()
 			 )->remove_variables( std::move( Dltdn ) , true , mp );
 
-    // now adjust the index to dynamic constraint dictionary
+    // adjust the index to dynamic constraint dictionary
+    // shift names so that they are in [ 0 , n. dynamic cnstraints )
     for( auto & el : Dltdn )
      el -= static_cons;
-    Compact( idx_to_dcon , Dltdn );
+
+    // nullptr-mark the element to delete
+    for( auto & el : Dltdn )
+     idx_to_dcon[ el ] = nullptr;
+
+    // now remove() them
+    std::remove( idx_to_dcon , nullptr );
 
     // now actually remove the dynamic variable
     LagrDual->remove_dynamic_variable( *Ld , std::move( Dltdn ) );
@@ -1716,14 +1699,13 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    Index nl = NumVar - i;
    idx_to_dcon.resize( nl );
 
-   // now adjust the dynamic constraint to index dictionary; rather, rebuild
-   // it from scratch because the alternative is too complex and not worth
-   dcon_to_dcon.resize( nl );
-   auto dc2iit = dcon_to_idx.begin();
-   for( const auto & el : f_Block->get_dynamic_constraints() )
-    un_any_const_dynamic( el , [ & ]( FRowConstraint & con ) -> void {
-                                *(dc2iit++) = std::make_pair( & con , i++ );
-                                } , un_any_type< FRowConstraint >() );
+   // now adjust the dynamic constraint to index dictionary, that is,
+   // rebuid it based on the index to constraint one and re-sort it
+   dcon_to_idx.resize( nl );
+   for( Index j = 0 ; j < nl ; ++j )
+    dcon_to_idx[ j ] = std::pair( idx_to_dcon[ j ] , i++ );
+
+   std::sort( dcon_to_idx.begin() , dcon_to_idx.end() );
 
    }  // end( multiple constraints )
   
