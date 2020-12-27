@@ -211,7 +211,9 @@ public:
 
  int_LDSlv_iBCopy = intLastParCDAS ,
  ///< if the R3Block has be used for the father block
-
+ 
+ int_LDSlv_NNMult ,  ///< if Lagrangian multipliers are all >= 0
+ 
  intLastLDSSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of int algorithmic parameters. */
@@ -267,7 +269,8 @@ public:
  {
   // ensure all parameters are properly given their default value
   iBCopy  = dflt_int_par[ int_LDSlv_iBCopy - intLastParCDAS ];
-  ISName  = dflt_str_par[ str_LDSlv_ISName - intLastParCDAS ];
+  NNMult  = dflt_int_par[ int_LDSlv_NNMult - intLastParCDAS ];
+  ISName  = dflt_str_par[ str_LDSlv_ISName - strLastParCDAS ];
 
   // ensure that the inner Solver is always well defined
   InnerSolver = new_Solver( ISName );
@@ -293,7 +296,18 @@ public:
  /// set the int paramaters of LagrangianDualSolver / the inner Solver
  /** Set the int paramaters specific of LagrangianDualSolver, and allow to
   * directly set those of the inner Solver used to solve the Lagrangian Dual;
-  * see the comments to set_ComputeConfig() for details. */
+  * see the comments to set_ComputeConfig() for details.
+  *
+  * The parameters handled here are:
+  *
+  * - int_LDSlv_iBCopy [0]: true (nonzero) if the inner Block of (B) will be
+  *   copied (via R3B) when the Lagrangian Dual is created, false (zero) if
+  *   they will be moved
+  *
+  * - int_LDSlv_NNMult [1]: true (nonzero) if the Lagrangian multipliers of
+  *   inequality constraints are all constructed as to be non-negative in the
+  *   inner Solver and then changed sign, if necessary, when the dual solution
+  *   is written in the Block */
 
  void set_par( idx_type par , int value ) override;
 
@@ -1159,6 +1173,33 @@ FRowConstraint * constraint_with_index( Index i ) {
   }
 
 /*--------------------------------------------------------------------------*/
+/* If NNMult == true, the Lagrangian multipliers of inequality constraints
+ * are all constructed as to be non-negative. This means that:
+ *
+ * - for a maximization original problem (f_convex == true) a <= constraint
+ *   is passed as it is in the Lagrangian term, while a >= need be changed
+ *   sign (both all the coefficients and the RHS/LHS)
+ *
+ * - for a minimization original problem (f_convex == false) a >= constraint
+ *   is passed as it is in the Lagrangian term, while a <= need be changed
+ *   sign (both all the coefficients and the RHS/LHS) */
+
+ bool to_be_reversed( const FRowConstraint & con ) {
+  if( f_convex && ( con.get_rhs() == Inf< RowConstraint::RHSValue >() ) )
+   return( true );
+
+  if( ( ! f_convex ) &&
+      ( con.get_lhs() == -Inf< RowConstraint::RHSValue >() ) )
+   return( true );
+
+  return( false );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+ RowConstraint::RHSValue constr2val( const FRowConstraint & con );
+
+/*--------------------------------------------------------------------------*/
 
  void split_constraint( const FRowConstraint & con ,
 			std::vector< LinearFunction::v_coeff_pair > & split );
@@ -1169,7 +1210,9 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  // algorthmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- bool iBCopy;         ///< if the R3Block conversion has to be done
+ bool iBCopy;         ///< true if the R3Block conversion has to be done
+
+ bool NNMult;         ///< true if Lagrangian multipliers are all >= 0
  
  std::string ISName;  ///< classname of the inner Solver
 

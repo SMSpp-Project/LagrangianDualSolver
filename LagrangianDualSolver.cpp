@@ -109,6 +109,31 @@ static constexpr cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+template< class T >
+static void Compact( std::vector< T > & g , Block::c_Subset & B )
+{
+ // takes a "dense" n-vector g and "compacts" it deleting the elements whose
+ // indices are in B; all elements of B must be in the range 0 .. n, B must
+ // be ordered in increasing sense
+ // the remaining entries in g are shifted left of the minimum possible
+ // amount in order to fill the holes left by the deleted ones
+ // g is *not* resized in here
+
+ auto Bit = B.begin();
+ auto i = *(Bit++);
+ auto git = g.begin() + (i++);
+
+ for( ; Bit != B.end() ; ++i ) {
+  auto h = *(Bit++);
+  while( i < h )
+   *(git++) = g[ i++ ];
+  }
+
+ std::copy( g.begin() + i , g.end() , git );
+
+ }  // end( Compact )
+
+
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -121,7 +146,7 @@ SMSpp_insert_in_factory_cpp_0( LagrangianDualSolver );
 // define and initialize here the vector of int parameters names
 
 const std::vector< std::string > LagrangianDualSolver::int_pars_str = {
- "int_LDSlv_iBCopy" ,
+ "int_LDSlv_iBCopy" , "int_LDSlv_NNMult"
  };
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -142,7 +167,8 @@ const std::vector< std::string > LagrangianDualSolver::str_pars_str = {
 
 const std::map< std::string , LagrangianDualSolver::idx_type >
  LagrangianDualSolver::int_pars_map = {
- { "int_LDSlv_iBCopy" , LagrangianDualSolver::int_LDSlv_iBCopy  } ,
+ { "int_LDSlv_iBCopy" , LagrangianDualSolver::int_LDSlv_iBCopy } ,
+ { "int_LDSlv_NNMult" , LagrangianDualSolver::int_LDSlv_NNMult }
  };
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -167,6 +193,7 @@ const std::map< std::string , LagrangianDualSolver::idx_type >
 
 const std::vector< int > LagrangianDualSolver::dflt_int_par = {
  0  // int_LDSlv_iBCopy
+ 1  // int_LDSlv_NNMult
  };
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -397,20 +424,12 @@ void LagrangianDualSolver::set_Block( Block * block )
  LagrDual->add_static_variable( *Ls , "Lambda_s" );
  LagrDual->add_dynamic_variable( *Ld , "Lambda_d" );
 
- // create the Objective of the Lagrangian Dual - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- auto lf = new LinearFunction;
- auto obj = new FRealObjective( LagrDual , lf );
- obj->set_sense( f_convex ? Objective::eMin : Objective::eMax , eNoMod );
- LagrDual->set_objective( obj , eNoMod );
- v_coeff_pair objcf( NumVar );
- 
  // scan all FRowConstraints- - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // meanwhile construct the linear objective function
 
- auto objit = objcf.begin();
+ v_coeff_pair objcf( NumVar );
+  auto objit = objcf.begin();
 
  // construct the auxiliary data structure to hold the Lagrangian terms;
  // LagTerms[ i ][ h ] contains the v_coeff_pair corresponding to the
@@ -432,33 +451,15 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || con.is_relaxed() ) {
     // this constraint is eiter "infinitely loose" or relaxed: its rhs is
     // 0 and the Lagrangian term is empty
-    *(objit++) = std::make_pair( *(Lit++) , 0 );
+    *(objit++) = std::make_pair( & *(Lit++) , 0 );
     ++LTit;
     return;
     }
 
-   if( ( lhs > -INFshift ) && ( rhs < INFshift ) && ( lhs != rhs ) )
-    throw( std::invalid_argument(
-     "LagrangianDualSolver: ranged static constraints not supported yet" ) );
-
-   // define the sign constraints on the multiplier (if any)
-   if( f_convex ) {  // for a max problem
-    if( lhs == -INFshift )                // a <= constraint 
-     Lit->is_positive( true , eNoMod );   // ==> a >= multiplier
-    else
-     if( rhs == INFshift )                // a >= constraint 
-      Lit->is_negative( true , eNoMod );  // ==> a <= multiplier     
-    }
-   else {            // for a min problem
-    if( lhs == -INFshift )                // a <= constraint 
-     Lit->is_negative( true , eNoMod );   // ==> a <= multiplier
-    else
-     if( con_rhs == INFshift )            // a >= constraint 
-      Lit->is_positive( true , eNoMod );  // ==> a >= multiplier
-    }
+   auto coef = constr2val( con , & (*Lit) );
 
    // write the coefficient in the objective
-   *(objit++) = std::make_pair( *(Lit++) , rhs == INFshift ? lhs : rhs );
+   *(objit++) = std::make_pair( & *(Lit++) , coef );
 
    // split the linear constraint among the sub-Block
    split_constraint( con , *(LTit++) );
@@ -484,7 +485,7 @@ void LagrangianDualSolver::set_Block( Block * block )
 
   // define a lambda that does the job
   auto scan = [ & ]( FRowConstraint & con ) -> void {
-   // first write the dictonaries
+   // first write the dictionaries
    *(dc2iit++) = std::make_pair( & con , i++ );
    *(i2dcit++) = & con;
 
@@ -495,33 +496,15 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || con.is_relaxed() ) {
     // this constraint is eiter "infinitely loose" or relaxed: its rhs is
     // 0 and the Lagrangian term is empty
-    *(objit++) = std::make_pair( *(Lit++) , 0 );
+    *(objit++) = std::make_pair( & *(Lit++) , 0 );
     ++LTit;
     return;
     }
 
-   if( ( lhs > -INFshift ) && ( rhs < INFshift ) && ( lhs != rhs ) )
-    throw( std::invalid_argument(
-    "LagrangianDualSolver: ranged dynamic constraints not supported yet" ) );
-
-   // define the sign constraints on the multiplier (if any)
-   if( f_convex ) {  // for a max problem
-    if( lhs == -INFshift )                // a <= constraint 
-     Lit->is_positive( true , eNoMod );   // ==> a >= multiplier
-    else
-     if( rhs == INFshift )                // a >= constraint 
-      Lit->is_negative( true , eNoMod );  // ==> a <= multiplier     
-    }
-   else {            // for a min problem
-    if( lhs == -INFshift )                // a <= constraint 
-     Lit->is_negative( true , eNoMod );   // ==> a <= multiplier
-    else
-     if( rhs == INFshift )                // a >= constraint 
-      Lit->is_positive( true , eNoMod );  // ==> a >= multiplier
-    }
+   auto coef = constr2val( con , & (*Lit) );
 
    // write the coefficient in the objective
-   *(objit++) = std::make_pair( *(Lit++) , rhs == INFshift ? lhs : rhs );
+   *(objit++) = std::make_pair( & *(Lit++) , coef );
 
    // split the linear constraint among the sub-Block
    split_constraint( con , *(LTit++) );
@@ -545,6 +528,14 @@ void LagrangianDualSolver::set_Block( Block * block )
  if( ! owned )
   f_Block->unlock( f_id );
 
+ // create the Objective of the Lagrangian Dual - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ auto obj = new FRealObjective( LagrDual ,
+				new LinearFunction( std::move( objcf ) ) );
+ obj->set_sense( f_convex ? Objective::eMin : Objective::eMax , eNoMod );
+ LagrDual->set_objective( obj , eNoMod );
+
  // pass the Lagrangian terms to the corresponding LagBFunction - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -563,10 +554,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
    }
 
-  auto SBi = static_cast< p_AB >( LagrDual->get_nested_Block( h ) );
-  auto LBF = static_cast< p_LBF >(
-		  SBi->get_objective< FRealObjective >()->get_function() );
-  LBF->set_dual_pairs( std::move( lp ) );
+  v_LBF[ h ]->set_dual_pairs( std::move( dp ) );
   }
 
  // configure the LagrDual Solver- - - - - - - - - - - - - - - - - - - - - - -
@@ -615,7 +603,14 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
 {
  switch( par ) {
   case( int_LDSlv_iBCopy ):
+   if( LagrDual )
+    throw( std::logic_error( "changing iBCopy with registered Block" ) );
    iBCopy = bool( value );
+   break;
+  case( int_LDSlv_NNMult ):
+   if( LagrDual )
+    throw( std::logic_error( "changing NNMult with registered Block" ) );
+   NNMult = bool( value );
    break;
   default:
    InnerSolver->set_par(  int_par_lds( par ) , value );
@@ -877,6 +872,7 @@ int LagrangianDualSolver::get_int_par( idx_type par ) const
 {
  switch( par ) {
   case( int_LDSlv_iBCopy ): return( iBCopy );
+  case( int_LDSlv_NNMult ): return( NNMult );
   }
 
  return( InnerSolver->get_int_par( int_par_lds( par ) ) );
@@ -987,6 +983,53 @@ FRowConstraint * LagrangianDualSolver::static_constraint_with_index( Index i )
 
 /*--------------------------------------------------------------------------*/
 
+RowConstraint::RHSValue LagrangianDualSolver:constr2val(
+			     const FRowConstraint & con , ColVariable & lvar )
+{
+ auto lhs = con.get_lhs();
+ auto rhs = con.get_rhs();
+
+ if( NNMult ) {
+  if( lhs < rhs ) {                    // an inequality constraint
+   lvar.is_positive( true , eNoMod );  // a >= multiplier
+   if( rhs == INFshift )
+    return( f_convex ? - lhs : lhs );
+
+   if( lhs == -INFshift )
+    return( f_convex ? rhs : - rhs );
+
+   throw( std::invalid_argument(
+    "LagrangianDualSolver: ranged dynamic constraints not supported yet" ) );
+   }
+
+  return( rhs );
+  }
+
+ // define the sign constraints on the multiplier (if any)
+ if( f_convex ) {  // for a max problem
+  if( rhs == INFshift ) {                // a >= constraint 
+   lvar.is_negative( true , eNoMod );    // ==> a <= multiplier     
+   return( lhs );
+   }
+
+  if( lhs == -INFshift )                // a <= constraint 
+   lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
+  }
+ else {            // for a min problem
+  if( rhs == INFshift ) {               // a >= constraint 
+   lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
+   return( lhs );
+   }
+
+  if( lhs == -INFshift )                // a <= constraint 
+   lvar.is_negative( true , eNoMod );   // ==> a <= multiplier
+  }
+
+ return( rhs );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
 			 std::vector< LinearFunction::v_coeff_pair > & split )
 {
@@ -1005,6 +1048,10 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
 
  if( f_nsb == 1 ) {    // easy case: only one sub-Block, nothing to split
   split.front() = vc;
+  if( NNMult && to_be_reversed( con ) )
+   for( auto & el : split.front() )
+    el.second = - el.second;
+
   return;
   }
 
@@ -1035,7 +1082,13 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
  
  // second pass: construct all split[ h ]
  for( Index i = 0 ; i < vc.size() ; ++i )
-  split[ blckidx[ i ] ][ cntr[ blckidx[ i ]++ ] ] = vc[ i ];
+  split[ blckidx[ i ] ][ cntr[ blckidx[ i ] ]++ ] = vc[ i ];
+
+  // if necessary change the sign
+  if( NNMult && to_be_reversed( con ) )
+  for( auto & el : split )
+   for( auto & lel : el )
+    lel.second = - lel.second;
 
  }  // end( LagrangianDualSolver::split_constraint )
 
@@ -1331,6 +1384,8 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 			     ) );
     }
 
+   if( NNMult && to_be_reversed( *cnst ) )
+    lrhs = - lrhs;
    lrhsval.push_back( lrhs );
 
    }  // end( RowConstraintMod )
@@ -1370,10 +1425,16 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 
    // second pass: construct all split[ h ]
    for( Index i = 0 ; i < tmod->vars().size() ; ++i )
-    split[ blckidx[ i ] ][ cntr[ blckidx[ i ]++ ] ] =
+    split[ blckidx[ i ] ][ cntr[ blckidx[ i ] ]++ ] =
      coeff_pair( tmod->vars()[ i ] ,
 		 lf->get_coefficient( lf->is_active( tmod->vars()[ i ] ) )
 		 );
+
+   // if necessary change the sign
+   if( NNMult && to_be_reversed( con ) )
+    for( auto & el : split )
+     for( auto & lel : el )
+      lel.second = - lel.second;
 
    // now call add_variables() for all the appropriate LinearFunction
    auto pos = index_of_dynamic_constraint( cnst );
@@ -1428,14 +1489,17 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
      }
 
    // second pass: construct all split[ h ]
-   for( Index i = 0 ; i < tmod->vars().size() ; ++i )
-    split[ blckidx[ i ] ][ cntr[ blckidx[ i ]++ ] ] =
-     lf->is_active( tmod->vars()[ i ] );
+   auto pos = index_of_dynamic_constraint( cnst );
+   for( Index i = 0 ; i < tmod->vars().size() ; ++i ) {
+    auto bidx = blckidx[ i ];
+    split[ bidx ][ cntr[ bidx ]++ ] =
+     static_cast< p_LF >( v_LBF[ bidx ]->get_Lagrangian_term( pos )
+			  )->is_active( tmod->vars()[ i ] );
+    }
 
    // now call remove_variables() for all the appropriate LinearFunction
-   auto pos = index_of_dynamic_constraint( cnst );
    for( Index h = 0 ; h < f_nsb ; ++h ) {
-    if( cntr[ h ] )
+    if( ! cntr[ h ] )
      continue;
 
     if( ! chnls[ h ] )
@@ -1448,6 +1512,76 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 					      );
     }
    }  // end( FunctionModVars )
+
+  // some coefficients changed in the LinearFunction- - - - - - - - - - - - -
+  if( auto tmod = std::dynamic_pointer_cast< const C05FunctionModLin >
+                                             >( *imod ) ) {
+   auto lf = static_cast< const p_LF >( tmod->function() );
+   auto cnst = static_cast< const p_FRC >( lf->get_Observer() );
+   // if the FRowConstraint is deleted or added (or both), do nothing
+   if( ( Dltds.find( cnst ) != Dltds.end() ) ||
+       ( Addds.find( cnst ) != Addds.end() ) ||
+       ( AddDltd.find( cnst ) != AddDltd.end() ) )
+    continue;
+
+   // have to split the changed ColVariable among the sub-Block
+   std::vector< Subset > split( f_nsb );
+   std::vector< Function::Vec_FunctionValue > delta( f_nsb );
+   std::vector< Index > blckidx( tmod->vars().size() );
+   // Block to which the var belongs
+   std::vector< Index > cntr( f_nsb , 0 );
+
+   // first pass: count the size of each split[ h ]; meanwhile save the
+   // Variable-to-sub-Block-index information in blckidx to avoid computing
+   // it twice;
+   for( Index i = 0 ; i < tmod->vars().size() ; ) {
+    auto bi = Block2Index( tmod->vars()[ i ]->get_Block() );
+    blckidx[ i++ ] = bi;
+    ++cntr[ bi ];
+    }
+
+   // properly size all split[ h ] and delta[ h ]; meanwhile, reset the counter
+   for( Index h = 0 ; h < f_nsb ; ++h )
+    if( cntr[ h ] ) {
+     split[ h ].resize( cntr[ h ] );
+     cntr[ h ] = 0;
+     }
+
+   // second pass: construct all split[ h ] and delta[ h ]
+   auto pos = index_of_dynamic_constraint( cnst );
+   for( Index i = 0 ; i < tmod->vars().size() ; ++i ) {
+    auto bidx = blckidx[ i ];
+    auto cntr = cntr[ bidx ]++;
+    split[ bidx ][ cntr ] =
+     static_cast< p_LF >( v_LBF[ bidx ]->get_Lagrangian_term( pos )
+			  )->is_active( tmod->vars()[ i ] );
+    delta[ bidx ][ cntr ] = tmod->delta()[ i ];
+    }
+
+   // if necessary change the sign
+   if( NNMult && to_be_reversed( con ) )
+    for( auto & el : delta )
+     for( auto & lel : el )
+      lel = - lel;
+
+   // now call modify_coefficients() for all the appropriate LinearFunction
+   for( Index h = 0 ; h < f_nsb ; ++h ) {
+    if( ! cntr[ h ] )
+     continue;
+
+    if( ! chnls[ h ] )
+     chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
+
+    auto lfh = static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos ) );
+    auto & vcp = lfh->get_v_var();
+    for( Index i = 0 ; i < cntr[ h ] ; ++i )
+     delta[ h ][ i ] += vcp[ split[ h ][ i ] ].second;
+
+    lfh->modify_coefficients( std::move( delta[ h ] ) ,
+			      std::move( split[ h ] ) , false ,
+			      Observer::make_par( eModBlck , chnls[ h ] ) );
+    }
+   }  // end( C05FunctionModLin )
 
   // if it's anything else, ignore it - - - - - - - - - - - - - - - - - - - -
 
@@ -1472,53 +1606,213 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
  // and the LinearFunction: ensure that all the corresponding Modification
  // are bunched into a unique GroupModification of the LagrDual
 
- 
  if( ! Dltds.empty() ) {
-  // construct the ordered set of deleted (* to) constraint; it is naturally
-  // ordered since it is estracted from a set
-  std::vector< p_FRC > Dltd( Dltds.size() );
-  std::copy( Dltds.begin() , Dltds.end() , Dltd.begin() );
-
-  Subset Dltdn( Dltds.size() );  // set of indices of deleted constraint
-  auto Dnit = Dltdn.begin();
-  for( auto el : Dltd )
-   *(Dnit++) = index_of_dynamic_constraint( el );
-
-  std::sort( Dltdn.begin() , Dltdn.end() );
-  
   // open a channel where to bunch all the removal Modifications
-  auto chnl = LagrDual->open_channel();
-  auto mp = Observer::make_par( eModBlck , chnl );
+  const auto chnl = LagrDual->open_channel();
+  const auto mp = Observer::make_par( eModBlck , chnl );
 
-  // remove the variables in the LagBFunction (copy the names)
-  for( Index h = 0 ; h < f_nsb ; )
-   v_LBF[ h++ ]->remove_variables( Subset( Dltdn ) , true , mp );
+  // the list from which the variable have to be removed
+  auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
 
-  // remove the variables in the Objective (give away the names)
-  static_cast< p_LF >( static_cast< p_FRO >( LagrDual->get_objective()
-					     )->get_function()
-		       )->remove_variables( std::move( Dltdn ) , true , mp );
+  if( Dltds.size() == 1 ) {  // just one constraint
+   auto cnst = *(Dltds.begin());
+   Index i = Index_of_dynamic_constraint( cnst );
 
-  // close the cannel
-  LagrDual->close_channel( chnl );
+   // remove the variable in the LagBFunction
+   for( Index h = 0 ; h < f_nsb ; )
+    v_LBF[ h++ ]->remove_variable( i , mp );
 
-  // now adjust the dictionaries
+   // remove the variable in the Objective
+   static_cast< p_LF >( static_cast< p_FRO >( LagrDual->get_objective()
+					      )->get_function()
+			)->remove_variable( i , mp );
 
+   // now actually remove the dynamic variable
+   LagrDual->remove_dynamic_variable( *Ld , std::next( Ld->begin() ,
+						       i - static_cons ) );    
+   // now adjust the dictionaries
+   --NumVar;
+
+   // index to dynamic constraint
+   auto i2dit = idx_to_dcon.begin() + i - static_cons;
+   std::copy( i2dit + 1 , idx_to_dcon.end() , i2dit );
+   idx_to_dcon.resize( idx_to_dcon.size() - 1 );
+
+   // dynamic constraint to index
+   auto d2iit = std::lower_bound( dcon_to_idx.begin() , dcon_to_idx.end() ,
+				  std::make_pair( cnst , 0 ) ,
+				  []( auto & p1 , auto & p2 ) {
+				   return( p1.first < p2.first );
+				   } );
+   std::copy( d2iit + 1 , dcon_to_idx.begin().end() , d2iit );
+   dcon_to_idx.begin().resize( dcon_to_idx.begin().size() - 1 );
+   for( auto & el : dcon_to_idx )
+    if( el.second > i )
+     --el.second;
+   }
+  else {  // multiple constraints
+   Subset Dltdn( Dltds.size() );  // set of indices of deleted constraint
+   auto Dnit = Dltdn.begin();
+   for( auto el : Dltd )
+    *(Dnit++) = index_of_dynamic_constraint( el );
+
+   std::sort( Dltdn.begin() , Dltdn.end() );
+
+   // check if it actually was a range
+   bool isrange = true;
+   for( auto Dnit = Dltdn.begin() ;  ; ) {
+    auto tit = Dnit++;
+    if( Dnit == Dltdn.end() )
+     break;
+    if( *Dnit != (*tit) + 1 ) {
+     isrange = false;
+     break;
+     }
+    }
+
+   if( isrange ) {  // it actually was a range
+    auto rng = Range( Dltdn.front() , Dltdn.back() );
+
+    // remove the variables in the LagBFunction
+    for( Index h = 0 ; h < f_nsb ; )
+     v_LBF[ h++ ]->remove_variables( rng , mp );
+
+    // remove the variables in the Objective
+    static_cast< p_LF >( static_cast< p_FRO >( LagrDual->get_objective()
+					       )->get_function()
+			 )->remove_variables( rng , mp );
+
+    rng.first -= static_cons;
+    rng.second -= static_cons;
+
+    // now actually remove the dynamic variable
+    LagrDual->remove_dynamic_variable( *Ld , rng );    
+
+    // now adjust the index to dynamic constraint dictionary
+    std::copy( idx_to_dcon.begin() + rng.second , idx_to_dcon.end() ,
+	       idx_to_dcon.begin() + rng.first );
+    }
+   else {  // it was a generic subset
+    // remove the variables in the LagBFunction (copy the names)
+    for( Index h = 0 ; h < f_nsb ; )
+     v_LBF[ h++ ]->remove_variables( Subset( Dltdn ) , true , mp );
+
+    // remove the variables in the Objective (give away the names)
+    static_cast< p_LF >( static_cast< p_FRO >( LagrDual->get_objective()
+					       )->get_function()
+			 )->remove_variables( std::move( Dltdn ) , true , mp );
+
+    // now adjust the index to dynamic constraint dictionary
+    for( auto & el : Dltdn )
+     el -= static_cons;
+    Compact( idx_to_dcon , Dltdn );
+
+    // now actually remove the dynamic variable
+    LagrDual->remove_dynamic_variable( *Ld , std::move( Dltdn ) );
+    }
+
+   Index i = static_cons;
+   NumVar -= Dltds.size();
+   Index nl = NumVar - i;
+   idx_to_dcon.resize( nl );
+
+   // now adjust the dynamic constraint to index dictionary; rather, rebuild
+   // it from scratch because the alternative is too complex and not worth
+   dcon_to_dcon.resize( nl );
+   auto dc2iit = dcon_to_idx.begin();
+   for( const auto & el : f_Block->get_dynamic_constraints() )
+    un_any_const_dynamic( el , [ & ]( FRowConstraint & con ) -> void {
+                                *(dc2iit++) = std::make_pair( & con , i++ );
+                                } , un_any_type< FRowConstraint >() );
+
+   }  // end( multiple constraints )
   
+  LagrDual->close_channel( chnl );  // close the cannel
   }
 
-
- std::vector< FRowConstraint * > Addd;
- // pointers to added constraints in the order they have been added
- std::set< FRowConstraint * > Addds;  // set of pointers to added constraints
-
-
-  
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // now actually add all Lagrangian variables to all the LagBFunction and
  // the LinearFunction: ensure that all the corresponding Modification are
  // bunched into a unique GroupModification of the LagrDual
+
+ if( ! Addd.empty() ) {
+  // the list to which the variable have to be added
+  auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
+  auto NAddd = Addd.size();
+
+  // the list of variables to be added
+  std::list< ColVariable > NLd( NAddd );
+
+  // the iterator to the variables to be added (remains valid)
+  auto NLDLit = NLd.begin();
+  auto Lit = NLDLit;  // working copy
+
+  // now actually add the dynamic variable
+  LagrDual->add_dynamic_variables( *Ld , NLd );
+
+  // now construct and set the Lagrangian terms
+  v_coeff_pair objcf( NAddd );
+  auto objit = objcf.begin();
+
+  std::vector< std::vector< v_coeff_pair > > LagTerms( Addd.size() );
+  auto LTit = LagTerms.begin();
+
+  Index i = NumVar;
+  NumVar += NAddd;
+  resize( dcon_to_idx , NumVar - static_cons );
+  resize( idx_to_dcon , NumVar - static_cons );
+  auto dc2iit = dcon_to_idx.begin() + i;
+  auto i2dcit = idx_to_dcon.begin() + i;
+
+  for( auto el : Addd ) {
+   // check the LHS/RHS
+   auto lhs = el->get_lhs();
+   auto rhs = el->get_rhs();
+
+   if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || con.is_relaxed() ) {
+    // this constraint is eiter "infinitely loose" or relaxed: its rhs is
+    // 0 and the Lagrangian term is empty
+    *(objit++) = std::make_pair( & *(Lit++) , 0 );
+    ++LTit;
+    return;
+    }
+
+   auto coef = constr2val( *el , & (*Lit) );
+
+   // write the coefficient in the objective
+   *(objit++) = std::make_pair( *(Lit++) , coef );
+
+   // split the linear constraint among the sub-Block
+   split_constraint( *el , *(LTit++) );
+   }
+
+  // re-sort the dynamic constraints-->Lagrangian-variables dictionary
+  std::sort( dcon_to_idx.begin() , dcon_to_idx.end() );
+  
+  // open a channel where to bunch all the addition Modifications
+  const auto chnl = LagrDual->open_channel();
+  const auto mp = Observer::make_par( eModBlck , chnl );
+
+  // add the variables to the objective of the Lagrangian Dual
+  static_cast< p_LF >( static_cast< p_FRO >( LagrDual->get_objective()
+					     )->get_function()
+		       )->add_variables( std::move( objcf ) , mp );
+
+  // add the variables in the LagBFunctions
+  for( Index h = 0 ; h < f_nsb ; ++h ) {
+   Lit = NLDLit;
+   v_dual_pair dp( NAddd );  // construct the dual pairs
+   for( Index i = 0 ; i < NAddd ; ++i ) {
+    dp[ i ].first = & (*Lit++);
+    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+    }
+
+   v_LBF[ h ]->add_dual_pairs( std::move( lp ) );
+   }
+
+  LagrDual->close_channel( chnl );  // close the cannel
+  }
 
  // an now, finally, all is done- - - - - - - - - - - - - - - - - - - - - - -
   
