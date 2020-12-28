@@ -824,20 +824,41 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   }
 
  if( get_duals ) {  // get the dual solution of the relaxed constraints
-  // get the static part
   auto Ls = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );
   auto Lsit = Ls->begin();
-  for( const auto & el : f_Block->get_static_constraints() )
-   un_any_const_static( el , [ & Lsit ]( FRowConstraint & con ) -> void {
-                              con.set_dual( (Lsit++)->get_value() );
-                              } , un_any_type< FRowConstraint >() );
-  // get the dynamic part
   auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
   auto Ldit = Ld->begin();
-  for( const auto & el : f_Block->get_dynamic_constraints() )
-   un_any_const_static( el , [ & Lsit ]( FRowConstraint & con ) -> void {
-                              con.set_dual( (Ldit++)->get_value() );
-                              } , un_any_type< FRowConstraint >() );
+
+  if( NNMult ) {
+   // get the static part
+   for( const auto & el : f_Block->get_static_constraints() )
+    un_any_const_static( el , [ & Lsit ]( FRowConstraint & con ) -> void {
+                               auto val = (Lsit++)->get_value();
+			       if( to_be_reversed( con ) )
+				val = - val;
+                               con.set_dual( val );
+                               } , un_any_type< FRowConstraint >() );
+   // get the dynamic part
+   for( const auto & el : f_Block->get_dynamic_constraints() )
+    un_any_const_static( el , [ & Lsit ]( FRowConstraint & con ) -> void {
+                               auto val = (Ldit++)->get_value();
+			       if( to_be_reversed( con ) )
+				val = - val;
+                               con.set_dual( val );
+                               } , un_any_type< FRowConstraint >() );
+   }
+  else {
+   // get the static part
+   for( const auto & el : f_Block->get_static_constraints() )
+    un_any_const_static( el , [ & Lsit ]( FRowConstraint & con ) -> void {
+                               con.set_dual( (Lsit++)->get_value() );
+                               } , un_any_type< FRowConstraint >() );
+   // get the dynamic part
+   for( const auto & el : f_Block->get_dynamic_constraints() )
+    un_any_const_static( el , [ & Lsit ]( FRowConstraint & con ) -> void {
+                               con.set_dual( (Ldit++)->get_value() );
+                               } , un_any_type< FRowConstraint >() );
+   }
   } 
  }  // end( LagrangianDualSolver::get_dual_solution() )
 
@@ -1700,7 +1721,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    idx_to_dcon.resize( nl );
 
    // now adjust the dynamic constraint to index dictionary, that is,
-   // rebuid it based on the index to constraint one and re-sort it
+   // rebuid it anew based on the index to constraint one and re-sort it
    dcon_to_idx.resize( nl );
    for( Index j = 0 ; j < nl ; ++j )
     dcon_to_idx[ j ] = std::pair( idx_to_dcon[ j ] , i++ );
@@ -1730,10 +1751,10 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
   auto NLDLit = NLd.begin();
   auto Lit = NLDLit;  // working copy
 
-  // now actually add the dynamic variable
+  // actually add the dynamic variable
   LagrDual->add_dynamic_variables( *Ld , NLd );
 
-  // now construct and set the Lagrangian terms
+  // construct and set the new Lagrangian terms and new objective piece
   v_coeff_pair objcf( NAddd );
   auto objit = objcf.begin();
 
