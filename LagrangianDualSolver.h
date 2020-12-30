@@ -188,9 +188,11 @@ public:
 /*--------------------------------------------------------------------------*/
 /** @name Public Types
  *
- * "Import" basic types from Block
  * @{ */
 
+ class FRowConstraint;  // forward definition of FRowConstraint
+  
+  // "import" basic types from Block
  using Index = Block::Index;
  using c_Index = Block::c_Index;
 
@@ -664,8 +666,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- bool has_var_solution( void ) override {
-  return( InnerSolver->has_dual_solution() );
+ bool has_dual_solution( void ) override {
+  return( InnerSolver->has_var_solution() );
   }
 
 /*--------------------------------------------------------------------------*/

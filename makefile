@@ -2,28 +2,28 @@
 ################################ makefile ####################################
 ##############################################################################
 #                                                                            #
-#   makefile of BundleSolver                                                 #
+#   makefile of LagrangianDualSolver                                         #
 #                                                                            #
 #   The makefile takes in input the -I directives for all the external       #
-#   libraries needed by BundleSolver, i.e., core SMS++.                      #
+#   libraries needed by LagrangianDualSolver, i.e., core SMS++.              #
 #                                                                            #
 #   Note that, conversely, $(SMS++INC) is also assumed to include any        #
 #   -I directive corresponding to external libraries needed by SMS++, at     #
 #   least to the extent in which they are needed by the parts of SMS++       #
-#   used by MCFSolver.                                                       #
+#   used by LagrangianDualSolver.                                            #
 #                                                                            #
 #   Input:  $(CC)          = compiler command                                #
 #           $(SW)          = compiler options                                #
 #           $(SMS++INC)    = the -I$( core SMS++ directory )                 #
 #           $(SMS++OBJ)    = the core SMS++ library                          #
-#           $(BNDSLVSDR)  = the directory where the source is                #
+#           $(LgDSLVSDR)   = the directory where the source is               #
 #                                                                            #
-#   Output: $(BNDSLVOBJ) = the final object(s) / library                     #
-#           $(BNDSLVH)   = the .h files to include                           #
-#           $(BNDSLVINC) = the -I$( source directory )                       #
+#   Output: $(LgDSLVOBJ)   = the final object(s) / library                   #
+#           $(LgDSLVH)     = the .h files to include                         #
+#           $(LgDSLVINC)   = the -I$( source directory )                     #
 #                                                                            #
 #                                VERSION 1.00                                #
-#                               13 - 05 - 2019                               #
+#                               30 - 12 - 2020                               #
 #                                                                            #
 #                              Antonio Frangioni                             #
 #                               Enrico Gorgone                               #
@@ -33,24 +33,23 @@
 #                                                                            #
 ##############################################################################
 
+# macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-# macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
+LgDSLVOBJ = $(LgDSLVSDR)LagrangianDualSolver.o 
 
-LDSSLVOBJ = $(LDSSLVSDR)LagrangianDualSolver.o 
+LgDSLVINC = -I$(LgDSLVSDR)
 
-LDSSLVINC = -I$(LDSSLVSDR)
-
-LDSSLVH   = $(LDSSLVSDR)LagrangianDualSolver.h 
+LgDSLVH   = $(LgDSLVSDR)LagrangianDualSolver.h 
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
-	rm -f $(LDSSLVOBJ) $(LDSSLVSDR)*~
+	rm -f $(LgDSLVOBJ) $(LgDSLVSDR)*~
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(LDSSLVSDR)LagrangianDualSolver.o: $(LDSSLVSDR)LagrangianDualSolver.cpp $(LDSSLVH) \
-	$(SMS++OBJ) $(BNDSLVOBJ)
-	$(CC) -c $*.cpp -o $@ $(LDSSLVINC) $(SMS++INC) $(BNDSLVINC) $(SW)
+$(LgDSLVSDR)LagrangianDualSolver.o: $(LgDSLVSDR)LagrangianDualSolver.cpp \
+	$(LgDSLVH) $(SMS++OBJ)
+	$(CC) -c $*.cpp -o $@ $(LgDSLVINC) $(SMS++INC) $(SW)
 
 ########################## End of makefile ###################################
