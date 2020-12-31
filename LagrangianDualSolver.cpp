@@ -601,10 +601,10 @@ void LagrangianDualSolver::set_par( idx_type par , double value )
 void LagrangianDualSolver::set_par( idx_type par , std::string && value )
 {
  switch( par ) {
-  case( str_LDSlv_ISName ):
-   value = SMSpp_classname_normalise( std::move( value ) );
-   if( ISName != value ) {
-    ISName = value;
+  case( str_LDSlv_ISName ): {
+   std::string tval( SMSpp_classname_normalise( std::move( value ) ) );
+   if( ISName != tval ) {
+    ISName = tval;
     unregister_inner_Solver();
     auto ts = new_Solver( ISName );
     InnerSolver = dynamic_cast< CDASolver * >( ts );
@@ -615,6 +615,7 @@ void LagrangianDualSolver::set_par( idx_type par , std::string && value )
     register_inner_Solver();
     }
    break;
+   }
   case( str_LDBlck_BCfg ):
    f_BCfg_name = value;
    break;
