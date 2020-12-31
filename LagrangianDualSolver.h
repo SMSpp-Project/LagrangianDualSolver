@@ -35,6 +35,12 @@
 
 #include "CDASolver.h"
 
+#include "LagBFunction.h"
+
+#include "LinearFunction.h"
+
+#include "UpdateSolver.h"
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -42,16 +48,12 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
- class AbstractBlock;  // forward declaration of AbstractBlock
+ class AbstractBlock;   // forward declaration of AbstractBlock
 
+ class FRowConstraint;  // forward definition of FRowConstraint
+  
 /*--------------------------------------------------------------------------*/
-/*------------------------------- CLASSES ----------------------------------*/
-/*--------------------------------------------------------------------------*/
-/** @defgroup LagrangianDualSolver_CLASSES Classes in LagrangianDualSolver.h
- *  @{ */
-
-/*--------------------------------------------------------------------------*/
-/*-------------------------- CLASS BundleSolver ----------------------------*/
+/*-------------------- CLASS LagrangianDualSolver --------------------------*/
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -175,7 +177,7 @@ namespace SMSpp_di_unipi_it
  * We assume that these cases either do not occur or are dealt with by the
  * user of LagrangianDualSolver. */
 
- class LagrangianDualSolver : public CDASolver {
+class LagrangianDualSolver : public CDASolver {
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
@@ -190,9 +192,7 @@ public:
  *
  * @{ */
 
- class FRowConstraint;  // forward definition of FRowConstraint
-  
-  // "import" basic types from Block
+ // "import" basic types from Block
  using Index = Block::Index;
  using c_Index = Block::c_Index;
 
@@ -216,7 +216,7 @@ public:
  
  int_LDSlv_NNMult ,  ///< if Lagrangian multipliers are all >= 0
  
- intLastLDSSlvPar  ///< first allowed new int parameter for derived classes
+ intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of int algorithmic parameters. */
 
@@ -275,7 +275,12 @@ public:
   ISName  = dflt_str_par[ str_LDSlv_ISName - strLastParCDAS ];
 
   // ensure that the inner Solver is always well defined
-  InnerSolver = new_Solver( ISName );
+  auto ts = new_Solver( ISName );
+  InnerSolver = dynamic_cast< CDASolver * >( ts );
+  if( ! InnerSolver ) {
+   delete ts;
+   throw( std::logic_error( ISName + " not a CDASolver" ) );
+   }
   }
 
 /*--------------------------------------------------------------------------*/
@@ -368,9 +373,9 @@ public:
   * that very same parameter set in the inner Solver; see the comments to
   * set_ComputeConfig() for details. */
 
- idx_type int_par_is( idx_type par ) {
+ idx_type int_par_is( idx_type par ) const {
   if( par >= intLastParCDAS )
-   par += intLastLDSSlvPar - intLastParCDAS;
+   par += intLastLDSlvPar - intLastParCDAS;
   return( par );
   }
 
@@ -381,9 +386,9 @@ public:
   * that very same parameter set in the inner Solver; see the comments to
   * set_ComputeConfig() for details. */
 
- idx_type dbl_par_is( idx_type par ) {
+ idx_type dbl_par_is( idx_type par ) const {
   if( par >= dblLastParCDAS )
-   par += dblLastLDSSlvPar - dvlLastParCDAS;
+   par += dblLastLDSlvPar - dblLastParCDAS;
   return( par );
   }
 
@@ -394,9 +399,9 @@ public:
   * that very same parameter set in the inner Solver; see the comments to
   * set_ComputeConfig() for details. */
 
- idx_type str_par_is( idx_type par ) {
+ idx_type str_par_is( idx_type par ) const {
   if( par >= strLastParCDAS )
-   par += strLastLDSSlvPar - strLastParCDAS;
+   par += strLastLDSlvPar - strLastParCDAS;
   return( par );
   }
 
@@ -407,7 +412,7 @@ public:
   * have that very same parameter set in the inner Solver; see the comments
   * to set_ComputeConfig() for details. */
 
- idx_type vint_par_is( idx_type par ) { return( par ) ); }
+ idx_type vint_par_is( idx_type par ) const { return( par ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// "translate" a vector-of-double parameter index of the inner Solver
@@ -416,7 +421,7 @@ public:
   * LagrangianDualSolver to have that very same parameter set in the inner
   * Solver; see the comments to set_ComputeConfig() for details. */
 
- idx_type vdbl_par_is( idx_type par ) { return( par ) ); }
+ idx_type vdbl_par_is( idx_type par ) const { return( par ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// "translate" a vector-of-string parameter index of the inner Solver
@@ -425,7 +430,7 @@ public:
   * LagrangianDualSolver to have that very same parameter set in the inner
   * Solver; see the comments to set_ComputeConfig() for details. */
 
- idx_type vstr_par_is( idx_type par ) { return( par ) ); }
+ idx_type vstr_par_is( idx_type par ) const { return( par ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// "translate" a int parameter index of the LagrangianDualSolver
@@ -434,9 +439,9 @@ public:
   * it would have to be used to set directly in there; see the comments to
   * set_ComputeConfig() for details. */
 
- idx_type int_par_lds( idx_type par ) {
-  if( par >= intLastLDSSlvPar )
-   par -= intLastLDSSlvPar - intLastParCDAS;
+ idx_type int_par_lds( idx_type par ) const {
+  if( par >= intLastLDSlvPar )
+   par -= intLastLDSlvPar - intLastParCDAS;
   return( par );
   }
 
@@ -447,9 +452,9 @@ public:
   * it would have to be used to set directly in there; see the comments to
   * set_ComputeConfig() for details. */
 
- idx_type dbl_par_lds( idx_type par ) {
-  if( par >= dblLastLDSSlvPar )
-   par -= dblLastLDSSlvPar - sblLastParCDAS;
+ idx_type dbl_par_lds( idx_type par ) const {
+  if( par >= dblLastLDSlvPar )
+   par -= dblLastLDSlvPar - dblLastParCDAS;
   return( par );
   }
 
@@ -460,9 +465,9 @@ public:
   * it would have to be used to set directly in there; see the comments to
   * set_ComputeConfig() for details. */
 
- idx_type str_par_lds( idx_type par ) {
-  if( par >= strLastLDSSlvPar )
-   par -= strLastLDSSlvPar - strLastParCDAS;
+ idx_type str_par_lds( idx_type par ) const {
+  if( par >= strLastLDSlvPar )
+   par -= strLastLDSlvPar - strLastParCDAS;
   return( par );
   }
 
@@ -473,7 +478,7 @@ public:
   * returns the value that it would have to be used to set directly in there;
   * see the comments to set_ComputeConfig() for details. */
 
- idx_type vint_par_lds( idx_type par ) { return( par ); }
+ idx_type vint_par_lds( idx_type par ) const { return( par ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// translate a vector-of-double parameter index of the LagrangianDualSolver
@@ -482,7 +487,7 @@ public:
   * returns the value that it would have to be used to set directly in there;
   * see the comments to set_ComputeConfig() for details. */
 
- idx_type vdbl_par_lds( idx_type par ) { return( par ); }
+ idx_type vdbl_par_lds( idx_type par ) const { return( par ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// translate a vector-of-string parameter index of the LagrangianDualSolver
@@ -491,7 +496,7 @@ public:
   * returns the value that it would have to be used to set directly in there;
   * see the comments to set_ComputeConfig() for details. */
 
- idx_type vstr_par_lds( idx_type par ) { return( par ); }
+ idx_type vstr_par_lds( idx_type par ) const { return( par ); }
 
 /*--------------------------------------------------------------------------*/
  /// set the whole set of parameters in one blow
@@ -768,7 +773,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  bool new_var_solution( void ) override {
-  return( InnerSolver->new_dual_solution() )
+  return( InnerSolver->new_dual_solution() );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -853,7 +858,7 @@ public:
 /*--------------------------------------------------------------------------*/
  
  int get_dflt_int_par( idx_type par ) const override {
-  if( ( par >= intLastParCDAS ) && ( par < intLastLdsSlvPar ) )
+  if( ( par >= intLastParCDAS ) && ( par < intLastLDSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
 
   return( InnerSolver->get_dflt_int_par( int_par_lds( par ) ) );
@@ -862,7 +867,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  double get_dflt_dbl_par( idx_type par ) const override {
-  if( ( par >= dblLastParCDAS ) && ( par < dblLastLdsSlvPar ) )
+  if( ( par >= dblLastParCDAS ) && ( par < dblLastLDSlvPar ) )
    return( dflt_dbl_par[ par - dblLastParCDAS ] );
 
   return( InnerSolver->get_dflt_dbl_par( dbl_par_lds( par ) ) );
@@ -871,7 +876,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  const std::string & get_dflt_str_par( idx_type par ) const override {
-  if( ( par >= strLastParCDAS ) && ( par < strLastLdsSlvPar ) )
+  if( ( par >= strLastParCDAS ) && ( par < strLastLDSlvPar ) )
    return( dflt_str_par[ par - strLastParCDAS ] );
 
   return( InnerSolver->get_dflt_str_par( str_par_lds( par ) ) );
@@ -900,11 +905,11 @@ public:
 
 /*--------------------------------------------------------------------------*/
  
- int get_int_par( const idx_type par ) const override;
+ int get_int_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- double get_dbl_par( const idx_type par ) const override;
+ double get_dbl_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -980,7 +985,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  const std::string & int_par_idx2str( idx_type idx ) const override {
-  if( ( idx >= intLastParCDAS ) && ( idx < intLastLdsSlvPar ) )
+  if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
 
   return( InnerSolver->int_par_idx2str( int_par_lds( idx ) ) );
@@ -989,7 +994,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & dbl_par_idx2str( idx_type idx ) const override {
-  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastLdsSlvPar ) )
+  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastLDSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
 
   return( InnerSolver->dbl_par_idx2str( dbl_par_lds( idx ) ) );
@@ -998,7 +1003,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & str_par_idx2str( idx_type idx ) const override {
-  if( ( idx >= strLastParCDAS ) && ( idx < strLastLdsSlvPar ) )
+  if( ( idx >= strLastParCDAS ) && ( idx < strLastLDSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
 
   return( InnerSolver->str_par_idx2str( str_par_lds( idx ) ) );
@@ -1162,10 +1167,11 @@ FRowConstraint * constraint_with_index( Index i ) {
    auto fb = blck->get_f_Block();
    if( fb == LagrDual ) {
     auto it = std::lower_bound( blck_to_idx.begin() , blck_to_idx.end() ,
-				blck_int_pf( blck , 0 ) ,
+				blck_int( static_cast< AbstractBlock * >(
+							      blck ) , 0 ) ,
 				[]( const auto & a , const auto & b ) {
 				 return( a.first < b.first ); } );
-    return( it->first );
+    return( it->second );
     }
    blck = fb;
    if( ! blck )
@@ -1186,20 +1192,11 @@ FRowConstraint * constraint_with_index( Index i ) {
  *   is passed as it is in the Lagrangian term, while a <= need be changed
  *   sign (both all the coefficients and the RHS/LHS) */
 
- bool to_be_reversed( const FRowConstraint & con ) {
-  if( f_convex && ( con.get_rhs() == Inf< RowConstraint::RHSValue >() ) )
-   return( true );
-
-  if( ( ! f_convex ) &&
-      ( con.get_lhs() == -Inf< RowConstraint::RHSValue >() ) )
-   return( true );
-
-  return( false );
-  }
+ bool to_be_reversed( const FRowConstraint & con );
 
 /*--------------------------------------------------------------------------*/
 
- RowConstraint::RHSValue constr2val( const FRowConstraint & con );
+ double constr2val( const FRowConstraint & con , ColVariable & lvar );
 
 /*--------------------------------------------------------------------------*/
 
@@ -1251,7 +1248,7 @@ FRowConstraint * constraint_with_index( Index i ) {
 		      * will never change. */
 
  /* The following vectors are used in order to keep track between the
-  * Constraints of the Block and the Lagrangian variables of all the
+  * [FRow]Constraints of the Block and the Lagrangian variables of all the
   * corresponding Lagrangian functions.
   *
   *  - scon_to_idx: vector of tuples that store 1) the address of the first
@@ -1305,7 +1302,7 @@ FRowConstraint * constraint_with_index( Index i ) {
  const static std::vector< double > dflt_dbl_par;
  ///< the (static const) vector of double parameters default values
 
- const static std::vector< double > dflt_str_par;
+ const static std::vector< std::string > dflt_str_par;
  ///< the (static const) vector of string parameters default values
 
  const static std::vector< std::string > int_pars_str;
@@ -1340,6 +1337,10 @@ FRowConstraint * constraint_with_index( Index i ) {
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+ void cleanup_LagrDual( void );
+
+/*--------------------------------------------------------------------------*/
+
  void guts_of_destructor( void );
 
 /*--------------------------------------------------------------------------*/
@@ -1361,9 +1362,6 @@ FRowConstraint * constraint_with_index( Index i ) {
 /*--------------------------------------------------------------------------*/
 
  };  // end( class LagrangianDualSolver )
-
-/*@}  end( group( LagrangianDualSolver_CLASSES ) ) -------------------------*/
-/*--------------------------------------------------------------------------*/
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
