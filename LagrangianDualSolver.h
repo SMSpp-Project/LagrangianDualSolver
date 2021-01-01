@@ -1164,6 +1164,10 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  Index Block2Index( Block * blck ) {
   for( ;; ) {
+   if( auto lbf = dynamic_cast< LagBFunction * >( blck ) ) {
+    blck = lbf->get_Observer()->get_Block();
+    continue;
+    }
    auto fb = blck->get_f_Block();
    if( fb == LagrDual ) {
     auto it = std::lower_bound( blck_to_idx.begin() , blck_to_idx.end() ,
