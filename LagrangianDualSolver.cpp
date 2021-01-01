@@ -564,6 +564,9 @@ void LagrangianDualSolver::set_Block( Block * block )
  if( f_BSlvCfg )
   f_BSlvCfg->apply( LagrDual );
 
+ //!!
+ LagrDual->is_correct();
+ 
  // register the inner Solver to the Lagrangian Dual Block
  register_inner_Solver();
 
