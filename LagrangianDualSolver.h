@@ -177,8 +177,8 @@ namespace SMSpp_di_unipi_it
  * We assume that these cases either do not occur or are dealt with by the
  * user of LagrangianDualSolver. */
 
-class LagrangianDualSolver : public CDASolver {
-
+class LagrangianDualSolver : public CDASolver
+{
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -215,7 +215,9 @@ public:
  ///< if the R3Block has be used for the father block
  
  int_LDSlv_NNMult ,  ///< if Lagrangian multipliers are all >= 0
- 
+
+ int_LDSlv_CloneCfg ,  ///< if BlockSolverConfig need be clone()-d
+
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of int algorithmic parameters. */
@@ -247,15 +249,69 @@ public:
  enum str_par_type_LDSlv {
   str_LDSlv_ISName = strLastParCDAS ,  ///< classname of the inner Solver
 
-  str_LDBlck_BCfg ,     ///< the filename for the BlockConfig of the LD
+  str_LagBF_BCfg ,
+  ///< filename of the "default" BlockConfig of the LagBFunction(s)
 
-  str_LDBlck_BSlvCfg ,  ///< the filename for the BlockSolverConfig of the LD
+  str_LagBF_BSlvCfg ,
+  ///< filename of the  "default" BlockSolverConfig of the LagBFunction(s)
+
+  str_LDBlck_BCfg ,     ///< filename of the BlockConfig of the LD
+
+  str_LDBlck_BSlvCfg ,  ///< filename of the BlockSolverConfig of the LD
 
   strLastLDSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of string parameters. */
 
   };  // end( str_par_type_LDSlv )
+
+/*--------------------------------------------------------------------------*/
+ /// public enum for the vector-of-int parameters
+ /** Public enum describing the different algorithmic parameters of
+  * vector-of-int type that LagrangianDualSolver has in addition to these of
+  * CDASolver. The value vintLastLDSlvPar is provided so that the list can
+  * be easily further extended by derived classes. */
+
+ enum vint_par_type_LDSlv {
+  vint_LDSl_WBCfg = vintLastParCDAS ,
+  ///< parameter for associating sub-Block to BlockConfig
+  /**< The vector vintWBCfg, if nonempty, maps the BlockConfig constructed
+   * with the filenames out of the parameter vstrBCfg [see] into the
+   * sub-Block of the Lagrangian Dual; see set_par( std::vector< int > ) for
+   * details. */
+
+  vint_LDSl_WBSCfg ,
+  ///< parameter for associating sub-Block to BlockSolverConfig
+  /**< The vector vintWBSCfg, if nonempty, maps the BlockSolverConfig
+   * constructed with the filenames out of the parameter vstrBSCfg [see]
+   * into the  sub-Block of the Lagrangian Dual; see
+   * set_par( std::vector< int > ) for details. */
+
+  vintLastLDSlvPar  ///< first allowed new vector-of-int parameter
+                    /**< Convenience value for easily allow derived classes
+		     * to extend the set of vector-of-int parameters. */
+
+  };  // end( vint_par_type_LDSlv )
+
+/*--------------------------------------------------------------------------*/
+ /// public enum for the vector-of-string parameters
+ /** Public enum describing the different parameters of vector-of-string type
+  * that LagrangianDualSolver has in addition to these of CDASolver. The
+  * value vstrLastLDSlvPar is provided so that the list can be easily further
+  * extended by derived classes. */
+
+ enum vstr_par_type_LDSlv {
+  vstr_LDSl_BCfg = vstrLastParCDAS ,
+  ///< parameter for BlockConfig-uring each sub-Block individually
+
+  vstr_LDSl_BSCfg ,
+  ///< parameter for BlockSolverConfig-uring each sub-Block individually
+
+  vstrLastLDSlvPar  ///< first allowed new vector-of-string parameter
+                    /**< Convenience value for easily allow derived classes
+		     * to extend the set of vector-of-string parameters. */
+
+  };  // end( vstr_par_type_LDSlv )
 
 /*@} -----------------------------------------------------------------------*/
 /*------------- CONSTRUCTING AND DESTRUCTING LagrangianDualSolver ----------*/
@@ -314,7 +370,18 @@ public:
   * - int_LDSlv_NNMult [1]: true (nonzero) if the Lagrangian multipliers of
   *   inequality constraints are all constructed as to be non-negative in the
   *   inner Solver and then changed sign, if necessary, when the dual solution
-  *   is written in the Block */
+  *   is written in the Block
+  *
+  * - int_LDSlv_CloneCfg [0]: true (nonzero) if each time a BlockSolverConfig
+  *   is apply()-ed to a Block (either the inner Block in a LagBFunction or
+  *   the Lagrangian Dual Block itself) it needs be clone()-d. this is only
+  *   necessary if the BlockSolverConfig contains any component (typically,
+  *   something in the "extra" Configuration of a ComputeConfig) that gets
+  *   "consumed" when apply()-ed, which can happen but it is not frequent.
+  *   it is therefore in general necessary to foresee the possibility of
+  *   cloning, but this is not done by default unless this parameter is
+  *   properly set (in which case it will apply to *all* BlockSolverConfig,
+  *   which may be overkill in some cases but a balance need be had). */
 
  void set_par( idx_type par , int value ) override;
 
@@ -332,7 +399,88 @@ public:
  /// set the string paramaters of LagrangianDualSolver / the inner Solver
  /** Set the string paramaters specific of LagrangianDualSolver, and allow to
   * directly set those of the inner Solver used to solve the Lagrangian Dual;
-  * see the comments to set_ComputeConfig() for details. */
+  * see the comments to set_ComputeConfig() for details.
+  *
+  * The parameters handled here are:
+  *
+  * - str_LDSlv_ISName [UpdateSolver]: the classname used in the Solver
+  *   factory to create the inner Solver that actually solves the Lagrangian
+  *   Dual; the default UpdateSolver value clearly is not really a suitable
+  *   choice and it has to be replaced with a functional one for
+  *   LagrangianDualSolver to work, but at least it ensures that
+  *   LagrangianDualSolver is not dependent on any other SMS++ module except
+  *   the "core" SMS++.
+  *
+  * - str_LagBF_BCfg [""]: the filename of the "default" BlockConfig of the
+  *   inner Block of the LagBFunction(s). If non-empty(), this parameter is
+  *   used to create a BlockConfig that is apply()-ed to the inner Block of
+  *   all LagBFunction unless specific BlockConfig are provided for that
+  *   specific component [see vintWBCfg and vstrBCfg]. if left empty(), no
+  *   BlockConfig is apply()-ed unless for those LagBFunction for which
+  *   specific ones are provided
+  *
+  * - str_LagBF_BSCfg [""]: the filename of the "default" BlockSolverConfig
+  *   of the inner Block of the LagBFunction(s). If non-empty(), this
+  *   parameter is used to create a BlockSolverConfig that is apply()-ed to
+  *   the inner Block of all LagBFunction unless specific BlockSolverConfig
+  *   are provided for that specific component [see vintWBSCfg and
+  *   vstrBSCfg]. if left empty(), no BlockSolverConfig is apply()-ed unless
+  *   for those LagBFunction for which specific ones are provided. note that
+  *   each LagBFunction does require a working Solver attached to its inner
+  *   Block (unless the inner Solver can avoid it for some specially
+  *   structured inner Block), so this will have to be provided in some way
+  *   (but there are plenty of: besides this parameter and vstrBSCfg, it can
+  *   come from the BlockSolverConfig of the whole Lagrangian Dual, see
+  *   str_LDBlck_BSlvCfg, or even from the "extra" Configuration in the
+  *   ComputeConfig of LagrangianDualSolver, see set_ComputeConfig())
+  *
+  * - str_LDBlck_BCfg [""]: the filename of the BlockConfig that is apply()-ed
+  *   to the whole Lagrangian Dual Block. This can be used to set the
+  *   BlockConfig of the inner Block in the LagBFunction (since the
+  *   Lagrangian Dual Block itself has no significant BlockConfig) but it has
+  *   to be structured properly, i.e., knowing that the original sub-Block of
+  *   the original Block (either itself or a copy) is now set as the inner
+  *   Block of a LagBFunction inside the FRealObjective of the corresponding
+  *   sub-Block of the Lagrangian Dual Block. doing so allows complete and
+  *   fine control on what is done at the cost of being a bit more complex
+  *   to handle, which is why the "simpler" str_LagBF_BCfg and vstr_LDSl_BCfg
+  *   parameters are provided to spare the user the need to constructing such
+  *   a more complex BlockConfig. note that:
+  *
+  *   = this BlockConfig is ignored if a BlockConfig for the Lagrangian Dual
+  *     Block is passed directly as the "extra" Configuration of the
+  *     LagrangianDualSolver, see set_ComputeConfig();
+  *
+  *   = this BlockConfig is only apply()-ed *after* that these created via
+  *     str_LagBF_BCfg and vstr_LDSl_BCfg (if any) have been apply()-ed
+ *
+  * - str_LDBlck_BSCfg [""]: the filename of the BlockSolverConfig that is
+  *   apply()-ed to the whole Lagrangian Dual Block. This can be used to set
+  *   the BlockSolverConfig of the inner Block in the LagBFunction and
+  *   possibly to configure the inner Solver of the LagrangianDualSolver,
+  *   although the ComputeConfig of the LagrangianDualSolver itself provides
+  *   a more convenient way to do this. in order to BlockSolverConfig-ure
+  *   the inner Block such a BlockSolverConfig has to be structured properly,
+  *   i.e., knowing that the original sub-Block of the original Block (either
+  *   itself or a copy) is now set as the inner Block of a LagBFunction
+  *   inside the FRealObjective of the corresponding sub-Block of the
+  *   Lagrangian Dual Block. doing so allows complete and fine control on
+  *   what is done at the cost of being a bit more complex to handle, which
+  *   is why the "simpler" str_LagBF_BSCfg and vstr_LDSl_BSCfg parameters
+  *   are provided to spare the user the need to constructing such a more
+  *   complex BlockSolverConfig. note that:
+  *
+  *   = this BlockSolverConfig is ignored if a BlockSolverConfig for the
+  *     Lagrangian Dual Block is passed directly as the "extra" Configuration
+  *     of the LagrangianDualSolver, see set_ComputeConfig();
+  *
+  *   = this BlockSolverConfig is only apply()-ed *after* that these created
+  *     via str_LagBF_BSCfg and vstr_LDSl_BSCfg (if any) have been apply()-ed
+  *
+  *   note that each LagBFunction does require a working Solver attached to
+  *   its inner Block (unless the inner Solver can avoid it for some specially
+  *   structured inner Block), so this will have to be provided in some way,
+  *   this parameter being one of the many */
 
  void set_par( idx_type par , std::string && value ) override;
 
@@ -340,11 +488,25 @@ public:
  /// set the vector-of-int paramaters of LagrangianDualSolver / inner Solver
  /** Set the vector-of-int paramaters specific of LagrangianDualSolver, and
   * allow to directly set those of the inner Solver used to solve the
-  * Lagrangian Dual; see the comments to set_ComputeConfig() for details. */
+  * Lagrangian Dual; see the comments to set_ComputeConfig() for details.
+  *
+  * The parameters handled here are:
+  *
+  * - vint_LDSl_WBCfg [empty]; if non-empty(), this maps the BlockConfig
+  *   created according to vstr_LDSl_BCfg [see] into the actual inner Block
+  *   of the LagBFunction of the sub-Block in the Lagrangian Dual Block.
+  *   the correspondance is positional: vint_LDSl_WBCfg[ h ] = k means that
+  *   the (inner Block of the LagBFunction of the) h-th sub-Block will be
+  *   BlockConfig-ured with the BlockConfig created using the k-th position
+  *   in vstr_LDSl_BCfg. If k is not a valid position into vstr_LDSl_BCfg
+  *   (it is negative or >= vstr_LDSl_BCfg.size()), then the h-th sub-Block
+  *   is not BlockConfig-ured by this mechanism (but there are plenty of
+  *   other mechanisms that allows this to happen, see e.g. str_LagBF_BCfg
+  *   and str_LDBlck_BCfg
 
- void set_par( idx_type par , std::vector< int > && value ) override {
-  InnerSolver->set_par( par , std::move( value ) );
-  }
+ */
+
+ void set_par( idx_type par , std::vector< int > && value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 /// set the vector-of-double paramaters of LagrangianDualSolver / inner Solver
@@ -362,9 +524,7 @@ public:
   * allow to directly set those of the inner Solver used to solve the
   * Lagrangian Dual; see the comments to set_ComputeConfig() for details. */
 
- void set_par( idx_type par , std::vector< std::string > && value ) override {
-  InnerSolver->set_par( par , std::move( value ) );
-  }
+ void set_par( idx_type par , std::vector< std::string > && value ) override;
 
 /*--------------------------------------------------------------------------*/
  /// "translate" an int parameter index of the inner Solver
@@ -412,7 +572,11 @@ public:
   * have that very same parameter set in the inner Solver; see the comments
   * to set_ComputeConfig() for details. */
 
- idx_type vint_par_is( idx_type par ) const { return( par ); }
+ idx_type vint_par_is( idx_type par ) const {
+  if( par >= vintLastParCDAS )
+   par += vintLastLDSlvPar - vintLastParCDAS;
+  return( par );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// "translate" a vector-of-double parameter index of the inner Solver
@@ -430,7 +594,11 @@ public:
   * LagrangianDualSolver to have that very same parameter set in the inner
   * Solver; see the comments to set_ComputeConfig() for details. */
 
- idx_type vstr_par_is( idx_type par ) const { return( par ); }
+ idx_type vstr_par_is( idx_type par ) const {
+  if( par >= vstrLastParCDAS )
+   par += vstrLastLDSlvPar - vstrLastParCDAS;
+  return( par );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// "translate" a int parameter index of the LagrangianDualSolver
@@ -478,7 +646,11 @@ public:
   * returns the value that it would have to be used to set directly in there;
   * see the comments to set_ComputeConfig() for details. */
 
- idx_type vint_par_lds( idx_type par ) const { return( par ); }
+ idx_type vint_par_lds( idx_type par ) const {
+  if( par >= vintLastLDSlvPar )
+   par -= vintLastLDSlvPar - vintLastParCDAS;
+  return( par );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// translate a vector-of-double parameter index of the LagrangianDualSolver
@@ -496,7 +668,11 @@ public:
   * returns the value that it would have to be used to set directly in there;
   * see the comments to set_ComputeConfig() for details. */
 
- idx_type vstr_par_lds( idx_type par ) const { return( par ); }
+ idx_type vstr_par_lds( idx_type par ) const {
+  if( par >= vstrLastLDSlvPar )
+   par -= vstrLastLDSlvPar - vstrLastParCDAS;
+  return( par );
+  }
 
 /*--------------------------------------------------------------------------*/
  /// set the whole set of parameters in one blow
@@ -605,7 +781,8 @@ public:
 /*--------------------------------------------------------------------------*/
  /// set the ostream for the LagrangianDualSolver log
 
- void set_log( std::ostream *log_stream = nullptr ) override {
+ void set_log( std::ostream * log_stream = nullptr ) override {
+  f_log = log_stream;
   InnerSolver->set_log( f_log );
   }
 
@@ -917,9 +1094,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::vector< int > & get_vint_par( idx_type par ) const override {
-  return( InnerSolver->get_vint_par( vint_par_lds( par ) ) );
-  }
+ const std::vector< int > & get_vint_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -930,9 +1105,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::vector< std::string > & get_vstr_par( idx_type par )
-  const override {
-  return( InnerSolver->get_vstr_par( vstr_par_lds( par ) ) );
-  }
+  const override;
 
 /*--------------------------------------------------------------------------*/
 
@@ -1216,13 +1389,29 @@ FRowConstraint * constraint_with_index( Index i ) {
  bool iBCopy;         ///< true if the R3Block conversion has to be done
 
  bool NNMult;         ///< true if Lagrangian multipliers are all >= 0
- 
+
+ bool CloneCfg;       ///< true if BlockSolverConfig need be clone()-d
+
  std::string ISName;  ///< classname of the inner Solver
 
- std::string f_BCfg_name;  ///< the filename for the BlockConfig of the LD
+ std::string LagBF_BCfg;
+ ///< the filename for the BlockConfig of the individual LagBFunction
 
- std::string f_BSlvCfg_name;
+ std::string LagBF_BSlvCfg;
+ ///< the filename for the BlockSolverConfig of individual LagBFunction
+
+ std::string LDBlck_BCfg;  ///< the filename for the BlockConfig of the LD
+
+ std::string LDBlck_BSlvCfg;
  ///< the filename for the BlockSolverConfig of the LD
+
+ std::vector< int > WBCfg;  ///< map between sub-Block and BlockConfig
+
+ std::vector< int > WBSCfg;  ///< map between sub-Block and BlockSolverConfig
+
+ std::vector< std::string > BCfg;  ///< filenames for BlockConfig
+
+ std::vector< std::string > BSCfg;  ///< filenames for BlockSolverConfig
  
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1312,11 +1501,23 @@ FRowConstraint * constraint_with_index( Index i ) {
  const static std::vector< std::string > int_pars_str;
  ///< the (static const) vector of int parameters names
 
+ const static std::vector< std::string > vint_pars_str;
+ ///< the (static const) vector of vector-of-int parameters names
+
+ const static std::vector< std::string > vstr_pars_str;
+ ///< the (static const) vector of vector-of-string parameters names
+
  const static std::vector< std::string > dbl_pars_str;
  ///< the (static const) vector of double parameters names
 
  const static std::vector< std::string > str_pars_str;
  ///< the (static const) vector of string parameters names
+
+ const static std::vector< std::string > str_vint_str;
+ ///< the (static const) vector of vector-of-int parameters names
+
+ const static std::vector< std::string > str_vstr_str;
+ ///< the (static const) vector of vector-of-string parameters names
 
  const static std::map< std::string , idx_type > int_pars_map;
   ///< the (static const) map for int parameters names
@@ -1326,6 +1527,13 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  const static std::map< std::string , idx_type > str_pars_map;
  ///< the (static const) map for string parameters names
+
+ const static std::map< std::string , idx_type > vint_pars_map;
+  ///< the (static const) map for vector-of-int parameters names
+
+ const static std::map< std::string , idx_type > vstr_pars_map;
+ ///< the (static const) map for vector-of-string parameters names
+
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
