@@ -87,6 +87,23 @@ using p_SConf_p_p = SimpleConfiguration< std::pair< Configuration * ,
 						    Configuration * > > *;
 
 /*--------------------------------------------------------------------------*/
+
+class FakeCDASolver : public CDASolver {
+ public:
+ FakeCDASolver( void ) : CDASolver() {}
+ virtual ~FakeCDASolver() {}
+ int compute( bool changedvars = true ) override final { return( kError ); }
+ bool has_var_solution( void ) override final { return( false ); }
+ void get_var_solution( Configuration *solc = nullptr ) override final {}
+ bool has_dual_solution( void ) override final { return( false ); }
+ void get_dual_solution( Configuration *solc = nullptr ) override final {}
+ void add_Modification( sp_Mod & mod ) override final {}
+ SMSpp_insert_in_factory_h;
+ };
+
+SMSpp_insert_in_factory_cpp_0( FakeCDASolver );
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -213,11 +230,11 @@ const std::vector< double > LagrangianDualSolver::dflt_dbl_par = {
 // define and initialize here the default string parameters
 
 const std::vector< std::string > LagrangianDualSolver::dflt_str_par = {
- "UpdateSolver" ,  // str_LDSlv_ISName
- "" ,              // str_LagBF_BCfg
- "" ,              // str_LagBF_BSlvCfg
- "" ,              // str_LDBlck_BCfg
- ""                // str_LDBlck_BSlvCfg
+ "FakeCDASolver" ,  // str_LDSlv_ISName
+ "" ,               // str_LagBF_BCfg
+ "" ,               // str_LagBF_BSlvCfg
+ "" ,               // str_LDBlck_BCfg
+ ""                 // str_LDBlck_BSlvCfg
  };
 
 /*--------------------------------------------------------------------------*/

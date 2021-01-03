@@ -403,11 +403,11 @@ public:
   *
   * The parameters handled here are:
   *
-  * - str_LDSlv_ISName [UpdateSolver]: the classname used in the Solver
+  * - str_LDSlv_ISName [FakeCDASolver]: the classname used in the Solver
   *   factory to create the inner Solver that actually solves the Lagrangian
-  *   Dual; the default UpdateSolver value clearly is not really a suitable
-  *   choice and it has to be replaced with a functional one for
-  *   LagrangianDualSolver to work, but at least it ensures that
+  *   Dual. the default FakeCDASolver corresponds to a placeholder that is not
+  *   really a suitable choice and it has to be replaced with a functional one
+  *   for LagrangianDualSolver to work, but at least it ensures that
   *   LagrangianDualSolver is not dependent on any other SMS++ module except
   *   the "core" SMS++.
   *
