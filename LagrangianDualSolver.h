@@ -252,12 +252,12 @@ public:
   str_LagBF_BCfg ,
   ///< filename of the "default" BlockConfig of the LagBFunction(s)
 
-  str_LagBF_BSlvCfg ,
+  str_LagBF_BSCfg ,
   ///< filename of the  "default" BlockSolverConfig of the LagBFunction(s)
 
   str_LDBlck_BCfg ,     ///< filename of the BlockConfig of the LD
 
-  str_LDBlck_BSlvCfg ,  ///< filename of the BlockSolverConfig of the LD
+  str_LDBlck_BSCfg ,  ///< filename of the BlockSolverConfig of the LD
 
   strLastLDSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -323,12 +323,13 @@ public:
 
  LagrangianDualSolver( void ) : CDASolver() , NumVar( 0 ) , f_nsb( 0 ) ,
   f_convex( false ) , LagrDual( nullptr ) , f_BCfg( nullptr ) ,
-  f_BSlvCfg( nullptr ) , static_cons( 0 )
- {
+  f_BSCfg( nullptr ) ,  f_DBCfg( nullptr ) , f_DBSCfg( nullptr ) ,
+  static_cons( 0 ) {
   // ensure all parameters are properly given their default value
-  iBCopy  = dflt_int_par[ int_LDSlv_iBCopy - intLastParCDAS ];
-  NNMult  = dflt_int_par[ int_LDSlv_NNMult - intLastParCDAS ];
-  ISName  = dflt_str_par[ str_LDSlv_ISName - strLastParCDAS ];
+  iBCopy   = dflt_int_par[ int_LDSlv_iBCopy - intLastParCDAS ];
+  NNMult   = dflt_int_par[ int_LDSlv_NNMult - intLastParCDAS ];
+  CloneCfg = dflt_int_par[ int_LDSlv_CloneCfg - intLastParCDAS ];
+  ISName   = dflt_str_par[ str_LDSlv_ISName - strLastParCDAS ];
 
   // ensure that the inner Solver is always well defined
   auto ts = new_Solver( ISName );
@@ -431,7 +432,7 @@ public:
   *   structured inner Block), so this will have to be provided in some way
   *   (but there are plenty of: besides this parameter and vstrBSCfg, it can
   *   come from the BlockSolverConfig of the whole Lagrangian Dual, see
-  *   str_LDBlck_BSlvCfg, or even from the "extra" Configuration in the
+  *   str_LDBlck_BSCfg, or even from the "extra" Configuration in the
   *   ComputeConfig of LagrangianDualSolver, see set_ComputeConfig())
   *
   * - str_LDBlck_BCfg [""]: the filename of the BlockConfig that is apply()-ed
@@ -774,7 +775,7 @@ public:
   *
   * This way of setting the Block*Config of the Lagrangian Dual Block takes
   * precedence over doing the same via the str_LDBlck_BCfg and
-  * str_LDBlck_BSlvCfg parameters. */
+  * str_LDBlck_BSCfg parameters. */
 
  void set_ComputeConfig( ComputeConfig * scfg = nullptr ) override;
 
@@ -1230,29 +1231,19 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- void clear_inner_BlockSolverConfig( void ) {
-  if( f_BSlvCfg ) {
-   if( LagrDual ) {
-    f_BSlvCfg->clear();
-    f_BSlvCfg->apply( LagrDual );
-    }
-   delete f_BSlvCfg;
-   f_BSlvCfg = nullptr;
-   }
-  }
+ void clear_LD_BlockSolverConfig( bool keepcfg = false );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- void clear_inner_BlockConfig( void ) {
-  if( f_BCfg ) {
-   if( LagrDual ) {
-    f_BCfg->clear();
-    f_BCfg->apply( LagrDual );
-    }
-   delete f_BCfg;
-   f_BCfg = nullptr;
-   }
-  }
+ void clear_LD_BlockConfig( bool keepcfg = false );
+
+/*--------------------------------------------------------------------------*/
+
+ void clear_inner_BlockSolverConfig( bool keepcfg = false );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ void clear_inner_BlockConfig( bool keepcfg = false );
 
 /*--------------------------------------------------------------------------*/
  /** Returns the index as active variable of the LagBFunction of the given
@@ -1270,7 +1261,7 @@ public:
   return( index_of_dynamic_constraint( con ) );
   }
 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /** Returns the index as active variable of the LagBFunction of the given
   * static FRowConstraint.
   *
@@ -1280,7 +1271,7 @@ public:
 
  Index index_of_static_constraint( const FRowConstraint * con );
 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /** Returns the index as active variable of the LagBFunction of the given
   * dynamic FRowConstraint.
   *
@@ -1290,13 +1281,15 @@ public:
 
  Index index_of_dynamic_constraint( const FRowConstraint * con );
 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /** Returns the (pointer to) FRowConstraint corresponding to a the active
-  * variable of the LagBFunction with the given index, be it static or dynamic.
+  * variable of the LagBFunction with the given index, be it static or
+  * dynamic.
   *
   * @param i the index of an active variable of the LagBFunction
   * @return a pointer to the corresponding FRowConstraint
-  * @throws std::invalid_argument if \p i doesn't correspond to a constraint */
+  * @throws std::invalid_argument if \p i doesn't correspond to a constraint
+  */
  
 FRowConstraint * constraint_with_index( Index i ) {
  #ifdef NDEBUG
@@ -1311,29 +1304,32 @@ FRowConstraint * constraint_with_index( Index i ) {
  return( dynamic_constraint_with_index( i ) );
  }
 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /** Returns the (pointer to the) static FRowConstraint corresponding to a the
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /** Returns the (pointer to the) static FRowConstraint corresponding to the
   * active variable of the LagBFunction with the given index.
   *
   * @param i the index of an active variable of the LagBFunction
   * @return a pointer to the corresponding FRowConstraint
-  * @throws std::invalid_argument if \p i doesn't correspond to a constraint */
+  * @throws std::invalid_argument if \p i doesn't correspond to a constraint
+  */
 
  FRowConstraint * static_constraint_with_index( Index i );
 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /** Returns the (pointer to the) static FRowConstraint corresponding to a the
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /** Returns the (pointer to the) static FRowConstraint corresponding to the
   * active variable of the LagBFunction with the given index.
   *
   * @param i the index of an active variable of the LagBFunction
   * @return a pointer to the corresponding FRowConstraint
-  * @throws std::invalid_argument if \p i doesn't correspond to a constraint */
+  * @throws std::invalid_argument if \p i doesn't correspond to a constraint
+  */
 
  FRowConstraint * dynamic_constraint_with_index( Index i ) {
   return( idx_to_dcon[ i - static_cons ] );
   }
 
 /*--------------------------------------------------------------------------*/
+ // return the index of the given sub-Block
 
  Index Block2Index( Block * blck ) {
   for( ;; ) {
@@ -1397,12 +1393,12 @@ FRowConstraint * constraint_with_index( Index i ) {
  std::string LagBF_BCfg;
  ///< the filename for the BlockConfig of the individual LagBFunction
 
- std::string LagBF_BSlvCfg;
+ std::string LagBF_BSCfg;
  ///< the filename for the BlockSolverConfig of individual LagBFunction
 
  std::string LDBlck_BCfg;  ///< the filename for the BlockConfig of the LD
 
- std::string LDBlck_BSlvCfg;
+ std::string LDBlck_BSCfg;
  ///< the filename for the BlockSolverConfig of the LD
 
  std::vector< int > WBCfg;  ///< map between sub-Block and BlockConfig
@@ -1427,7 +1423,16 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  BlockConfig * f_BCfg;      ///< the BlockConfig for LagrDual
 
- BlockSolverConfig * f_BSlvCfg;   ///< the BlockSolverConfig for LagrDual
+ BlockSolverConfig * f_BSCfg;   ///< the BlockSolverConfig for LagrDual
+
+ BlockConfig * f_DBCfg;      ///< the default individual BlockConfig
+
+ BlockSolverConfig * f_DBSCfg;   ///< the default individual BlockSolverConfig
+
+ std::vector< BlockConfig * > v_BCfg;  ///< the individual BlockConfig
+
+ std::vector< BlockSolverConfig * > v_BSCfg;
+ ///< the individual BlockSolverConfig
 
  std::vector< UpdateSolver * > v_US;  /// the UpdateSolvers
 
