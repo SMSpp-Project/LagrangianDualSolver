@@ -352,8 +352,42 @@ public:
  *
  *  @{ */
 
- /// set the (pointer to the) Block that the Solver has to solve
-
+ /// set the (pointer to the) Block that the LagrangianDualSolver has to solve
+ /** Set (or changes) the Block that the LagrangianDualSolver has to solve. As
+  * customary, set_Block() is a very important method where \p block is
+  * thoroughly scanned (after being lock()-ed) and all relevant information is
+  * extracted that the LagrangianDualSolver uses; this is even more crucial
+  * here, since
+  *
+  *     INSIDE set_Block() THE LAGRANGIAN DUAL Block IS CONSTRUCTED, POSSIBLY
+  *     "EVICTICTING" THE SUB-Block FROM WITHIN THE ORIGINAL Block
+  *
+  * As a consequance, as customary, generate_abstract_*() are immediately
+  * called on \p block since LagrangianDualSolver relies on the existence of
+  * a proper Objective in the sub-Block (as this is in turn a requirement for
+  * LagBFunction to work) and on proper FRowConstraint to relax, as well as
+  * on the *non*-esistence of Variable and an Objective in \p block. Hence
+  *
+  *     THE Block PASSED TO set_Block() MUST BE PROPERLY BlockConfig-URED
+  *
+  * However, there is a caveat to this. If the sub-Block are *not* evicted
+  * but rather R3Block-copied, the copied sub-Block will *not* be
+  * BlockConfig-ured even if the original ones were (Block are always born
+  * "naked"). Thus, if BlockConfig-uration is needed for the sub-Block, this
+  * must be performed via the various ways that LagrangianDualSolver allows
+  * for it. However, note that this means
+  *
+  *     THE BlockConfig-URATION OF THE INDIVIDUAL SUB-Block, RATHER THAN THAT
+  *     OF THE WHOLE LAGRANGIAN DUAL Block
+  *
+  * In fact, the sub-Block are BlockConfig-ured *before* the Lagrangian Dual
+  * Block is formed, and generate_abstract_*() is called for them,
+  * precisely because LagBFunction needs the relevant pieces of abstact
+  * representation to work. All this is irrelevant is sub-Block are evicted,
+  * since they will need to be BlockConfig-ured from the start and
+  * generate_abstract_*() is (supposedly) called for them when it is for the
+  * father \p block. */
+ 
  void set_Block( Block * block ) override;
 
 /*--------------------------------------------------------------------------*/

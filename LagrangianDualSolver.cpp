@@ -345,8 +345,18 @@ void LagrangianDualSolver::set_Block( Block * block )
   // now construct the LagBFunction; note that doing so may cause the
   // Objective of the inner Block (and therefore the Variable) to  be
   // defined because LagBFunction needs it, hence this is only done
-  // after the BlockConfig-uration
+  // after the BlockConfig-uration, in particular for the case where the
+  // sub-Block is R3B-copied
   auto lbfi = new LagBFunction( csbi );
+
+  // surely now the Objective is defined: check that all the senses agree
+  if( ! i )
+   f_convex = ( csbi->get_objective()->get_sense() == Objective::eMax );
+  else
+   if( f_convex != ( csbi->get_objective()->get_sense() == Objective::eMax ) )
+    throw( std::invalid_argument(
+	      "LagrangianDualSolver: mixed min/max sub-Block Objective" ) );
+
   v_LBF[ i ] = lbfi;
   auto osbi = new FRealObjective( sbi , lbfi );
   osbi->set_sense( f_convex ? Objective::eMin : Objective::eMax , eNoMod );
@@ -396,28 +406,16 @@ void LagrangianDualSolver::set_Block( Block * block )
 		   "LagrangianDualSolver: dynamic Variable not allowed" ) );
     
  // there must be no Objective- - - - - - - - - - - - - - - - - - - - - - - -
+ // or it must be "empty"
 
- if( f_Block->get_objective() )
-  throw( std::invalid_argument(
-			   "LagrangianDualSolver: Objective not allowed" ) );
-
- // children must have a FRealObjective with a LinearFunction inside, all
- // of them must have the same "verse"- - - - - - - - - - - - - - - - - - - -
-
- for( Index i = 0 ; i < f_nsb ; ++i ) {
-  // generate the Objective (if not there already), which typically requires
-  // to generate the variables first
-  auto osbi = dynamic_cast< const FRealObjective * >(
-						  sb[ i ]->get_objective() );
-  if( ! osbi )
+ if( auto obj = f_Block->get_objective() ) {
+  if( obj->get_num_active_var() != 0 )
    throw( std::invalid_argument(
-		       "LagrangianDualSolver: wrong sub-Block Objective" ) );
-  if( ! i )
-   f_convex = ( osbi->get_sense() == Objective::eMax );
-  else
-   if( f_convex != ( osbi->get_sense() == Objective::eMax ) )
-    throw( std::invalid_argument(
-	      "LagrangianDualSolver: mixed min/max sub-Block Objective" ) );
+		  "LagrangianDualSolver: nonempty Objective not allowed" ) );
+
+  if( f_convex != ( obj->get_sense() == Objective::eMax ) )
+   throw( std::invalid_argument(
+	  "LagrangianDualSolver: Block sense differs form sub-Block one" ) );
   }
  
  // count and check the FRowConstraint in the Block - - - - - - - - - - - - -
