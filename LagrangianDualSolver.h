@@ -204,7 +204,7 @@ namespace SMSpp_di_unipi_it
  * associated with (B)
  *
  *   L-( w , z ) = min c( x ) + w ( l - g( x ) ) + z ( g( x ) - u ) : x \in X
- *               = w l - z  u + min f( x ) + ( z - w ) g( x ) : x \in X   ,
+ *               = w l - z  u + min c( x ) + ( z - w ) g( x ) : x \in X   ,
  *
  * where z >= 0 is the Lagrangian multiplier of the constraint g( x ) <= u,
  * while w >= 0 is the Lagrangian multiplierof the constraint l <= g( x ).
@@ -216,7 +216,7 @@ namespace SMSpp_di_unipi_it
  * Note that in the maximization case things are analogous but different:
  *
  *   L+( w , z ) = max c( x ) + w ( g( x ) - l ) + z ( u - g( x ) ) : x \in X
- *               = z u - w l + max { f( x ) + ( w - z ) g( x ) : x \in X }  ,
+ *               = z u - w l + max { c( x ) + ( w - z ) g( x ) : x \in X }  ,
  *
  *   (D+)   min  z u - w l + max { c( x ) + ( w - z ) g( x ) : x \in X } 
  *               w >= 0  ,  z >= 0
@@ -229,8 +229,8 @@ namespace SMSpp_di_unipi_it
  *
  * - for a maximization problem,  y = w - z   (+)
  *
- * is the value to be written in the dual value of the constraint. In the case
- * l == u (an equality constraint) then (D-) and (D+) become the same
+ * is the value to be written in the dual value of the RowConstraint. In the
+ * case l == u (an equality constraint) then (D-) and (D+) become the same
  *
  *   (D-)   max  - y l + min { c( x ) + y g( x ) : x \in X }
  *
@@ -241,45 +241,37 @@ namespace SMSpp_di_unipi_it
  * case of the single inequality constraint g(x) <= u (l == -INF), whereby
  * then only z is defined: we have
  *
- *   L-( z ) = - z  u + min c( x ) + z g( x ) : x \in X   ,
+ *   L-( z ) = - z u + min c( x ) + z g( x ) : x \in X   ,
  *
- *   (D-)   max  - z  u + min { c( x ) + z g( x ) : x \in X }
- *               z >= 0
+ *   (D-)   max  - z u + min { c( x ) + z g( x ) : x \in X } : z >= 0
  *
  *   L+( z ) = z u + max { c( x ) - z g( x ) : x \in X }  ,
  *
- *   (D+)   min  z u + max { c( x ) - z g( x ) : x \in X } 
- *               z >= 0
+ *   (D+)   min  z u + max { c( x ) - z g( x ) : x \in X } : z >= 0
  *
  * Yet, because of the two different choices (-) and (+), where we take
- * w == 0  ==>  y = z and y = -z,
+ * w == 0  ==>  y = z in (-) and y = -z in (+), whence
  *
- *   (D-)   max  - y u + min { c( x ) + y g( x ) : x \in X }
- *               y >= 0
+ *   (D-)   max  - y u + min { c( x ) + y g( x ) : x \in X } : y >= 0
  *
- *   (D+)   min  - y u + max { c( x ) + y g( x ) : x \in X } 
- *               y <= 0
+ *   (D+)   min  - y u + max { c( x ) + y g( x ) : x \in X } : y <= 0
  *
  * In the opposite case of the single inequality constraint g(x) >= l
  * (u == INF) only w is defined and we rather have
  *
  *   L-( w ) = w l + min c( x ) - w g( x ) : x \in X   ,
  *
- *   (D-)   max  w l + min { c( x ) - w g( x ) : x \in X }
- *               w >= 0
+ *   (D-)   max  w l + min { c( x ) - w g( x ) : x \in X } : w >= 0
  *
  *   L+( w ) = - w l + max { c( x ) + w g( x ) : x \in X }  ,
  *
- *   (D+)   min  - w l + max { c( x ) + w g( x ) : x \in X } 
- *               w >= 0
+ *   (D+)   min  - w l + max { c( x ) + w g( x ) : x \in X } : w >= 0
  *
  * Again, due to the difference between (-) and (+), we end up with
  *
- *   (D-)   max  - y l + min { c( x ) + y g( x ) : x \in X }
- *               y <= 0
+ *   (D-)   max  - y l + min { c( x ) + y g( x ) : x \in X } : y <= 0
  *
- *   (D+)   min  - y l + max { c( x ) + y g( x ) : x \in X } 
- *               y >= 0
+ *   (D+)   min  - y l + max { c( x ) + y g( x ) : x \in X } : y >= 0
  *
  * To summarise, the Lagrangian Dual always has the form
  *
@@ -299,7 +291,7 @@ namespace SMSpp_di_unipi_it
  * used as the dual solution for (B), while a primal solution is constructed
  * by convexification. Hence, if (B) is *not* a convex program (say, some
  * sub-Block (B^k) has integer variables), then the Lagrangian Dual Block is
- * *no*t equivalent to (B) but to its "convexified relaxation", and this is
+ * *not* equivalent to (B) but to its "convexified relaxation", and this is
  * what is solved. */
 
 class LagrangianDualSolver : public CDASolver
@@ -447,7 +439,7 @@ public:
  /// constructor: ensure every field is initialized
 
  LagrangianDualSolver( void ) : CDASolver() , NumVar( 0 ) , f_nsb( 0 ) ,
-  f_convex( false ) , LagrDual( nullptr ) , f_BCfg( nullptr ) ,
+  f_max( false ) , LagrDual( nullptr ) , f_BCfg( nullptr ) ,
   f_BSCfg( nullptr ) ,  f_DBCfg( nullptr ) , f_DBSCfg( nullptr ) ,
   static_cons( 0 ) {
   // ensure all parameters are properly given their default value
@@ -1519,11 +1511,11 @@ FRowConstraint * constraint_with_index( Index i ) {
 /* If NNMult == true, the Lagrangian multipliers of inequality constraints
  * are all constructed as to be non-negative. This means that:
  *
- * - for a maximization original problem (f_convex == true) a <= constraint
+ * - for a maximization original problem (f_max == true) a <= constraint
  *   is passed as it is in the Lagrangian term, while a >= need be changed
  *   sign (both all the coefficients and the RHS/LHS)
  *
- * - for a minimization original problem (f_convex == false) a >= constraint
+ * - for a minimization original problem (f_max == false) a >= constraint
  *   is passed as it is in the Lagrangian term, while a <= need be changed
  *   sign (both all the coefficients and the RHS/LHS) */
 
@@ -1577,7 +1569,7 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  Index f_nsb;       ///< number of sub-Block
 
- bool f_convex;     ///< true if (B) was a max problem, false otherwise
+ bool f_max;        ///< true if (B) was a max problem, false otherwise
 
  AbstractBlock * LagrDual;  ///< the automatically constructed Lagrangian Dual
 

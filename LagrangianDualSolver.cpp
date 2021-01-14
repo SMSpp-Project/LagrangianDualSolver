@@ -351,15 +351,15 @@ void LagrangianDualSolver::set_Block( Block * block )
 
   // surely now the Objective is defined: check that all the senses agree
   if( ! i )
-   f_convex = ( csbi->get_objective()->get_sense() == Objective::eMax );
+   f_max = ( csbi->get_objective()->get_sense() == Objective::eMax );
   else
-   if( f_convex != ( csbi->get_objective()->get_sense() == Objective::eMax ) )
+   if( f_max != ( csbi->get_objective()->get_sense() == Objective::eMax ) )
     throw( std::invalid_argument(
 	      "LagrangianDualSolver: mixed min/max sub-Block Objective" ) );
 
   v_LBF[ i ] = lbfi;
   auto osbi = new FRealObjective( sbi , lbfi );
-  osbi->set_sense( f_convex ? Objective::eMin : Objective::eMax , eNoMod );
+  osbi->set_sense( f_max ? Objective::eMin : Objective::eMax , eNoMod );
   sbi->set_objective( osbi );
 
   LagrDual->add_nested_Block( sbi );  // add the sub-Block
@@ -413,7 +413,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    throw( std::invalid_argument(
 		  "LagrangianDualSolver: nonempty Objective not allowed" ) );
 
-  if( f_convex != ( obj->get_sense() == Objective::eMax ) )
+  if( f_max != ( obj->get_sense() == Objective::eMax ) )
    throw( std::invalid_argument(
 	  "LagrangianDualSolver: Block sense differs form sub-Block one" ) );
   }
@@ -613,7 +613,7 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  auto obj = new FRealObjective( LagrDual ,
 				new LinearFunction( std::move( objcf ) ) );
- obj->set_sense( f_convex ? Objective::eMin : Objective::eMax , eNoMod );
+ obj->set_sense( f_max ? Objective::eMin : Objective::eMax , eNoMod );
  LagrDual->set_objective( obj , eNoMod );
 
  // pass the Lagrangian terms to the corresponding LagBFunction - - - - - - -
@@ -961,6 +961,9 @@ int LagrangianDualSolver::compute( bool changedvars )
 
  process_outstanding_Modification();
 
+ if( ! owned )
+  f_Block->unlock( f_id );
+
  // if iBCopy == false, inhibit all Modification from the UpdateSolver; these
  // would reach the (disconnected) original Block, but there is no reason for
  // this because these are all "local" changes that will be undone at the end
@@ -981,10 +984,7 @@ int LagrangianDualSolver::compute( bool changedvars )
   for( auto us : v_US )
    us->inhibit_Modification( true );
   }
- 
- if( ! owned )
-  f_Block->unlock( f_id );
- 
+
  return( res );
 
  }  // end( LagrangianDualSolver::compute )
@@ -1449,12 +1449,12 @@ FRowConstraint * LagrangianDualSolver::static_constraint_with_index( Index i )
 
 bool LagrangianDualSolver::to_be_reversed( const FRowConstraint & con )
 {
- if( f_convex ) {
-  if( con.get_rhs() == Inf< RowConstraint::RHSValue >() )
+ if( f_max ) {  // maximization problem
+  if( con.get_rhs() == Inf< RowConstraint::RHSValue >() )  // >= constraint
    return( true );
   }
- else
-  if( con.get_lhs() == -Inf< RowConstraint::RHSValue >() )
+ else           // minimization problem
+  if( con.get_lhs() == -Inf< RowConstraint::RHSValue >() )  // <= constraint
    return( true );
 
  return( false );
@@ -1480,12 +1480,12 @@ double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
  //
  // The natural sign constraint on lvar is:
  //
- //  - if f_convex, i.e., the Lagrangian Dual is a minimum because the
+ //  - if f_max, i.e., the Lagrangian Dual is a minimum because the
  //    original problem is a maximum
  //    = variable part <= RHS has a >= 0 Lagrangian multiplier
  //    = variable part >= LHS has a <= 0 Lagrangian multiplier
  //
- //  - if ! f_convex, i.e., the Lagrangian Dual is a maximum because the
+ //  - if ! f_max, i.e., the Lagrangian Dual is a maximum because the
  //    original problem is a minimum
  //    = variable part <= RHS has a <= 0 Lagrangian multiplier
  //    = variable part >= LHS has a >= 0 Lagrangian multiplier
@@ -1506,40 +1506,42 @@ double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
 
  if( NNMult ) {
   if( lhs < rhs ) {                    // an inequality constraint
-   lvar.is_positive( true , eNoMod );  // a >= multiplier
-   if( rhs == INFshift )
-    return( f_convex ? lhs : - lhs );
-   //!!return( f_convex ? - lhs : lhs );
+   lvar.is_positive( true , eNoMod );  // always a >= multiplier
+   if( rhs == INFshift )               // a >= constraint
+    return( f_max ? lhs : - lhs );
 
-   if( lhs == -INFshift )
-    return( f_convex ? - rhs : rhs );
-   //!!return( f_convex ? rhs : - rhs );
+   if( lhs == -INFshift )              // a <= constraint
+    return( f_max ? - rhs : rhs );
 
    throw( std::invalid_argument(
-    "LagrangianDualSolver: ranged dynamic constraints not supported yet" ) );
+            "LagrangianDualSolver: ranged constraints not supported yet" ) );
    }
 
   return( - rhs );
   }
 
  // define the sign constraints on the multiplier (if any)
- if( f_convex ) {  // for a max problem
+ if( f_max ) {  // for a max problem
   if( rhs == INFshift ) {                // a >= constraint 
-   lvar.is_negative( true , eNoMod );    // ==> a <= multiplier     
+   //!!lvar.is_negative( true , eNoMod );    // ==> a <= multiplier     
+   lvar.is_positive( true , eNoMod );    // ==> a <= multiplier     
    return( - lhs );
    }
 
   if( lhs == -INFshift )                // a <= constraint 
-   lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
+   //!!lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
+   lvar.is_negative( true , eNoMod );   // ==> a >= multiplier
   }
- else {            // for a min problem
+ else {         // for a min problem
   if( rhs == INFshift ) {               // a >= constraint 
-   lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
+   //!!lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
+   lvar.is_negative( true , eNoMod );   // ==> a >= multiplier
    return( - lhs );
    }
 
   if( lhs == -INFshift )                // a <= constraint 
-   lvar.is_negative( true , eNoMod );   // ==> a <= multiplier
+   //!!lvar.is_negative( true , eNoMod );   // ==> a <= multiplier
+   lvar.is_positive( true , eNoMod );   // ==> a <= multiplier
   }
 
  return( - rhs );
@@ -1601,8 +1603,8 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
  for( Index i = 0 ; i < vc.size() ; ++i )
   split[ blckidx[ i ] ][ cntr[ blckidx[ i ] ]++ ] = vc[ i ];
 
-  // if necessary change the sign
-  if( NNMult && to_be_reversed( con ) )
+ // if necessary change the sign
+ if( NNMult && to_be_reversed( con ) )
   for( auto & el : split )
    for( auto & lel : el )
     lel.second = - lel.second;
