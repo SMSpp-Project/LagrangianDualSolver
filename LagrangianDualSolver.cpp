@@ -1482,13 +1482,13 @@ double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
  //
  //  - if f_max, i.e., the Lagrangian Dual is a minimum because the
  //    original problem is a maximum
- //    = variable part <= RHS has a >= 0 Lagrangian multiplier
- //    = variable part >= LHS has a <= 0 Lagrangian multiplier
+ //    = variable part <= RHS has a <= 0 Lagrangian multiplier
+ //    = variable part >= LHS has a >= 0 Lagrangian multiplier
  //
  //  - if ! f_max, i.e., the Lagrangian Dual is a maximum because the
  //    original problem is a minimum
- //    = variable part <= RHS has a <= 0 Lagrangian multiplier
- //    = variable part >= LHS has a >= 0 Lagrangian multiplier
+ //    = variable part <= RHS has a >= 0 Lagrangian multiplier
+ //    = variable part >= LHS has a <= 0 Lagrangian multiplier
  //
  // (equality constraints never have sign-constrained Lagrangian multipliers)
  // if NNMult == true, <= 0 Lagrangian multipliers are made >= 0 by

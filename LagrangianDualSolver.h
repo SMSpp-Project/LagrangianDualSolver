@@ -70,18 +70,18 @@ namespace SMSpp_di_unipi_it
  *   "completely empty").
  *
  * - No Objective in (B) (which makes sense: since all Variable in (B)
- *   actually belong to the sub-Block, recurively, it's them who define
+ *   actually belong to the sub-Block, recursively, it's them who define
  *   the Objective for these Variable: no need for (B) to do it).
  *
  * - (B) and all its sub-Block, recursively, do not depend on any "external"
  *   Variable, i.e., a Variable that does not belong to (B) (actually, to any
- *   of its sub-Block, recurively, since (B) cannot have any Variable of its
+ *   of its sub-Block, recursively, since (B) cannot have any Variable of its
  *   own).
  *
  * - If there is more than one sub-Block, the Constraint in (B) are all and
  *   only the ones that link the sub-Block between them; that is, no sub-Block
  *   must depend on any "external" Variable, i.e., a Variable that does not
- *   belong to the sub-Block (or any of its sub-sub-Block, recurively).
+ *   belong to the sub-Block (or any of its sub-sub-Block, recursively).
  *
  * - All the Constraint in (B) are "linear constraint", i.e., FRowConstraint
  *   with a LinearFunction inside. Note that OneVarConstraint are "linear
@@ -89,7 +89,7 @@ namespace SMSpp_di_unipi_it
  *   cannot be "linking constraints". Although it may in principle be that
  *   one may want to deal with them in a Lagrangian fashion, in most of the
  *   cases including them in the subproblem is better, and therefore
- *   LagrangianDualSolver currently do not support them (although this may
+ *   LagrangianDualSolver currently does not support them (although this may
  *   change later if a serious use case arises).
  *
  * - Each sub-Block of (B) may never make any assumption on which type (B) is
@@ -105,7 +105,7 @@ namespace SMSpp_di_unipi_it
  * from (B). Consistency is kept, in that any Modification coming from the
  * sub-Block is also "forwarded" to (B).
  *
- * Mathematically speaking, he original (B) can be seen as
+ * Mathematically speaking, the original (B) can be seen as
  *
  *  (B)   max / min 0
  *                  l <= \sum_{k \in K} g^k( x^k ) <= u
@@ -121,18 +121,18 @@ namespace SMSpp_di_unipi_it
  * the same would be true for c^k(), except that we currently need an "easy"
  * function whose abstract representation we can manipulate since this is how
  * LagBFunction works. However, note that arbitrarily complex Objective could
- * be present in any sub-Block of B^k, again provide that the Solver can
+ * be present in any sub-Block of B^k, again provided that the Solver can
  * handle them.
  *
  * It is important to remark that LagrangianDualSolver does not solve (B)
  * but rather its Lagrangian Dual. This is obtained by relaxing the linking
- * constraints, and here immediately come some caveat. Indeed, the linking
+ * constraints, and here immediately comes some caveat. Indeed, the linking
  * FRowConstraint in (B) in general have the form l <= g(x) <= u, i.e., they
  * correspond to *two* linear constraints. However, in many cases only *one*
  * Lagrangian multiplier need be defined for them:
  *
  * - if l == u, i.e., the equality constraint g(x) = u (= l), in which case
- *   the corresponding Lagrangian multiplier is unconstrained in  sign;
+ *   the corresponding Lagrangian multiplier is unconstrained in sign;
  *
  * - if l == -INF and u < INF, i.e., the less-than constraint g(x) <= u, in
  *   which case the corresponding Lagrangian multiplier is constrained in
@@ -143,9 +143,9 @@ namespace SMSpp_di_unipi_it
  *   sign.
  *
  * Save for the degenerate case l == -INF and u == INF, which is not allowed,
- * this leves the case -INF < l < u < INF. One possible approach for this
+ * this leaves the case -INF < l < u < INF. One possible approach for this
  * would be to consider the constraint as actually being the two less-than
- * and greater-then (g(x) <= u, g(x) >= l) with two different Lagrangian
+ * and greater-than (g(x) <= u, g(x) >= l) with two different Lagrangian
  * multipliers, both constrained in sign (in the right way). However, this
  * would significantly complicate the handling of these constraints since
  * each original one may give rise to either one or two multipliers, which
@@ -167,7 +167,7 @@ namespace SMSpp_di_unipi_it
  * Alternatively, each of these may be represented as a separate one-variable
  * LagBFunction (again, possibly solved by a BoxSolver). Even better, Solver
  * capable of exploiting the structure of the LagBFunction to properly modify
- * the Master Problem could se this to reformulate the Master Problem at
+ * the Master Problem could see this to reformulate the Master Problem at
  * basically 0-cost, which would most likely be the best approach. If one
  * really wants to handle all the cases of changes in the lhs/rhs, even those
  * changing the two-sidedness status, this (these) extra LagBFunction(s)
@@ -207,7 +207,7 @@ namespace SMSpp_di_unipi_it
  *               = w l - z  u + min c( x ) + ( z - w ) g( x ) : x \in X   ,
  *
  * where z >= 0 is the Lagrangian multiplier of the constraint g( x ) <= u,
- * while w >= 0 is the Lagrangian multiplierof the constraint l <= g( x ).
+ * while w >= 0 is the Lagrangian multiplier of the constraint l <= g( x ).
  * The Lagrangian dual of (B) is then
  *
  *   (D-)   max  w l - z u + min { c( x ) + ( z - w ) g( x ) : x \in X }
@@ -287,7 +287,7 @@ namespace SMSpp_di_unipi_it
  * sign on the data, but this is kept completely hidden from the outside user.
  *
  * After all is said and done, an appropriate Solver is then registered to
- * the Lagrangian Dual Block, and it is used to solve it. The solution it
+ * the Lagrangian Dual Block, and it is used to solve it. The solution is
  * used as the dual solution for (B), while a primal solution is constructed
  * by convexification. Hence, if (B) is *not* a convex program (say, some
  * sub-Block (B^k) has integer variables), then the Lagrangian Dual Block is
