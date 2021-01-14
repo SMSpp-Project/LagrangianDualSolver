@@ -105,34 +105,47 @@ namespace SMSpp_di_unipi_it
  * from (B). Consistency is kept, in that any Modification coming from the
  * sub-Block is also "forwarded" to (B).
  *
- * An appropriate Solver is then registered to the Lagrangian Dual Block, and
- * it is used to solve it. The solution it used as the dual solution for (B),
- * while a primal solution is constructed by convexification. Here comes the
- * reason for the scare quotes: if (B) does not represent a convex program
- * (say, the sub-Block have integer variables), then the Lagrangian Dual
- * Block is not equivalent to (B) but to its "convexified relaxation", and
- * this is what is solved.
+ * Mathematically speaking, he original (B) can be seen as
  *
- * IMPORTANT NOTE ON TWO-SIDED CONSTRAINTS. The FRowConstraint in (B) in
- * general have the form l <= ax <= u, i.e., they correspond to *two* linear
- * constraints. However, in many cases only *one* Lagrangian multiplier need
- * be defined for them:
+ *  (B)   max / min 0
+ *                  l <= \sum_{k \in K} g^k( x^k ) <= u
+ *                  B^k    k \in K
  *
- * - if l == u, i.e., the equality constraint ax = u (= l); in this case the
- *   corresponding Lagrangian multiplier is constrained in  sign;
+ * where
  *
- * - if l == -INF and u < INF, i.e., the less-than constraint ax <= u; in
- *   this case the corresponding Lagrangian multiplier is constrained in
- *   sign (>= 0 if the (B) is max, <= 0 if (B) is min);
+ *   (B^k)   max / min c^k(x^k) : x^k \in X^k
  *
- * - if l > -INF and u == INF, i.e., the greater-than constraint ax >= l; in
- *   this case the corresponding Lagrangian multiplier is constrained in
- *   sign (<= 0 if the (B) is max, >= 0 if (B) is min);
+ * for each k \in K are all its sub-Block. There is basically no requirement
+ * on X^k, save that the corresponding Solver be able to "efficiently" solve
+ * the corresponding problem (albeit this can be done only approximately);
+ * the same would be true for c^k(), except that we currently need an "easy"
+ * function whose abstract representation we can manipulate since this is how
+ * LagBFunction works. However, note that arbitrarily complex Objective could
+ * be present in any sub-Block of B^k, again provide that the Solver can
+ * handle them.
+ *
+ * It is important to remark that LagrangianDualSolver does not solve (B)
+ * but rather its Lagrangian Dual. This is obtained by relaxing the linking
+ * constraints, and here immediately come some caveat. Indeed, the linking
+ * FRowConstraint in (B) in general have the form l <= g(x) <= u, i.e., they
+ * correspond to *two* linear constraints. However, in many cases only *one*
+ * Lagrangian multiplier need be defined for them:
+ *
+ * - if l == u, i.e., the equality constraint g(x) = u (= l), in which case
+ *   the corresponding Lagrangian multiplier is unconstrained in  sign;
+ *
+ * - if l == -INF and u < INF, i.e., the less-than constraint g(x) <= u, in
+ *   which case the corresponding Lagrangian multiplier is constrained in
+ *   sign;
+ *
+ * - if l > -INF and u == INF, i.e., the greater-than constraint g(x) >= l,
+ *   in which case the corresponding Lagrangian multiplier is constrained in
+ *   sign.
  *
  * Save for the degenerate case l == -INF and u == INF, which is not allowed,
  * this leves the case -INF < l < u < INF. One possible approach for this
  * would be to consider the constraint as actually being the two less-than
- * and greater-then (ax <= u, a >= l) with two different Lagrangian
+ * and greater-then (g(x) <= u, g(x) >= l) with two different Lagrangian
  * multipliers, both constrained in sign (in the right way). However, this
  * would significantly complicate the handling of these constraints since
  * each original one may give rise to either one or two multipliers, which
@@ -141,25 +154,25 @@ namespace SMSpp_di_unipi_it
  * a ranged one, or an INF bound becoming finite). A different approach is to
  * reformulate the constraint as
  *
- *   ax - s = 0  ,  l <= s <= u
+ *   g(x) - s = 0  ,  l <= s <= u
  *
  * and relax it, with an *unconstrained* multiplier (call it y). This would
- * lead to the same single Lagrangian term y ( ax ), plus the extra "mini
+ * lead to the same single Lagrangian term y g(x), plus the extra "mini
  * Lagrangian subproblem"
  *
- *   min/max { y ( - s ) : l <= s <= u }
+ *   max / min { y ( - s ) : l <= s <= u }
  *
- * All these may be gathered into a single very simple LagBFunction, to
- * which possibly a VerySimpleLPSolver could be attached. Alternatively,
- * each of these may be represented as a separate one-variable LagBFunction
- * (again, possibly solved by a VerySimpleLPSolver). In particular for Solver
+ * All these may be gathered as a very simple inner Block into a single very
+ * simple LagBFunction, to which possibly a BoxSolver could be attached.
+ * Alternatively, each of these may be represented as a separate one-variable
+ * LagBFunction (again, possibly solved by a BoxSolver). Even better, Solver
  * capable of exploiting the structure of the LagBFunction to properly modify
- * the Master Problem, such a reformulation would basically be a 0-cost one
- * and most likely the best approach. If one really wants to handle all the
- * cases of changes in the lhs/rhs, even those hanging the two-sidedness
- * status, this (these) extra LagBFunction(s) still should be dynamic and
- * allow new s variables to be created and destroyed; yet, this is in general
- * possible.
+ * the Master Problem could se this to reformulate the Master Problem at
+ * basically 0-cost, which would most likely be the best approach. If one
+ * really wants to handle all the cases of changes in the lhs/rhs, even those
+ * changing the two-sidedness status, this (these) extra LagBFunction(s)
+ * would need to be dynamic and allow new s variables to be created and
+ * destroyed; yet, this is in general possible.
  *
  * Hence, LagrangianDualSolver ASSUMES ONLY ONE MULTIPLIER PER RELAXED
  * CONSTRAINTS IN ALL CASES. However THE CONSTRUCTION OF THE
@@ -175,7 +188,119 @@ namespace SMSpp_di_unipi_it
  * problem may not have finite optimum (and not be unbounded), or the dual
  * problem may be infeasible even if the primal does have an optimal solution.
  * We assume that these cases either do not occur or are dealt with by the
- * user of LagrangianDualSolver. */
+ * user of LagrangianDualSolver.
+ *
+ * A final important note regards the choice of the "sign" in the relaxed
+ * constraints, since this impact on the sign constraints of the Lagrangian
+ * multipliers. Rewriting (B) for simplicity as
+ *
+ *   (B)   max / min c(x) : l <= g(x) <= u , x \in X
+ *
+ * the exact form of the Lagrangian Dual, and of its Variable y, can actually
+ * be done in different ways. Since y will be used as the dual value for the
+ * constraints, we need to be consistent with the standards set by
+ * RowConstraint [see RowConstraint.h], which are now recalled and discussed.
+ * Let us start with the minimization case; then, the Lagrangian function
+ * associated with (B)
+ *
+ *   L-( w , z ) = min c( x ) + w ( l - g( x ) ) + z ( g( x ) - u ) : x \in X
+ *               = w l - z  u + min f( x ) + ( z - w ) g( x ) : x \in X   ,
+ *
+ * where z >= 0 is the Lagrangian multiplier of the constraint g( x ) <= u,
+ * while w >= 0 is the Lagrangian multiplierof the constraint l <= g( x ).
+ * The Lagrangian dual of (B) is then
+ *
+ *   (D-)   max  w l - z u + min { c( x ) + ( z - w ) g( x ) : x \in X }
+ *               w >= 0  ,  z >= 0
+ *
+ * Note that in the maximization case things are analogous but different:
+ *
+ *   L+( w , z ) = max c( x ) + w ( g( x ) - l ) + z ( u - g( x ) ) : x \in X
+ *               = z u - w l + max { f( x ) + ( w - z ) g( x ) : x \in X }  ,
+ *
+ *   (D+)   min  z u - w l + max { c( x ) + ( w - z ) g( x ) : x \in X } 
+ *               w >= 0  ,  z >= 0
+ *
+ * As previously discussed, we will only consider *one* Lagrangian multiplier.
+ * This is due to the fact that, at optimality, only one between z and w need
+ * be nonzero. The standard set out by RowConstraint is that
+ *
+ * - for a minimization problem,  y = z - w   (-)
+ *
+ * - for a maximization problem,  y = w - z   (+)
+ *
+ * is the value to be written in the dual value of the constraint. In the case
+ * l == u (an equality constraint) then (D-) and (D+) become the same
+ *
+ *   (D-)   max  - y l + min { c( x ) + y g( x ) : x \in X }
+ *
+ *   (D+)   min  - y l + max { c( x ) + y g( x ) : x \in X } 
+ *
+ * where y is unconstrained in sign (and beware of the initial "-"). However,
+ * in the inequality case things are different. Indeed, let us consider the
+ * case of the single inequality constraint g(x) <= u (l == -INF), whereby
+ * then only z is defined: we have
+ *
+ *   L-( z ) = - z  u + min c( x ) + z g( x ) : x \in X   ,
+ *
+ *   (D-)   max  - z  u + min { c( x ) + z g( x ) : x \in X }
+ *               z >= 0
+ *
+ *   L+( z ) = z u + max { c( x ) - z g( x ) : x \in X }  ,
+ *
+ *   (D+)   min  z u + max { c( x ) - z g( x ) : x \in X } 
+ *               z >= 0
+ *
+ * Yet, because of the two different choices (-) and (+), where we take
+ * w == 0  ==>  y = z and y = -z,
+ *
+ *   (D-)   max  - y u + min { c( x ) + y g( x ) : x \in X }
+ *               y >= 0
+ *
+ *   (D+)   min  - y u + max { c( x ) + y g( x ) : x \in X } 
+ *               y <= 0
+ *
+ * In the opposite case of the single inequality constraint g(x) >= l
+ * (u == INF) only w is defined and we rather have
+ *
+ *   L-( w ) = w l + min c( x ) - w g( x ) : x \in X   ,
+ *
+ *   (D-)   max  w l + min { c( x ) - w g( x ) : x \in X }
+ *               w >= 0
+ *
+ *   L+( w ) = - w l + max { c( x ) + w g( x ) : x \in X }  ,
+ *
+ *   (D+)   min  - w l + max { c( x ) + w g( x ) : x \in X } 
+ *               w >= 0
+ *
+ * Again, due to the difference between (-) and (+), we end up with
+ *
+ *   (D-)   max  - y l + min { c( x ) + y g( x ) : x \in X }
+ *               y <= 0
+ *
+ *   (D+)   min  - y l + max { c( x ) + y g( x ) : x \in X } 
+ *               y >= 0
+ *
+ * To summarise, the Lagrangian Dual always has the form
+ *
+ *   (D)   max  - y r + min { c( x ) + y g( x ) : x \in X }
+ *
+ * where r is the non-INF between the two bounds. Then:
+ *
+ * - for a <= constraint, y >= 0 for max and y <= 0 for min
+ * - for a >= constraint, y <= 0 for max and y >= 0 for min
+ *
+ * Note that LagrangianDualSolver provides a mechanism whereby the inner
+ * Solver is only presented with y >= 0 constraints by appropriately changing
+ * sign on the data, but this is kept completely hidden from the outside user.
+ *
+ * After all is said and done, an appropriate Solver is then registered to
+ * the Lagrangian Dual Block, and it is used to solve it. The solution it
+ * used as the dual solution for (B), while a primal solution is constructed
+ * by convexification. Hence, if (B) is *not* a convex program (say, some
+ * sub-Block (B^k) has integer variables), then the Lagrangian Dual Block is
+ * *no*t equivalent to (B) but to its "convexified relaxation", and this is
+ * what is solved. */
 
 class LagrangianDualSolver : public CDASolver
 {
@@ -1253,14 +1378,17 @@ public:
   if( ! LagrDual )
    return;
 
+  InnerSolver->set_id( this );
   LagrDual->register_Solver( InnerSolver );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  void unregister_inner_Solver( void ) {
-  if( InnerSolver && LagrDual )
+  if( InnerSolver && LagrDual ) {
+   InnerSolver->set_id();
    LagrDual->unregister_Solver( InnerSolver );
+   }
   }
 
 /*--------------------------------------------------------------------------*/

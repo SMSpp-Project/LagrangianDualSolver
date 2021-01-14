@@ -961,10 +961,31 @@ int LagrangianDualSolver::compute( bool changedvars )
 
  process_outstanding_Modification();
 
+ // if iBCopy == false, inhibit all Modification from the UpdateSolver; these
+ // would reach the (disconnected) original Block, but there is no reason for
+ // this because these are all "local" changes that will be undone at the end
+ // of the solution process, so the Solver attached to the father (and other
+ // ancestors) have no reason to act upon them
+ if( ! iBCopy )
+  for( auto us : v_US )
+   us->inhibit_Modification( true );
+
+ auto res = InnerSolver->compute( changedvars );
+
+ // if iBCopy == false, bring back the inner Block to its original objective
+ // "like if nothing ever happened", and re-enable the Modification from the
+ // UpdateSolver
+ if( ! iBCopy ) {
+  for( auto lbf : v_LBF )
+   lbf->cleanup_inner_objective();
+  for( auto us : v_US )
+   us->inhibit_Modification( true );
+  }
+ 
  if( ! owned )
   f_Block->unlock( f_id );
  
- return( InnerSolver->compute( changedvars ) );
+ return( res );
 
  }  // end( LagrangianDualSolver::compute )
 
@@ -1428,12 +1449,13 @@ FRowConstraint * LagrangianDualSolver::static_constraint_with_index( Index i )
 
 bool LagrangianDualSolver::to_be_reversed( const FRowConstraint & con )
 {
- if( f_convex && ( con.get_rhs() == Inf< RowConstraint::RHSValue >() ) )
-  return( true );
-
- if( ( ! f_convex ) &&
-     ( con.get_lhs() == -Inf< RowConstraint::RHSValue >() ) )
-  return( true );
+ if( f_convex ) {
+  if( con.get_rhs() == Inf< RowConstraint::RHSValue >() )
+   return( true );
+  }
+ else
+  if( con.get_lhs() == -Inf< RowConstraint::RHSValue >() )
+   return( true );
 
  return( false );
  }
@@ -1443,6 +1465,42 @@ bool LagrangianDualSolver::to_be_reversed( const FRowConstraint & con )
 double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
 					 ColVariable & lvar )
 {
+ // returns the coefficient to be put in the Linear Objective for the
+ // Lagrangian variable lvar corresponding to the relaxed constraint con
+ // note that con has one of the three forms
+ //
+ //           variable part == RHS
+ //           variable part <= RHS
+ //    LHS <= variable part
+ //
+ // which naturally correspond to Lagrangian terms of the form
+ //
+ //    lvar * ( variable part - RHS )
+ //    lvar * ( variable part - LHS )
+ //
+ // The natural sign constraint on lvar is:
+ //
+ //  - if f_convex, i.e., the Lagrangian Dual is a minimum because the
+ //    original problem is a maximum
+ //    = variable part <= RHS has a >= 0 Lagrangian multiplier
+ //    = variable part >= LHS has a <= 0 Lagrangian multiplier
+ //
+ //  - if ! f_convex, i.e., the Lagrangian Dual is a maximum because the
+ //    original problem is a minimum
+ //    = variable part <= RHS has a <= 0 Lagrangian multiplier
+ //    = variable part >= LHS has a >= 0 Lagrangian multiplier
+ //
+ // (equality constraints never have sign-constrained Lagrangian multipliers)
+ // if NNMult == true, <= 0 Lagrangian multipliers are made >= 0 by
+ // multiplying everything by -1
+ //
+ // however, note the following: if the Lagrangian term is, say
+ //
+ //    lvar * ( variable part - RHS )
+ //
+ // then THE COEFFICIENT TO BE WRITTEN IN THE Linear Objective IS - RHS,
+ // the "-" being crucial of course
+ 
  auto lhs = con.get_lhs();
  auto rhs = con.get_rhs();
 
@@ -1450,23 +1508,25 @@ double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
   if( lhs < rhs ) {                    // an inequality constraint
    lvar.is_positive( true , eNoMod );  // a >= multiplier
    if( rhs == INFshift )
-    return( f_convex ? - lhs : lhs );
+    return( f_convex ? lhs : - lhs );
+   //!!return( f_convex ? - lhs : lhs );
 
    if( lhs == -INFshift )
-    return( f_convex ? rhs : - rhs );
+    return( f_convex ? - rhs : rhs );
+   //!!return( f_convex ? rhs : - rhs );
 
    throw( std::invalid_argument(
     "LagrangianDualSolver: ranged dynamic constraints not supported yet" ) );
    }
 
-  return( rhs );
+  return( - rhs );
   }
 
  // define the sign constraints on the multiplier (if any)
  if( f_convex ) {  // for a max problem
   if( rhs == INFshift ) {                // a >= constraint 
    lvar.is_negative( true , eNoMod );    // ==> a <= multiplier     
-   return( lhs );
+   return( - lhs );
    }
 
   if( lhs == -INFshift )                // a <= constraint 
@@ -1475,14 +1535,14 @@ double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
  else {            // for a min problem
   if( rhs == INFshift ) {               // a >= constraint 
    lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
-   return( lhs );
+   return( - lhs );
    }
 
   if( lhs == -INFshift )                // a <= constraint 
    lvar.is_negative( true , eNoMod );   // ==> a <= multiplier
   }
 
- return( rhs );
+ return( - rhs );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1837,7 +1897,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 
    if( NNMult && to_be_reversed( *cnst ) )
     lrhs = - lrhs;
-   lrhsval.push_back( lrhs );
+   lrhsval.push_back( - lrhs );  // note the necessary "-"
 
    }  // end( RowConstraintMod )
 
@@ -1957,7 +2017,8 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
      chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
 
     static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos )
-			 )->remove_variables( std::move( split[ h ] ) , false ,
+			 )->remove_variables( std::move( split[ h ] ) ,
+					      false ,
 					      Observer::make_par( eModBlck ,
 								  chnls[ h ] )
 					      );
