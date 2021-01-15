@@ -1450,11 +1450,11 @@ FRowConstraint * LagrangianDualSolver::static_constraint_with_index( Index i )
 bool LagrangianDualSolver::to_be_reversed( const FRowConstraint & con )
 {
  if( f_max ) {  // maximization problem
-  if( con.get_rhs() == Inf< RowConstraint::RHSValue >() )  // >= constraint
+  if( con.get_lhs() == - Inf< RowConstraint::RHSValue >() )  // <= constraint
    return( true );
   }
  else           // minimization problem
-  if( con.get_lhs() == -Inf< RowConstraint::RHSValue >() )  // <= constraint
+  if( con.get_rhs() == Inf< RowConstraint::RHSValue >() )    // >= constraint
    return( true );
 
  return( false );
@@ -1508,10 +1508,10 @@ double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
   if( lhs < rhs ) {                    // an inequality constraint
    lvar.is_positive( true , eNoMod );  // always a >= multiplier
    if( rhs == INFshift )               // a >= constraint
-    return( f_max ? lhs : - lhs );
+    return( f_max ? - lhs : lhs );
 
    if( lhs == -INFshift )              // a <= constraint
-    return( f_max ? - rhs : rhs );
+    return( f_max ? rhs : - rhs );
 
    throw( std::invalid_argument(
             "LagrangianDualSolver: ranged constraints not supported yet" ) );
@@ -1521,27 +1521,23 @@ double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
   }
 
  // define the sign constraints on the multiplier (if any)
- if( f_max ) {  // for a max problem
+ if( f_max ) {  // for a max original problem
   if( rhs == INFshift ) {                // a >= constraint 
-   //!!lvar.is_negative( true , eNoMod );    // ==> a <= multiplier     
-   lvar.is_positive( true , eNoMod );    // ==> a <= multiplier     
+   lvar.is_positive( true , eNoMod );    // ==> a >= multiplier     
    return( - lhs );
    }
 
   if( lhs == -INFshift )                // a <= constraint 
-   //!!lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
-   lvar.is_negative( true , eNoMod );   // ==> a >= multiplier
+   lvar.is_negative( true , eNoMod );   // ==> a <= multiplier
   }
- else {         // for a min problem
+ else {         // for a min original problem
   if( rhs == INFshift ) {               // a >= constraint 
-   //!!lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
-   lvar.is_negative( true , eNoMod );   // ==> a >= multiplier
+   lvar.is_negative( true , eNoMod );   // ==> a <= multiplier
    return( - lhs );
    }
 
   if( lhs == -INFshift )                // a <= constraint 
-   //!!lvar.is_negative( true , eNoMod );   // ==> a <= multiplier
-   lvar.is_positive( true , eNoMod );   // ==> a <= multiplier
+   lvar.is_positive( true , eNoMod );   // ==> a >= multiplier
   }
 
  return( - rhs );

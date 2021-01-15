@@ -279,8 +279,15 @@ namespace SMSpp_di_unipi_it
  *
  * where r is the non-INF between the two bounds. Then:
  *
- * - for a <= constraint, y >= 0 for max and y <= 0 for min
- * - for a >= constraint, y <= 0 for max and y >= 0 for min
+ * - for a original maximization problem, corresponding to a minimization
+ *   Lagrangian dual (D+):
+ *   = for a g(x) <= u constraint, y = - z <= 0
+ *   = for a g(x) >= l constraint, y =   w >= 0
+ *
+ * - for a original minimization problem, corresponding to a maximization
+ *   Lagrangian dual (D-):
+ *   = for a g(x) <= u constraint, y =   z >= 0
+ *   = for a g(x) >= l constraint, y = - w <= 0
  *
  * Note that LagrangianDualSolver provides a mechanism whereby the inner
  * Solver is only presented with y >= 0 constraints by appropriately changing
