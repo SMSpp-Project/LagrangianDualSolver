@@ -982,7 +982,7 @@ int LagrangianDualSolver::compute( bool changedvars )
   for( auto lbf : v_LBF )
    lbf->cleanup_inner_objective();
   for( auto us : v_US )
-   us->inhibit_Modification( true );
+   us->inhibit_Modification( false );
   }
 
  return( res );
