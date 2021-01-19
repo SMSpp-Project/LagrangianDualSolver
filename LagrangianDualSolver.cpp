@@ -1856,7 +1856,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
        ( AddDltd.find( cnst ) != AddDltd.end() ) )
     continue;
 
-   auto pos = index_of_dynamic_constraint( cnst );
+   auto pos = index_of_constraint( cnst );
    if( lrhschgd.find( pos ) != lrhschgd.end() )  // changed more than once
     continue;                                    // done already
 
@@ -1946,7 +1946,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
       lel.second = - lel.second;
 
    // now call add_variables() for all the appropriate LinearFunction
-   auto pos = index_of_dynamic_constraint( cnst );
+   auto pos = index_of_constraint( cnst );
    for( Index h = 0 ; h < f_nsb ; ++h ) {
     if( ! cntr[ h ] )
      continue;
@@ -1998,7 +1998,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
      }
 
    // second pass: construct all split[ h ]
-   auto pos = index_of_dynamic_constraint( cnst );
+   auto pos = index_of_constraint( cnst );
    for( Index i = 0 ; i < tmod->vars().size() ; ++i ) {
     auto bidx = blckidx[ i ];
     split[ bidx ][ cntr[ bidx ]++ ] =
@@ -2054,11 +2054,12 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    for( Index h = 0 ; h < f_nsb ; ++h )
     if( cntr[ h ] ) {
      split[ h ].resize( cntr[ h ] );
+     delta[ h ].resize( cntr[ h ] );
      cntr[ h ] = 0;
      }
 
    // second pass: construct all split[ h ] and delta[ h ]
-   auto pos = index_of_dynamic_constraint( cnst );
+   auto pos = index_of_constraint( cnst );
    for( Index i = 0 ; i < tmod->vars().size() ; ++i ) {
     auto bidx = blckidx[ i ];
     auto tc = cntr[ bidx ]++;
@@ -2126,7 +2127,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 
   if( Dltds.size() == 1 ) {  // just one constraint
    auto cnst = *(Dltds.begin());
-   Index i = index_of_dynamic_constraint( cnst );
+   Index i = index_of_constraint( cnst );
 
    // remove the variable in the LagBFunction
    for( Index h = 0 ; h < f_nsb ; )
@@ -2164,7 +2165,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    Subset Dltdn( Dltds.size() );  // set of indices of deleted constraint
    auto Dnit = Dltdn.begin();
    for( auto el : Dltds )
-    *(Dnit++) = index_of_dynamic_constraint( el );
+    *(Dnit++) = index_of_constraint( el );
 
    std::sort( Dltdn.begin() , Dltdn.end() );
 
