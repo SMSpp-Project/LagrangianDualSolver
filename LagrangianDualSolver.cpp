@@ -1620,9 +1620,8 @@ void LagrangianDualSolver::cleanup_LagrDual( void )
  unregister_inner_Solver();
 
  // unregister and delete the UpdateSolver
- const auto & lsb = LagrDual->get_nested_Blocks();
  for( Index i = 0 ; i < f_nsb ; ++i )
-  lsb[ i ]->unregister_Solver( v_US[ i ] , true );
+  v_LBF[ i ]->get_inner_block()->unregister_Solver( v_US[ i ] , true );
 
  v_US.clear();
 
@@ -1638,22 +1637,25 @@ void LagrangianDualSolver::cleanup_LagrDual( void )
    throw( std::runtime_error(
                        "LagrangianDualSolver: unable to lock the Block" ) );
 
-  // remove the sub-Block from the LagBFunction (but do not delete it)
-  for( auto el : v_LBF ) {
-   el->set_inner_block( nullptr , false );
-
-   // re-attach the sub-Block to their original father
-   const auto & sb = f_Block->get_nested_Blocks();
-   for( Index i = 0 ; i < f_nsb ; ++i )
-    sb[ i ]->set_f_Block( f_Block );
+  // remove the sub-Block from the LagBFunction, but do not delete them;
+  // rather,  re-attach them Block to their original father
+  const auto & sb = f_Block->get_nested_Blocks();
+  for( Index i = 0 ; i < f_nsb ; ++i ) {
+   v_LBF[ i ]->set_inner_block( nullptr , false );
+   sb[ i ]->set_f_Block( f_Block );
    }
 
   if( ! owned )
    f_Block->unlock( f_id );
   }
 
+ // LagrDual is an AbstractBlock and therefore its destructor deletes
+ // everything inside it, comprised the LagBFunction that therefore must
+ // not to be deleted here
  delete LagrDual;
  LagrDual = nullptr;
+
+ v_LBF.clear();
 
  }  // end( cleanup_LagrDual )
 
@@ -2088,9 +2090,13 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     for( Index i = 0 ; i < cntr[ h ] ; ++i )
      delta[ h ][ i ] += vcp[ split[ h ][ i ] ].second;
 
-    lfh->modify_coefficients( std::move( delta[ h ] ) ,
-			      std::move( split[ h ] ) , false ,
+    if( cntr[ h ] == 1 )
+     lfh->modify_coefficient( split[ h ].front() , delta[ h ].front() ,  
 			      Observer::make_par( eModBlck , chnls[ h ] ) );
+    else
+     lfh->modify_coefficients( std::move( delta[ h ] ) ,
+			       std::move( split[ h ] ) , false ,
+			       Observer::make_par( eModBlck , chnls[ h ] ) );
     }
    }  // end( C05FunctionModLin )
 
