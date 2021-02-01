@@ -42,7 +42,7 @@ get_directory_property(hasParent PARENT_DIRECTORY)
 #include(CTest)
 
 # ----- Requirements -------------------------------------------------------- #
-find_package(BundleSolver REQUIRED)
+find_package(SMSpp REQUIRED)
 
 # ----- Configuration header ------------------------------------------------ #
 # This will generate a *Config.h header in the build directory.
@@ -84,7 +84,7 @@ target_include_directories(
 # library, INTERFACE means they will be linked only to the targets that depend
 # on this library.
 target_link_libraries(${modName} PUBLIC
-                      ${modNamespace}::BundleSolver)
+                      ${modNamespace}::SMSpp)
 
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
