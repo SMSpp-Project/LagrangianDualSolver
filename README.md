@@ -155,6 +155,10 @@ SW =
   (possibly at the cost of a make clean) ensure consistency during the
   building process.
 
+## Getting help
+
+If you need support, you want to submit bugs or propose a new feature, you can
+[open a new issue](https://gitlab.com/smspp/lagrangiandualsolver/-/issues/new).
 
 ## Contributing
 
