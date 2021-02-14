@@ -87,6 +87,10 @@ using p_SConf_p_p = SimpleConfiguration< std::pair< Configuration * ,
 						    Configuration * > > *;
 
 /*--------------------------------------------------------------------------*/
+/* LagrangianDualSolver always need to have an "inner CDASolver" set, but at
+ * the beginning it would have none: it will then have a FakeCDASolver one,
+ * which does nothing. Clearly, a "real" one will have to be set of
+ * LagrangianDualSolver::compute() is to work. */
 
 class FakeCDASolver : public CDASolver {
  public:
@@ -343,11 +347,15 @@ void LagrangianDualSolver::set_Block( Block * block )
    BCi->apply( csbi );
 
   // now construct the LagBFunction; note that doing so may cause the
-  // Objective of the inner Block (and therefore the Variable) to  be
+  // Objective of the inner Block (and therefore the Variable) to be
   // defined because LagBFunction needs it, hence this is only done
   // after the BlockConfig-uration, in particular for the case where the
   // sub-Block is R3B-copied
   auto lbfi = new LagBFunction( csbi );
+
+  // since the Block is locked by f_if, lend the same identity to the
+  // LagBFunction in case they need to lock it
+  lbfi->set_id( f_id );
 
   // surely now the Objective is defined: check that all the senses agree
   if( ! i )
@@ -643,6 +651,11 @@ void LagrangianDualSolver::set_Block( Block * block )
  // Solver::set_Block() is called there, and it can reasonably lock() the
  // sub-Block, which therefore need be un-lock()-ed
 
+ // since the Block is going to be unlock()-ed, retire the identity from the
+ // LagBFunctions
+ for( auto lbf : v_LBF )
+  lbf->set_id();
+
  if( ! owned )
   f_Block->unlock( f_id );
 
@@ -724,7 +737,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  // check that the Lagrangian Dual Block is correct- - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //!!
- LagrDual->is_correct();
+ //!!LagrDual->is_correct();
  
  // register the inner Solver to the Lagrangian Dual Block - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1168,10 +1181,10 @@ double LagrangianDualSolver::get_dbl_par( idx_type par ) const
 const std::string & LagrangianDualSolver::get_str_par( idx_type par ) const
 {
  switch( par ) {
-  case( str_LDSlv_ISName ):   return( ISName );
-  case( str_LagBF_BCfg ):     return( LagBF_BCfg );
+  case( str_LDSlv_ISName ): return( ISName );
+  case( str_LagBF_BCfg ):   return( LagBF_BCfg );
   case( str_LagBF_BSCfg ):  return( LagBF_BSCfg );
-  case( str_LDBlck_BCfg ):    return( LDBlck_BCfg );
+  case( str_LDBlck_BCfg ):  return( LDBlck_BCfg );
   case( str_LDBlck_BSCfg ): return( LDBlck_BSCfg );
   }
 
