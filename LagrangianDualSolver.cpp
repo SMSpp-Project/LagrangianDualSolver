@@ -45,6 +45,15 @@
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
+/* Bitwise-coded macro that activate costly checks that should never be done
+ * in production, but can be useful during debugging. Currently supported
+ * checks are:
+ *
+ * - bit 0 (+ 1): is_correct() is called on the Lagrangian Dual AbstractBlock
+ *   to verify that all Variable and Constraint are properly linked.
+ */
+
+#define CHECK_DS 0
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
@@ -734,11 +743,13 @@ void LagrangianDualSolver::set_Block( Block * block )
    f_BSCfg->apply( LagrDual );
   }
  
- // check that the Lagrangian Dual Block is correct- - - - - - - - - - - - - -
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- //!!
- //!!LagrDual->is_correct();
- 
+ #if CHECK_DS & 1
+  // check that the Lagrangian Dual Block is correct - - - - - - - - - - - - -
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  LagrDual->is_correct();
+ #endif
+
  // register the inner Solver to the Lagrangian Dual Block - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note that the inner Solver could in principle cause some other
@@ -998,6 +1009,14 @@ int LagrangianDualSolver::compute( bool changedvars )
    us->inhibit_Modification( false );
   }
 
+ // because the inner Solver is solving the dual of the original Block,
+ // the unbounded an unfeasible return states have to be exchanged
+ if( res == kUnbounded )
+  res = kInfeasible;
+ else
+  if( res == kInfeasible )
+   res = kUnbounded;
+
  return( res );
 
  }  // end( LagrangianDualSolver::compute )
@@ -1019,7 +1038,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
  // define a lambda that does the solution (computation and) retrieval
  // for a specific sub-Block
  auto getsoli = [ this ] ( Index i ) -> void {
-  Index szi = v_LBF[ i ]->get_dflt_int_par( C05Function::intGPMaxSz );
+  Index szi = v_LBF[ i ]->get_int_par( C05Function::intGPMaxSz );
   if( ! szi )
    throw( std::invalid_argument(
            "LagrangianDualSolver::get_var_solution: no Solution stored" ) );

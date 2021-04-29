@@ -943,6 +943,11 @@ public:
  void set_log( std::ostream * log_stream = nullptr ) override {
   f_log = log_stream;
   InnerSolver->set_log( f_log );
+  /*!!
+  for( auto lbf : v_LBF )
+   for( auto s : lbf->get_inner_block()->get_registered_solvers() )
+    s->set_log( f_log );
+    !!*/
   }
 
 /**@} ----------------------------------------------------------------------*/
