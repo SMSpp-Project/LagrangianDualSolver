@@ -998,11 +998,11 @@ public:
 /** @name Accessing the found solutions (if any)
  *  @{ */
 
- OFValue get_lb( void ) override { return( InnerSolver->get_ub() ); }
+ OFValue get_lb( void ) override { return( InnerSolver->get_lb() ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- OFValue get_ub( void ) override { return( InnerSolver->get_lb() ); }
+ OFValue get_ub( void ) override { return( InnerSolver->get_ub() ); }
 
 /*--------------------------------------------------------------------------*/
 
