@@ -942,6 +942,8 @@ void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
     throw( std::invalid_argument(
        "LagrangianDualSolver::set_ComputeConfig: invalid extra_Config.fist"
 				 ) );
+   scpp->f_value.first = nullptr; // set it to nullptr since it has been
+                                  // "extracted"
    }
 
   if( scpp->f_value.second ) {
@@ -951,6 +953,8 @@ void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
     throw( std::invalid_argument(
        "LagrangianDualSolver::set_ComputeConfig: invalid extra_Config.second"
 				 ) );
+   scpp->f_value.second = nullptr; // set it to nullptr since it has been
+                                   // "extracted"
    }
   return;
   }
@@ -958,12 +962,16 @@ void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
  if( auto BSC = dynamic_cast< p_BSC >( scfg->f_extra_Configuration ) ) {
   clear_LD_BlockSolverConfig();
   f_BSCfg = BSC;
+  scfg->f_extra_Configuration = nullptr; // set it to nullptr since it has
+                                         // been "extracted"
   return;
   }
   
  if( auto BC = dynamic_cast< p_BC >( scfg->f_extra_Configuration ) ) {
   clear_LD_BlockConfig();
   f_BCfg = BC;
+  scfg->f_extra_Configuration = nullptr; // set it to nullptr since it has
+                                         // been "extracted"
   return;
   }
 
