@@ -1464,6 +1464,10 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  idx_type vint_par_str2idx( const std::string & name ) const override {
+  const auto it = vint_pars_map.find( name );
+  if( it != vint_pars_map.end() )
+   return( it->second );
+
   return( vint_par_is( InnerSolver->vint_par_str2idx( name ) ) );
   }
 
@@ -1476,6 +1480,9 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  idx_type vstr_par_str2idx( const std::string & name ) const override {
+  if( name == "vstr_LDSl_Cfg" )
+   return( vstr_LDSl_Cfg );
+
   return( vstr_par_is( InnerSolver->vstr_par_str2idx( name ) ) );
   }
 
@@ -1509,6 +1516,9 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & vint_par_idx2str( idx_type idx ) const override {
+  if( ( idx >= vintLastParCDAS ) && ( idx < vintLastLDSlvPar ) )
+   return( vint_pars_str[ idx - vintLastParCDAS ] );
+
   return( InnerSolver->vint_par_idx2str( vint_par_lds( idx ) ) );
   }
 
@@ -1521,6 +1531,10 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & vstr_par_idx2str( idx_type idx ) const override {
+  static const std::string _vstr_LDSl_Cfg = "vstr_LDSl_Cfg";
+  if( idx == vstr_LDSl_Cfg )
+   return( _vstr_LDSl_Cfg );
+
   return( InnerSolver->vstr_par_idx2str( vstr_par_lds( idx ) ) );
   }
 
