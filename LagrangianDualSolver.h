@@ -776,6 +776,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type int_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= intLastParCDAS )
    par += intLastLDSlvPar - intLastParCDAS;
   return( par );
@@ -789,6 +791,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type dbl_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= dblLastParCDAS )
    par += dblLastLDSlvPar - dblLastParCDAS;
   return( par );
@@ -802,6 +806,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type str_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= strLastParCDAS )
    par += strLastLDSlvPar - strLastParCDAS;
   return( par );
@@ -815,6 +821,8 @@ public:
   * to set_ComputeConfig() for details. */
 
  idx_type vint_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vintLastParCDAS )
    par += vintLastLDSlvPar - vintLastParCDAS;
   return( par );
@@ -837,6 +845,8 @@ public:
   * Solver; see the comments to set_ComputeConfig() for details. */
 
  idx_type vstr_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vstrLastParCDAS )
    par += vstrLastLDSlvPar - vstrLastParCDAS;
   return( par );
@@ -850,6 +860,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type int_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= intLastLDSlvPar )
    par -= intLastLDSlvPar - intLastParCDAS;
   return( par );
@@ -863,6 +875,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type dbl_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= dblLastLDSlvPar )
    par -= dblLastLDSlvPar - dblLastParCDAS;
   return( par );
@@ -876,6 +890,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type str_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= strLastLDSlvPar )
    par -= strLastLDSlvPar - strLastParCDAS;
   return( par );
@@ -889,6 +905,8 @@ public:
   * see the comments to set_ComputeConfig() for details. */
 
  idx_type vint_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vintLastLDSlvPar )
    par -= vintLastLDSlvPar - vintLastParCDAS;
   return( par );
@@ -911,6 +929,8 @@ public:
   * see the comments to set_ComputeConfig() for details. */
 
  idx_type vstr_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vstrLastLDSlvPar )
    par -= vstrLastLDSlvPar - vstrLastParCDAS;
   return( par );
