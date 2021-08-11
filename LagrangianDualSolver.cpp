@@ -1110,7 +1110,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
 
  // define a Lambda which does the configuration - - - - - - - - - - - - - -
- static auto lcfg = [ this ]( Index b , Configuration * cfg ) {
+ auto lcfg = [ this ]( Index b , Configuration * cfg ) {
   auto LSBb = v_LBF[ b ]->get_nested_Block( 0 );
   if( LSBb->get_registered_solvers().empty() )
    return;
