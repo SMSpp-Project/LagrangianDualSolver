@@ -776,6 +776,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type int_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= intLastParCDAS )
    par += intLastLDSlvPar - intLastParCDAS;
   return( par );
@@ -789,6 +791,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type dbl_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= dblLastParCDAS )
    par += dblLastLDSlvPar - dblLastParCDAS;
   return( par );
@@ -802,6 +806,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type str_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= strLastParCDAS )
    par += strLastLDSlvPar - strLastParCDAS;
   return( par );
@@ -815,6 +821,8 @@ public:
   * to set_ComputeConfig() for details. */
 
  idx_type vint_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vintLastParCDAS )
    par += vintLastLDSlvPar - vintLastParCDAS;
   return( par );
@@ -837,6 +845,8 @@ public:
   * Solver; see the comments to set_ComputeConfig() for details. */
 
  idx_type vstr_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vstrLastParCDAS )
    par += vstrLastLDSlvPar - vstrLastParCDAS;
   return( par );
@@ -850,6 +860,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type int_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= intLastLDSlvPar )
    par -= intLastLDSlvPar - intLastParCDAS;
   return( par );
@@ -863,6 +875,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type dbl_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= dblLastLDSlvPar )
    par -= dblLastLDSlvPar - dblLastParCDAS;
   return( par );
@@ -876,6 +890,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type str_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= strLastLDSlvPar )
    par -= strLastLDSlvPar - strLastParCDAS;
   return( par );
@@ -889,6 +905,8 @@ public:
   * see the comments to set_ComputeConfig() for details. */
 
  idx_type vint_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vintLastLDSlvPar )
    par -= vintLastLDSlvPar - vintLastParCDAS;
   return( par );
@@ -911,6 +929,8 @@ public:
   * see the comments to set_ComputeConfig() for details. */
 
  idx_type vstr_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vstrLastLDSlvPar )
    par -= vstrLastLDSlvPar - vstrLastParCDAS;
   return( par );
@@ -1444,6 +1464,10 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  idx_type vint_par_str2idx( const std::string & name ) const override {
+  const auto it = vint_pars_map.find( name );
+  if( it != vint_pars_map.end() )
+   return( it->second );
+
   return( vint_par_is( InnerSolver->vint_par_str2idx( name ) ) );
   }
 
@@ -1456,6 +1480,9 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  idx_type vstr_par_str2idx( const std::string & name ) const override {
+  if( name == "vstr_LDSl_Cfg" )
+   return( vstr_LDSl_Cfg );
+
   return( vstr_par_is( InnerSolver->vstr_par_str2idx( name ) ) );
   }
 
@@ -1489,6 +1516,9 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & vint_par_idx2str( idx_type idx ) const override {
+  if( ( idx >= vintLastParCDAS ) && ( idx < vintLastLDSlvPar ) )
+   return( vint_pars_str[ idx - vintLastParCDAS ] );
+
   return( InnerSolver->vint_par_idx2str( vint_par_lds( idx ) ) );
   }
 
@@ -1501,6 +1531,10 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & vstr_par_idx2str( idx_type idx ) const override {
+  static const std::string _vstr_LDSl_Cfg = "vstr_LDSl_Cfg";
+  if( idx == vstr_LDSl_Cfg )
+   return( _vstr_LDSl_Cfg );
+
   return( InnerSolver->vstr_par_idx2str( vstr_par_lds( idx ) ) );
   }
 

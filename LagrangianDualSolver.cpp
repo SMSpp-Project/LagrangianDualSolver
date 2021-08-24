@@ -1110,7 +1110,13 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
 
  // define a Lambda which does the configuration - - - - - - - - - - - - - -
- static auto lcfg = [ this ]( Index b , Configuration * cfg ) {
+ // Notice that this lambda cannot be static in its current form, since it
+ // captures the "this" pointer. If "lcfg" were static, the "this" pointer
+ // within this lambda would always point to the same LagrangianDualSolver
+ // object (namely, the one associated with the initialization of "lcfg"),
+ // making this code wrong if other instances of LagrangianDualSolver call
+ // this function.
+ auto lcfg = [ this ]( Index b , Configuration * cfg ) {
   auto LSBb = v_LBF[ b ]->get_nested_Block( 0 );
   if( LSBb->get_registered_solvers().empty() )
    return;
