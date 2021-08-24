@@ -1995,9 +1995,18 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     case( FRowConstraintMod::eChgBTS ):
      #ifndef NDEBUG
      {
-      auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
-      auto lvit = std::next( Ld->begin() , pos - static_cons );
-      if( lvit->is_positive() || lvit->is_negative() )
+      ColVariable * Lpos;
+      if( pos < static_cons ) {
+       auto Ld = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );
+       Lpos = & (*Ld)[ pos ];
+       }
+      else {
+       auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
+       auto lvit = std::next( Ld->begin() , pos - static_cons );
+       Lpos = & *lvit;
+       }
+      
+      if( Lpos->is_positive() || Lpos->is_negative() )
        throw( std::logic_error(
             "LagrangianDualSolver: changing inequality constraint to equality"
 			       ) );
