@@ -543,6 +543,11 @@ void LagrangianDualSolver::set_Block( Block * block )
 
   // define a lambda that does the job
   auto scan = [ & ]( FRowConstraint & con ) -> void {
+   // initialize the value of the Lagrangian variable with the current dual
+   // solution of the FRowConstraint, for the odd chance that someone has
+   // already put there a meaningful value
+   Lit->set_value( con.get_dual() );
+   
    // check the LHS/RHS
    auto lhs = con.get_lhs();
    auto rhs = con.get_rhs();
@@ -584,6 +589,11 @@ void LagrangianDualSolver::set_Block( Block * block )
 
   // define a lambda that does the job
   auto scan = [ & ]( FRowConstraint & con ) -> void {
+   // initialize the value of the Lagrangian variable with the current dual
+   // solution of the FRowConstraint, for the odd chance that someone has
+   // already put there a meaningful value
+   Lit->set_value( con.get_dual() );
+
    // first write the dictionaries
    *(dc2iit++) = std::make_pair( & con , i++ );
    *(i2dcit++) = & con;
