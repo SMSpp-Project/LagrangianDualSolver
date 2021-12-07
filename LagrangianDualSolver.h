@@ -379,7 +379,7 @@ public:
   str_LagBF_BSCfg ,
   ///< filename of the  "default" BlockSolverConfig of the LagBFunction(s)
 
-  str_LDBlck_BCfg ,     ///< filename of the BlockConfig of the LD
+  str_LDBlck_BCfg ,   ///< filename of the BlockConfig of the LD
 
   str_LDBlck_BSCfg ,  ///< filename of the BlockSolverConfig of the LD
 
@@ -399,16 +399,29 @@ public:
  enum vint_par_type_LDSlv {
   vint_LDSl_WBCfg = vintLastParCDAS ,
   ///< parameter for associating sub-Block to BlockConfig
-  /**< The vector vintWBCfg, if nonempty, maps the BlockConfig constructed
-   * with the filenames out of the parameter vstrBCfg [see] into the
-   * sub-Block of the Lagrangian Dual; see set_par( std::vector< int > ) for
-   * details. */
+  /**< The vector vint_WBCfg, if nonempty, maps the BlockConfig constructed
+   * with the filenames out of the parameter vstrCfg [see] into the sub-Block
+   * of the Lagrangian Dual; see set_par( std::vector< int > ) for details. */
+
+  vint_LDSl_W2BCfg ,
+  ///< parameter telling which sub-Block need be BlockConfig-ured
+  /**< The vector vint_W2BCfg, if nonempty, tells which sub-Block of the
+   * Lagrangian Dual need be BlockConfig-ured, basically changing the meaning
+   * of vint_WBCfg [see] from "dense" to "sparse"; see
+   * set_par( std::vector< int > ) for details. */
 
   vint_LDSl_WBSCfg ,
   ///< parameter for associating sub-Block to BlockSolverConfig
-  /**< The vector vintWBSCfg, if nonempty, maps the BlockSolverConfig
-   * constructed with the filenames out of the parameter vstrBSCfg [see]
-   * into the  sub-Block of the Lagrangian Dual; see
+  /**< The vector vint_WBSCfg, if nonempty, maps the BlockSolverConfig
+   * constructed with the filenames out of the parameter vstrSCfg [see] into
+   * the sub-Block of the Lagrangian Dual; see set_par( std::vector< int > )
+   * for details. */
+
+  vint_LDSl_W2BSCfg ,
+  ///< parameter telling which sub-Block need be BlockSolverConfig-ured
+  /**< The vector vint_W2BCfg, if nonempty, tells which sub-Block of the
+   * Lagrangian Dual need be BlockSolverConfig-ured, basically changing the
+   * meaning of vint_WBSCfg [see] from "dense" to "sparse"; see
    * set_par( std::vector< int > ) for details. */
 
   vintLastLDSlvPar  ///< first allowed new vector-of-int parameter
@@ -425,11 +438,8 @@ public:
   * extended by derived classes. */
 
  enum vstr_par_type_LDSlv {
-  vstr_LDSl_BCfg = vstrLastParCDAS ,
-  ///< parameter for BlockConfig-uring each sub-Block individually
-
-  vstr_LDSl_BSCfg ,
-  ///< parameter for BlockSolverConfig-uring each sub-Block individually
+  vstr_LDSl_Cfg = vstrLastParCDAS ,
+  ///< parameter for "the cache of Configurations"
 
   vstrLastLDSlvPar  ///< first allowed new vector-of-string parameter
                     /**< Convenience value for easily allow derived classes
@@ -651,24 +661,77 @@ public:
   *
   * The parameters handled here are:
   *
-  * - vint_LDSl_WBCfg [empty]; if non-empty(), this maps the BlockConfig
-  *   created according to vstr_LDSl_BCfg [see] into the actual inner Block
-  *   of the LagBFunction of the sub-Block in the Lagrangian Dual Block.
-  *   the correspondance is positional: vint_LDSl_WBCfg[ h ] = k means that
-  *   the (inner Block of the LagBFunction of the) h-th sub-Block will be
-  *   BlockConfig-ured with the BlockConfig created using the k-th position
-  *   in vstr_LDSl_BCfg. If k is not a valid position into vstr_LDSl_BCfg
-  *   (it is negative or >= vstr_LDSl_BCfg.size()), then the h-th sub-Block
-  *   is not BlockConfig-ured by this mechanism (but there are plenty of
-  *   other mechanisms that allows this to happen, see e.g. str_LagBF_BCfg
-  *   and str_LDBlck_BCfg
-
- */
+  * - vint_LDSl_WBCfg [empty]: if non-empty(), this maps the BlockConfig
+  *   created according to vstr_LDSl_Cfg [see] into the actual inner Block
+  *   of the LagBFunction of the sub-Block in the Lagrangian Dual Block. The
+  *   exact meaning of this parameter, however, depends on vint_LDSl_W2BCfg
+  *   [see]. If the latter is empty, the correspondance is positional:
+  *   vint_LDSl_WBCfg[ h ] = k means that the (inner Block of the 
+  *   LagBFunction of the) h-th sub-Block will be BlockConfig-ured with the
+  *   BlockConfig created using the k-th position in vstr_LDSl_Cfg. If k is
+  *   not a valid position into vstr_LDSl_Cfg (it is negative or >=
+  *   vstr_LDSl_Cfg.size()), or the corresponding Configueation is not a
+  *   BlockConfig, then the h-th sub-Block is not BlockConfig-ured by this
+  *   mechanism (but there are plenty of other mechanisms that allows this to
+  *   happen, see e.g. str_LagBF_BCfg and str_LDBlck_BCfg). If
+  *   vint_LDSl_WBCfg.size() < get_number_nested_Blocks() the sub-Block whose
+  *   index exceeds vint_LDSl_WBCfg.size() are ignored, if rather
+  *   vint_LDSl_WBCfg.size() > get_number_nested_Blocks() then the excess
+  *   Configuration are ignored. If, rather, vint_LDSl_W2BCfg is not empty,
+  *   then the correspondence is "sparse":  vint_LDSl_WBCfg[ h ] = k means
+  *   that the (inner Block ...) sub-Block vint_LDSl_W2BCfg[ h ] will be
+  *   BlockConfig-ured with the BlockConfig created using the k-th position in
+  *   vstr_LDSl_Cfg. If k is not a valid position into vstr_LDSl_Cfg (it is
+  *   negative or >= vstr_LDSl_Cfg.size()), or the corresponding Configueation
+  *   is not a BlockConfig, then the h-th sub-Block is not BlockConfig-ured.
+  *   This is done only when information is available in both vectors, i.e.,
+  *   for h < min( vint_LDSl_WBCfg.size() , vint_LDSl_W2BCfg.size() ).
+  *
+  * - vint_LDSl_W2BCfg [empty]: if non-empty(), this provides the list of
+  *   sub-Block whose inner Block of the LagBFunction will be BlockConfig-ured
+  *   using the Configuration created using vstr_LDSl_Cfg indicated by
+  *   vint_LDSl_WBCfg; see the comments to that parameter for details. The
+  *   vector needs be ordered in increasing sense and without replications.
+  *
+  * - vint_LDSl_WBSCfg [empty]: if non-empty(), this maps the
+  *   BlockSolverConfig created according to vstr_LDSl_Cfg [see] into the
+  *   actual inner Block of the LagBFunction of the sub-Block in the
+  *   Lagrangian Dual Block. The exact meaning of this parameter, however,
+  *   depends on vint_LDSl_W2BSCfg [see]. If the latter is empty, the
+  *   correspondance is positional: vint_LDSl_WBSCfg[ h ] = k means that the
+  *   (inner Block of the LagBFunction of the) h-th sub-Block will be
+  *   BlockSolverConfig-ured with the BlockSolverConfig created using the
+  *   k-th position in vstr_LDSl_Cfg. If k is not a valid position into
+  *   vstr_LDSl_Cfg (it is negative or >= vstr_LDSl_Cfg.size()), or the
+  *   corresponding Configueation is not a BlockSolverConfig, then the h-th
+  *   sub-Block is not BlockSolverConfig-ured by this mechanism (but there
+  *   are plenty of other mechanisms that allows this to happen, see e.g.
+  *   str_LagBF_BSCfg and str_LDBlck_BSCfg). If vint_LDSl_WBSCfg.size() <
+  *   get_number_nested_Blocks() the sub-Block whose index exceeds
+  *   vint_LDSl_WBSCfg.size() are ignored, if rather vint_LDSl_WBSCfg.size()
+  *   > get_number_nested_Blocks() then the excess Configuration are ignored.
+  *   If, rather, vint_LDSl_W2BSCfg is not empty, then the correspondence is
+  *   "sparse":  vint_LDSl_WBSCfg[ h ] = k means that the (inner Block ...)
+  *   sub-Block vint_LDSl_W2BSCfg[ h ] will be BlockSolverConfig-ured with
+  *   the BlockSolverConfig created using the k-th position in vstr_LDSl_Cfg.
+  *   If k is not a valid position into vstr_LDSl_Cfg (it is negative or >=
+  *   vstr_LDSl_Cfg.size()), or the corresponding Configueation is not a
+  *   BlockSolverConfig, then the h-th sub-Block is not
+  *   BlockSolverConfig-ured (by this mechanism ...). This is done only when
+  *   information is available in both vectors, i.e., for
+  *   h < min( vint_LDSl_WBSCfg.size() , vint_LDSl_W2BSCfg.size() ).
+  *
+  * - vint_LDSl_W2BSCfg [empty]: if non-empty(), this provides the list of
+  *   sub-Block whose inner Block of the LagBFunction will be
+  *   BlockSolverConfig-ured using the Configuration created using
+  *   vstr_LDSl_Cfg indicated by vint_LDSl_WBSCfg; see the comments to that
+  *   parameter for details. The vector needs be ordered in increasing sense
+  *   and without replications. */
 
  void set_par( idx_type par , std::vector< int > && value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-/// set the vector-of-double paramaters of LagrangianDualSolver / inner Solver
+ /// set the vector-of-double params of LagrangianDualSolver / inner Solver
  /** Set the vector-of-double paramaters specific of LagrangianDualSolver, and
   * allow to directly set those of the inner Solver used to solve the
   * Lagrangian Dual; see the comments to set_ComputeConfig() for details. */
@@ -678,10 +741,30 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-/// set the vector-of-string paramaters of LagrangianDualSolver / inner Solver
+ /// set the vector-of-string params of LagrangianDualSolver / inner Solver
  /** Set the vector-of-string paramaters specific of LagrangianDualSolver, and
   * allow to directly set those of the inner Solver used to solve the
-  * Lagrangian Dual; see the comments to set_ComputeConfig() for details. */
+  * Lagrangian Dual; see the comments to set_ComputeConfig() for details.
+  *
+  * The parameters handled here are:
+  *
+  * - vstr_LDSl_BCfg [empty]: if non-empty(), this has to contain a vector of
+  *   filenames out of which a vector of BlockConfig is created. then, each of
+  *   these BlockConfig is (potentially) used to BlockConfig-ure one or more
+  *   of the inner Block of the LagBFunction of the sub-Block in the
+  *   Lagrangian Dual Block, which ones being dictated by vint_LDSl_WBCfg
+  *   [see]. note that this is one of the many mechanisms that allows
+  *   BlockConfig-uration to happen, see e.g. str_LagBF_BCfg and
+  *   str_LDBlck_BCfg
+  *
+  * - vstr_LDSl_BSCfg [empty]: if non-empty(), this has to contain a vector of
+  *   filenames out of which a vector of BlockSolverConfig is created. then,
+  *   each of these BlockSolverConfig is (potentially) used to
+  *   BlockSolverConfig-ure one or more of the inner Block of the LagBFunction
+  *   of the sub-Block in the Lagrangian Dual Block, which ones being dictated
+  *   by vint_LDSl_WBSCfg [see]. note that this is one of the many mechanisms
+  *   that allows BlockSolverConfig-uration to happen, see e.g.
+  *   str_LagBF_BSCfg and str_LDBlck_BSCfg */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
@@ -693,6 +776,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type int_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= intLastParCDAS )
    par += intLastLDSlvPar - intLastParCDAS;
   return( par );
@@ -706,6 +791,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type dbl_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= dblLastParCDAS )
    par += dblLastLDSlvPar - dblLastParCDAS;
   return( par );
@@ -719,6 +806,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type str_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= strLastParCDAS )
    par += strLastLDSlvPar - strLastParCDAS;
   return( par );
@@ -732,6 +821,8 @@ public:
   * to set_ComputeConfig() for details. */
 
  idx_type vint_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vintLastParCDAS )
    par += vintLastLDSlvPar - vintLastParCDAS;
   return( par );
@@ -754,6 +845,8 @@ public:
   * Solver; see the comments to set_ComputeConfig() for details. */
 
  idx_type vstr_par_is( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vstrLastParCDAS )
    par += vstrLastLDSlvPar - vstrLastParCDAS;
   return( par );
@@ -767,6 +860,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type int_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= intLastLDSlvPar )
    par -= intLastLDSlvPar - intLastParCDAS;
   return( par );
@@ -780,6 +875,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type dbl_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= dblLastLDSlvPar )
    par -= dblLastLDSlvPar - dblLastParCDAS;
   return( par );
@@ -793,6 +890,8 @@ public:
   * set_ComputeConfig() for details. */
 
  idx_type str_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= strLastLDSlvPar )
    par -= strLastLDSlvPar - strLastParCDAS;
   return( par );
@@ -806,6 +905,8 @@ public:
   * see the comments to set_ComputeConfig() for details. */
 
  idx_type vint_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vintLastLDSlvPar )
    par -= vintLastLDSlvPar - vintLastParCDAS;
   return( par );
@@ -828,6 +929,8 @@ public:
   * see the comments to set_ComputeConfig() for details. */
 
  idx_type vstr_par_lds( idx_type par ) const {
+  if( par == Inf< idx_type >() )
+   return( par );
   if( par >= vstrLastLDSlvPar )
    par -= vstrLastLDSlvPar - vstrLastParCDAS;
   return( par );
@@ -943,6 +1046,11 @@ public:
  void set_log( std::ostream * log_stream = nullptr ) override {
   f_log = log_stream;
   InnerSolver->set_log( f_log );
+  /*!!
+  for( auto lbf : v_LBF )
+   for( auto s : lbf->get_inner_block()->get_registered_solvers() )
+    s->set_log( f_log );
+    !!*/
   }
 
 /**@} ----------------------------------------------------------------------*/
@@ -961,7 +1069,7 @@ public:
   return( InnerSolver->set_event_handler( type , std::move( event ) ) );
   }
 
-/*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  void reset_event_handler( int type , EventID id ) override {
   InnerSolver->reset_event_handler( type , id );
@@ -993,11 +1101,11 @@ public:
 /** @name Accessing the found solutions (if any)
  *  @{ */
 
- OFValue get_lb( void ) override { return( InnerSolver->get_ub() ); }
+ OFValue get_lb( void ) override { return( InnerSolver->get_lb() ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- OFValue get_ub( void ) override { return( InnerSolver->get_lb() ); }
+ OFValue get_ub( void ) override { return( InnerSolver->get_ub() ); }
 
 /*--------------------------------------------------------------------------*/
 
@@ -1069,30 +1177,78 @@ public:
   *
   * The \p solc Configuration controls which of these pieces is written:
   *
-  * - If \p solc is nullptr, then only the dual solution of the relaxed
-  *   constraints in the father Block is written.
+  * - If \p solc is nullptr, then both the dual solution of the relaxed
+  *   constraints in the father Block and that of all the sub-Block is written;
+  *   the calls to get_dual_solution() of the Solver of the sub-Block happen
+  *   with nullptr Configuration (meaning, all of it).
   *
-  * - If \p solc is not nullptr, then it must be a pointer to a
-  *   SimpleConfiguration< std::vector< Configuration * > >. In this case
-  *   solc[ i ] is passed to get_dual_solution() of the i-th sub-Block,
-  *   irrespectively of the fact that solc[ i ] == nullptr or not. Note that
-  *   this may seem to impose that the dual solution of all the sub-Block is
-  *   written, but this is not necessarily true in that an appropriate
-  *   Configuration passed to get_dual_solution() can be used to encode also
-  *   a "dry run" (actually write nothing). Clearly solc->value.size() must
-  *   be at least equal to the number of sub-Block; in fact it can be
-  *   *strictly larger than that", which is taken to mean that *also* the
-  *   dual solution of the relaxed constraints in the father Block will be
-  *   written. If, instead, solc->value.size() is equal to the number of
-  *   sub-Block, then only the dual solution of the constraints inside the
-  *   individual sub-Block will be written.
+  * - If \p solc is not nullptr, then it can be:
   *
+  *   = a pointer to a SimpleConfiguration< std::vector< std::pair< int ,
+  *     Configuration * > > >. In this case, the dual solution is only
+  *     written for those sub-Block i for which solc->f_value[ h ].first == i
+  *     for some h, in which case solc->f_value[ h ].second is passed as the
+  *     argument to get_dual_solution() (which can be nullptr). However, the
+  *     vector is also used to decide whether the dual solution of the relaxed
+  *     constraints in the father Block is written: this happens if and only
+  *     if there exist any h such that solc->f_value[ h ].first is invalid
+  *     (i.e., either negative or >= get_number_nested_Blocks()), in which case
+  *     the Configuration * is ignored. That is, if one only wants the dual
+  *     solution of the relaxed constraints, then setting
+  *     solc->f_value = { { -1 , nullptr } } does the job.
+  *
+  *   = a pointer to a SimpleConfiguration< std::vector< std::pair< int , int >
+  *     > >. In this case, the dual solution is only written for those
+  *     sub-Block i for which solc->f_value[ h ].first == i for some h, in
+  *     which case the argument to get_dual_solution() is the Configuration
+  *     in position solc->f_value[ h ].second in the "global cache of
+  *     Configuration" created using vstr_LDSl_Cfg. If solc->f_value[ h ].second
+  *     is not a valid index in that vector (i.e., it is negative or >=
+  *     vstr_LDSl_Cfg.size()) then nullptr is used. However, the vector is also
+  *     used to decide whether the dual solution of the relaxed constraints in
+  *     the father Block is written: this happens if and only if there exist
+  *     any h such that solc->f_value[ h ].first is invalid (i.e., either
+  *     negative or >= get_number_nested_Blocks()), in which case
+  *     solc->f_value[ h ].second is ignored. That is, if one only wants the
+  *     dual solution of the relaxed constraints, then setting
+  *     solc->f_value = { { -1 , 0 } } does the job.
+  *
+  *   = a pointer to a SimpleConfiguration< std::vector< Configuration * > >.
+  *     In this case, the dual solution is only written for those sub-Block i
+  *     with i < solc->f_value.size(), with solc->f_value[ i ] being passed as
+  *     the argument to get_dual_solution() (which can be nullptr). However, the
+  *     vector is also used to decide whether the dual solution of the relaxed
+  *     constraints in the father Block is written: this happens if and only
+  *      solc->f_value.size() > get_number_nested_Blocks().
+  *
+  *   = a pointer to a SimpleConfiguration< std::vector< int > >. In this
+  *     case, the dual solution is only written for those sub-Block i with
+  *     i < solc->f_value.size(), the argument to get_dual_solution() is the
+  *     Configuration in position solc->f_value[ i ] in the "global cache of
+  *     Configuration" created using vstr_LDSl_Cfg. If solc->f_value[ i ] is
+  *     not a valid index in that vector (i.e., it is negative or >=
+  *     vstr_LDSl_Cfg.size()) then nullptr is used. However, the
+  *     vector is also used to decide whether the dual solution of the relaxed
+  *     constraints in the father Block is written: this happens if and only
+  *      solc->f_value.size() > get_number_nested_Blocks().
+  *  
   * Note that in order to get the dual solution of the constraints inside a
   * specific sub-Block a CDASolver need be registered there and having been
   * used to compute() the LagBFunction. If there are no Solver registered to
   * the sub-Block, or the one that is used to compute() it (the first one)
   * is not a CDASolver, then the dual solution of the constraints inside that
-  * specific sub-Bloc will not be written, and no warning will be issued.
+  * specific sub-Bloc will not be written, and no warning will be issued. Also
+  *
+  *     IT IS ASSUMED THAT THE LAST TIME THE CDASolver HAS compute()-d THE
+  *     SUB-Block IS WITH THE LAGRANGIAN COSTS CORRESPONDING TO THE OPTIMAL
+  *     SOLUTION OF THE LAGRANGIAN DUAL.
+  *
+  * This is automatic if the InnerSolver reports as optimal value the one
+  * computed in the very last iteration before it stops, which however may not
+  * always be the case because the dual function is nondifferentiable. This
+  * issue must be dealt with by properly instructing the InnerSolver to
+  * re-compute the dual function in the point it reports as the optimal dual
+  * solution in case this does not happen automatically.
   *
   * Note that if the sub-Block are copies, the dual solution will have to be
   * map_back-ed to the originals. For this
@@ -1203,8 +1359,8 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  double get_dflt_dbl_par( idx_type par ) const override {
-  if( ( par >= dblLastParCDAS ) && ( par < dblLastLDSlvPar ) )
-   return( dflt_dbl_par[ par - dblLastParCDAS ] );
+  // if( ( par >= dblLastParCDAS ) && ( par < dblLastLDSlvPar ) )
+  //  return( dflt_dbl_par[ par - dblLastParCDAS ] );
 
   return( InnerSolver->get_dflt_dbl_par( dbl_par_lds( par ) ) );
   }
@@ -1222,7 +1378,12 @@ public:
 
  const std::vector< int > & get_dflt_vint_par( idx_type par )
   const override {
-  return( InnerSolver->get_dflt_vint_par( vint_par_lds( par ) ) );
+  static const std::vector< int > _empty;
+  if( ( par == vint_LDSl_WBCfg ) || ( par == vint_LDSl_W2BCfg ) ||
+      ( par == vint_LDSl_WBSCfg ) || ( par == vint_LDSl_W2BSCfg ) )
+   return( _empty );
+  else
+   return( InnerSolver->get_dflt_vint_par( vint_par_lds( par ) ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -1236,6 +1397,10 @@ public:
 
  const std::vector< std::string > & get_dflt_vstr_par( idx_type par )
   const override {
+  static const std::vector< std::string > _empty;
+  if( par == vstr_LDSl_Cfg )
+   return( _empty );
+  else
   return( InnerSolver->get_dflt_vstr_par( vstr_par_lds( par ) ) );
   }
 
@@ -1299,6 +1464,10 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  idx_type vint_par_str2idx( const std::string & name ) const override {
+  const auto it = vint_pars_map.find( name );
+  if( it != vint_pars_map.end() )
+   return( it->second );
+
   return( vint_par_is( InnerSolver->vint_par_str2idx( name ) ) );
   }
 
@@ -1311,6 +1480,9 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  idx_type vstr_par_str2idx( const std::string & name ) const override {
+  if( name == "vstr_LDSl_Cfg" )
+   return( vstr_LDSl_Cfg );
+
   return( vstr_par_is( InnerSolver->vstr_par_str2idx( name ) ) );
   }
 
@@ -1344,6 +1516,9 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & vint_par_idx2str( idx_type idx ) const override {
+  if( ( idx >= vintLastParCDAS ) && ( idx < vintLastLDSlvPar ) )
+   return( vint_pars_str[ idx - vintLastParCDAS ] );
+
   return( InnerSolver->vint_par_idx2str( vint_par_lds( idx ) ) );
   }
 
@@ -1356,6 +1531,10 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & vstr_par_idx2str( idx_type idx ) const override {
+  static const std::string _vstr_LDSl_Cfg = "vstr_LDSl_Cfg";
+  if( idx == vstr_LDSl_Cfg )
+   return( _vstr_LDSl_Cfg );
+
   return( InnerSolver->vstr_par_idx2str( vstr_par_lds( idx ) ) );
   }
 
@@ -1562,13 +1741,15 @@ FRowConstraint * constraint_with_index( Index i ) {
  std::string LDBlck_BSCfg;
  ///< the filename for the BlockSolverConfig of the LD
 
- std::vector< int > WBCfg;  ///< map between sub-Block and BlockConfig
+ std::vector< int > WBCfg;    ///< map between sub-Block and BlockConfig
 
- std::vector< int > WBSCfg;  ///< map between sub-Block and BlockSolverConfig
+ std::vector< int > W2BCfg;   ///< which sub-Block to BlockConfig
 
- std::vector< std::string > BCfg;  ///< filenames for BlockConfig
+ std::vector< int > WBSCfg;   ///< map between sub-Block and BlockSolverConfig
 
- std::vector< std::string > BSCfg;  ///< filenames for BlockSolverConfig
+ std::vector< int > W2BSCfg;  ///< which sub-Block to BlockSolverConfig
+
+ std::vector< std::string > FCfg;  ///< filenames for Configurations
  
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1590,12 +1771,9 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  BlockSolverConfig * f_DBSCfg;   ///< the default individual BlockSolverConfig
 
- std::vector< BlockConfig * > v_BCfg;  ///< the individual BlockConfig
+ std::vector< Configuration * > v_Cfg;  ///< the "Configuration cache"
 
- std::vector< BlockSolverConfig * > v_BSCfg;
- ///< the individual BlockSolverConfig
-
- std::vector< UpdateSolver * > v_US;  /// the UpdateSolvers
+ std::vector< UpdateSolver * > v_US;   /// the UpdateSolvers
 
  std::vector< LagBFunction * > v_LBF;  /// the LagBFunction
 
@@ -1658,8 +1836,8 @@ FRowConstraint * constraint_with_index( Index i ) {
  const static std::vector< int > dflt_int_par;
  ///< the (static const) vector of int parameters default values
 
- const static std::vector< double > dflt_dbl_par;
- ///< the (static const) vector of double parameters default values
+ // const static std::vector< double > dflt_dbl_par;
+ //< the (static const) vector of double parameters default values
 
  const static std::vector< std::string > dflt_str_par;
  ///< the (static const) vector of string parameters default values
@@ -1670,11 +1848,11 @@ FRowConstraint * constraint_with_index( Index i ) {
  const static std::vector< std::string > vint_pars_str;
  ///< the (static const) vector of vector-of-int parameters names
 
- const static std::vector< std::string > vstr_pars_str;
- ///< the (static const) vector of vector-of-string parameters names
+ // const static std::vector< std::string > vstr_pars_str;
+ //< the (static const) vector of vector-of-string parameters names
 
- const static std::vector< std::string > dbl_pars_str;
- ///< the (static const) vector of double parameters names
+ // const static std::vector< std::string > dbl_pars_str;
+ //< the (static const) vector of double parameters names
 
  const static std::vector< std::string > str_pars_str;
  ///< the (static const) vector of string parameters names
@@ -1688,8 +1866,8 @@ FRowConstraint * constraint_with_index( Index i ) {
  const static std::map< std::string , idx_type > int_pars_map;
   ///< the (static const) map for int parameters names
 
- const static std::map< std::string , idx_type > dbl_pars_map;
- ///< the (static const) map for double parameters names
+ // const static std::map< std::string , idx_type > dbl_pars_map;
+ //< the (static const) map for double parameters names
 
  const static std::map< std::string , idx_type > str_pars_map;
  ///< the (static const) map for string parameters names
@@ -1697,8 +1875,8 @@ FRowConstraint * constraint_with_index( Index i ) {
  const static std::map< std::string , idx_type > vint_pars_map;
   ///< the (static const) map for vector-of-int parameters names
 
- const static std::map< std::string , idx_type > vstr_pars_map;
- ///< the (static const) map for vector-of-string parameters names
+ // const static std::map< std::string , idx_type > vstr_pars_map;
+ //< the (static const) map for vector-of-string parameters names
 
 
 /*--------------------------------------------------------------------------*/
