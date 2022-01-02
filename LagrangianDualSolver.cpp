@@ -1097,8 +1097,8 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
 			   >( solc );
  if( SCvi ) {
   assert( std::is_sorted( SCvi->value().begin() , SCvi->value().end() ) );
-  if( ( SCvi->value().front() < 0 ) ||
-      ( Index( SCvi->value().back() ) >= f_nsb ) )
+  if( ( ! SCvi->value().empty() ) && ( ( SCvi->value().front() < 0 ) ||
+      ( Index( SCvi->value().back() ) >= f_nsb ) ) )
    throw( std::invalid_argument(
   "LagrangianDualSolver::get_var_solution: wrong indices in solc->value" ) );
 
