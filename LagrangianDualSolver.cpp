@@ -993,6 +993,8 @@ void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
 
 int LagrangianDualSolver::compute( bool changedvars )
 {
+ lock();  // lock the mutex
+
  bool owned = f_Block->is_owned_by( f_id );
  if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
   throw( std::runtime_error(
@@ -1031,6 +1033,8 @@ int LagrangianDualSolver::compute( bool changedvars )
  else
   if( res == kInfeasible )
    res = kUnbounded;
+
+ unlock();  // unlock the mutex
 
  return( res );
 
