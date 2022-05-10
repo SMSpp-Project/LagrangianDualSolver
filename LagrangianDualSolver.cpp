@@ -124,8 +124,7 @@ static constexpr VarValue NaNshift
                               = std::numeric_limits< VarValue >::quiet_NaN();
  ///< convenience constexpr for "NaN", *not* to be used with ==
 
-static constexpr VarValue INFshift
-                               = std::numeric_limits< VarValue >::infinity();
+static constexpr VarValue INFshift = Inf< VarValue >();
  ///< convenience constexpr for "Infty"
 
 static constexpr Index InINF = SMSpp_di_unipi_it::Inf<Index>();
