@@ -6,12 +6,7 @@
  * CDASolver interface within the SMS++ framework for a "generic"
  * Lagrangian-based Solver.
  *
- * \version 0.01
- *
- * \date 11 - 11 - 2020
- *
  * \author Antonio Frangioni \n
- *         Operations Research Group \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
@@ -127,25 +122,25 @@ namespace SMSpp_di_unipi_it
  * It is important to remark that LagrangianDualSolver does not solve (B)
  * but rather its Lagrangian Dual. This is obtained by relaxing the linking
  * constraints, and here immediately comes some caveat. Indeed, the linking
- * FRowConstraint in (B) in general have the form l <= g(x) <= u, i.e., they
- * correspond to *two* linear constraints. However, in many cases only *one*
- * Lagrangian multiplier need be defined for them:
+ * FRowConstraint in (B) in general have the form l <= g( x ) <= u, i.e.,
+ * they correspond to *two* linear constraints. However, in many cases only
+ * *one* Lagrangian multiplier need be defined for them:
  *
- * - if l == u, i.e., the equality constraint g(x) = u (= l), in which case
+ * - if l == u, i.e., the equality constraint g( x ) = u (= l), in which case
  *   the corresponding Lagrangian multiplier is unconstrained in sign;
  *
- * - if l == -INF and u < INF, i.e., the less-than constraint g(x) <= u, in
+ * - if l == -INF and u < INF, i.e., the less-than constraint g( x ) <= u, in
  *   which case the corresponding Lagrangian multiplier is constrained in
  *   sign;
  *
- * - if l > -INF and u == INF, i.e., the greater-than constraint g(x) >= l,
+ * - if l > -INF and u == INF, i.e., the greater-than constraint g( x ) >= l,
  *   in which case the corresponding Lagrangian multiplier is constrained in
  *   sign.
  *
  * Save for the degenerate case l == -INF and u == INF, which is not allowed,
  * this leaves the case -INF < l < u < INF. One possible approach for this
  * would be to consider the constraint as actually being the two less-than
- * and greater-than (g(x) <= u, g(x) >= l) with two different Lagrangian
+ * and greater-than [g( x ) <= u, g( x ) >= l] with two different Lagrangian
  * multipliers, both constrained in sign (in the right way). However, this
  * would significantly complicate the handling of these constraints since
  * each original one may give rise to either one or two multipliers, which
@@ -154,10 +149,10 @@ namespace SMSpp_di_unipi_it
  * a ranged one, or an INF bound becoming finite). A different approach is to
  * reformulate the constraint as
  *
- *   g(x) - s = 0  ,  l <= s <= u
+ *   g( x ) - s = 0  ,  l <= s <= u
  *
  * and relax it, with an *unconstrained* multiplier (call it y). This would
- * lead to the same single Lagrangian term y g(x), plus the extra "mini
+ * lead to the same single Lagrangian term y g( x ), plus the extra "mini
  * Lagrangian subproblem"
  *
  *   max / min { y ( - s ) : l <= s <= u }
@@ -194,7 +189,7 @@ namespace SMSpp_di_unipi_it
  * constraints, since this impact on the sign constraints of the Lagrangian
  * multipliers. Rewriting (B) for simplicity as
  *
- *   (B)   max / min c(x) : l <= g(x) <= u , x \in X
+ *   (B)   max / min c(x) : l <= g( x ) <= u , x \in X
  *
  * the exact form of the Lagrangian Dual, and of its Variable y, can actually
  * be done in different ways. Since y will be used as the dual value for the
@@ -238,7 +233,7 @@ namespace SMSpp_di_unipi_it
  *
  * where y is unconstrained in sign (and beware of the initial "-"). However,
  * in the inequality case things are different. Indeed, let us consider the
- * case of the single inequality constraint g(x) <= u (l == -INF), whereby
+ * case of the single inequality constraint g( x ) <= u (l == -INF), whereby
  * then only z is defined: we have
  *
  *   L-( z ) = - z u + min c( x ) + z g( x ) : x \in X   ,
@@ -256,7 +251,7 @@ namespace SMSpp_di_unipi_it
  *
  *   (D+)   min  - y u + max { c( x ) + y g( x ) : x \in X } : y <= 0
  *
- * In the opposite case of the single inequality constraint g(x) >= l
+ * In the opposite case of the single inequality constraint g( x ) >= l
  * (u == INF) only w is defined and we rather have
  *
  *   L-( w ) = w l + min c( x ) - w g( x ) : x \in X   ,
@@ -281,13 +276,13 @@ namespace SMSpp_di_unipi_it
  *
  * - for a original maximization problem, corresponding to a minimization
  *   Lagrangian dual (D+):
- *   = for a g(x) <= u constraint, y = - z <= 0
- *   = for a g(x) >= l constraint, y =   w >= 0
+ *   = for a g( x ) <= u constraint, y = - z <= 0
+ *   = for a g( x ) >= l constraint, y =   w >= 0
  *
  * - for a original minimization problem, corresponding to a maximization
  *   Lagrangian dual (D-):
- *   = for a g(x) <= u constraint, y =   z >= 0
- *   = for a g(x) >= l constraint, y = - w <= 0
+ *   = for a g( x ) <= u constraint, y =   z >= 0
+ *   = for a g( x ) >= l constraint, y = - w <= 0
  *
  * Note that LagrangianDualSolver provides a mechanism whereby the inner
  * Solver is only presented with y >= 0 constraints by appropriately changing
@@ -313,8 +308,7 @@ public:
 /*---------------------------- PUBLIC TYPES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Public Types
- *
- * @{ */
+ *  @{ */
 
  // "import" basic types from Block
  using Index = Block::Index;
@@ -447,7 +441,7 @@ public:
 
   };  // end( vstr_par_type_LDSlv )
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*------------- CONSTRUCTING AND DESTRUCTING LagrangianDualSolver ----------*/
 /*--------------------------------------------------------------------------*/
 /** @name Constructing and destructing LagrangianDualSolver
@@ -479,11 +473,10 @@ public:
 
  virtual ~LagrangianDualSolver() { set_Block( nullptr ); }
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Other initializations
- *
  *  @{ */
 
  /// set the (pointer to the) Block that the LagrangianDualSolver has to solve
@@ -946,6 +939,7 @@ public:
   * wrapping is nontrivial). As such, it has comparatively few algorithmic
   * parameters, while the inner Solver may have many. It is therefore
   * advantageous to allow to set the algorithmic parameters of the inner
+  * Solver to be directly set by the set_par() of LagrangianDualSolver.
   * 
   * This is done by "translating" all the indices of the parameters of the
   * inner Solver, apart from the standard ones that any CDASolver has, so
@@ -1053,7 +1047,7 @@ public:
     !!*/
   }
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*---------------------- METHODS FOR EVENTS HANDLING -----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Set event handlers
@@ -1075,7 +1069,7 @@ public:
   InnerSolver->reset_event_handler( type , id );
   }
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Solving the Lagrangian Dual of the given Block
@@ -1095,11 +1089,29 @@ public:
 
  CDASolver * get_inner_Solver( void ) { return( InnerSolver ); }
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Accessing the found solutions (if any)
  *  @{ */
+
+ double get_elapsed_time( void ) const override {
+  return( InnerSolver->get_elapsed_time() );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ long get_elapsed_iterations( void ) const override {
+  return( InnerSolver->get_elapsed_iterations() );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ long get_elapsed_calls( void ) const override {
+  return( InnerSolver->get_elapsed_calls() );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  OFValue get_lb( void ) override { return( InnerSolver->get_lb() ); }
 
@@ -1178,9 +1190,9 @@ public:
   * The \p solc Configuration controls which of these pieces is written:
   *
   * - If \p solc is nullptr, then both the dual solution of the relaxed
-  *   constraints in the father Block and that of all the sub-Block is written;
-  *   the calls to get_dual_solution() of the Solver of the sub-Block happen
-  *   with nullptr Configuration (meaning, all of it).
+  *   constraints in the father Block and that of all the sub-Block is
+  *   written; the calls to get_dual_solution() of the Solver of the
+  *   sub-Block happen with nullptr Configuration (meaning, all of it).
   *
   * - If \p solc is not nullptr, then it can be:
   *
@@ -1192,34 +1204,35 @@ public:
   *     vector is also used to decide whether the dual solution of the relaxed
   *     constraints in the father Block is written: this happens if and only
   *     if there exist any h such that solc->f_value[ h ].first is invalid
-  *     (i.e., either negative or >= get_number_nested_Blocks()), in which case
-  *     the Configuration * is ignored. That is, if one only wants the dual
-  *     solution of the relaxed constraints, then setting
+  *     (i.e., either negative or >= get_number_nested_Blocks()), in which
+  *     case the Configuration * is ignored. That is, if one only wants the
+  *     dual solution of the relaxed constraints, then setting
   *     solc->f_value = { { -1 , nullptr } } does the job.
   *
-  *   = a pointer to a SimpleConfiguration< std::vector< std::pair< int , int >
-  *     > >. In this case, the dual solution is only written for those
+  *   = a pointer to a SimpleConfiguration< std::vector< std::pair< int ,
+  *     int > > >. In this case, the dual solution is only written for those
   *     sub-Block i for which solc->f_value[ h ].first == i for some h, in
   *     which case the argument to get_dual_solution() is the Configuration
   *     in position solc->f_value[ h ].second in the "global cache of
-  *     Configuration" created using vstr_LDSl_Cfg. If solc->f_value[ h ].second
-  *     is not a valid index in that vector (i.e., it is negative or >=
-  *     vstr_LDSl_Cfg.size()) then nullptr is used. However, the vector is also
-  *     used to decide whether the dual solution of the relaxed constraints in
-  *     the father Block is written: this happens if and only if there exist
-  *     any h such that solc->f_value[ h ].first is invalid (i.e., either
-  *     negative or >= get_number_nested_Blocks()), in which case
-  *     solc->f_value[ h ].second is ignored. That is, if one only wants the
-  *     dual solution of the relaxed constraints, then setting
-  *     solc->f_value = { { -1 , 0 } } does the job.
+  *     Configuration" created using vstr_LDSl_Cfg. If
+  *     solc->f_value[ h ].second is not a valid index in that vector (i.e.,
+  *     it is negative or >= vstr_LDSl_Cfg.size()) then nullptr is used.
+  *     However, the vector is also used to decide whether the dual solution
+  *     of the relaxed constraints in the father Block is written: this
+  *     happens if and only if there exist any h such that
+  *     solc->f_value[ h ].first is invalid (i.e., either negative or >=
+  *     get_number_nested_Blocks()), in which case solc->f_value[ h ].second
+  *     is ignored. That is, if one only wants the dual solution of the
+  *     relaxed constraints, then setting solc->f_value = { { -1 , 0 } }
+  *     does the job.
   *
   *   = a pointer to a SimpleConfiguration< std::vector< Configuration * > >.
   *     In this case, the dual solution is only written for those sub-Block i
   *     with i < solc->f_value.size(), with solc->f_value[ i ] being passed as
-  *     the argument to get_dual_solution() (which can be nullptr). However, the
-  *     vector is also used to decide whether the dual solution of the relaxed
-  *     constraints in the father Block is written: this happens if and only
-  *      solc->f_value.size() > get_number_nested_Blocks().
+  *     the argument to get_dual_solution() (which can be nullptr). However,
+  *     the vector is also used to decide whether the dual solution of the
+  *     relaxed constraints in the father Block is written: this happens if
+  *     and only solc->f_value.size() > get_number_nested_Blocks().
   *
   *   = a pointer to a SimpleConfiguration< std::vector< int > >. In this
   *     case, the dual solution is only written for those sub-Block i with
@@ -1291,7 +1304,7 @@ public:
   virtual bool new_dual_direction( void ) override{ return( false ); }
 */
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE Solver ----------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1313,43 +1326,43 @@ public:
  * LagrangianDualSolver itself.
  * @{ */
 
- idx_type get_num_int_par( void ) const override {
+ [[nodiscard]] idx_type get_num_int_par( void ) const override {
   return( int_par_is( InnerSolver->get_num_int_par() ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type get_num_dbl_par( void ) const override {
+ [[nodiscard]] idx_type get_num_dbl_par( void ) const override {
   return( dbl_par_is( InnerSolver->get_num_dbl_par() ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type get_num_str_par( void ) const override {
+ [[nodiscard]] idx_type get_num_str_par( void ) const override {
   return( str_par_is( InnerSolver->get_num_str_par() ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type get_num_vint_par( void ) const override {
+ [[nodiscard]] idx_type get_num_vint_par( void ) const override {
   return( vint_par_is( InnerSolver->get_num_vint_par() ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type get_num_vdbl_par( void ) const override {
+ [[nodiscard]] idx_type get_num_vdbl_par( void ) const override {
   return( vdbl_par_is( InnerSolver->get_num_vdbl_par() ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type get_num_vstr_par( void ) const override {
+ [[nodiscard]] idx_type get_num_vstr_par( void ) const override {
   return( vstr_par_is( InnerSolver->get_num_vstr_par() ) );
   }
 
 /*--------------------------------------------------------------------------*/
- 
- int get_dflt_int_par( idx_type par ) const override {
+
+ [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
   if( ( par >= intLastParCDAS ) && ( par < intLastLDSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
 
@@ -1358,7 +1371,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- double get_dflt_dbl_par( idx_type par ) const override {
+ [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
   // if( ( par >= dblLastParCDAS ) && ( par < dblLastLDSlvPar ) )
   //  return( dflt_dbl_par[ par - dblLastParCDAS ] );
 
@@ -1367,7 +1380,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- const std::string & get_dflt_str_par( idx_type par ) const override {
+ [[nodiscard]] const std::string & get_dflt_str_par( idx_type par ) const
+  override {
   if( ( par >= strLastParCDAS ) && ( par < strLastLDSlvPar ) )
    return( dflt_str_par[ par - strLastParCDAS ] );
 
@@ -1376,7 +1390,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::vector< int > & get_dflt_vint_par( idx_type par )
+ [[nodiscard]] const std::vector< int > & get_dflt_vint_par( idx_type par )
   const override {
   static const std::vector< int > _empty;
   if( ( par == vint_LDSl_WBCfg ) || ( par == vint_LDSl_W2BCfg ) ||
@@ -1388,15 +1402,15 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::vector< double > & get_dflt_vdbl_par( idx_type par )
+ [[nodiscard]] const std::vector< double > & get_dflt_vdbl_par( idx_type par )
   const override {
   return( InnerSolver->get_dflt_vdbl_par( vdbl_par_lds( par ) ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::vector< std::string > & get_dflt_vstr_par( idx_type par )
-  const override {
+ [[nodiscard]] const std::vector< std::string > & get_dflt_vstr_par(
+					     idx_type par ) const override {
   static const std::vector< std::string > _empty;
   if( par == vstr_LDSl_Cfg )
    return( _empty );
@@ -1406,34 +1420,37 @@ public:
 
 /*--------------------------------------------------------------------------*/
  
- int get_int_par( idx_type par ) const override;
+ [[nodiscard]] int get_int_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- double get_dbl_par( idx_type par ) const override;
+ [[nodiscard]] double get_dbl_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & get_str_par( idx_type par ) const override;
+ [[nodiscard]] const std::string & get_str_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::vector< int > & get_vint_par( idx_type par ) const override;
+ [[nodiscard]] const std::vector< int > & get_vint_par( idx_type par ) const
+  override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::vector< double > & get_vdbl_par( idx_type par ) const override {
+ [[nodiscard]] const std::vector< double > & get_vdbl_par( idx_type par )
+  const override {
   return( InnerSolver->get_vdbl_par( vdbl_par_lds( par ) ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::vector< std::string > & get_vstr_par( idx_type par )
+ [[nodiscard]] const std::vector< std::string > & get_vstr_par( idx_type par )
   const override;
 
 /*--------------------------------------------------------------------------*/
 
- idx_type int_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
+  const override {
   const auto it = int_pars_map.find( name );
   if( it != int_pars_map.end() )
    return( it->second );
@@ -1443,7 +1460,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type dbl_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type dbl_par_str2idx( const std::string & name )
+  const override {
   const auto it = dbl_pars_map.find( name );
   if( it != dbl_pars_map.end() )
    return( it->second );
@@ -1453,7 +1471,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type str_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type str_par_str2idx( const std::string & name )
+  const override {
   const auto it = str_pars_map.find( name );
   if( it != str_pars_map.end() )
    return( it->second );
@@ -1463,7 +1482,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type vint_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type vint_par_str2idx( const std::string & name )
+  const override {
   const auto it = vint_pars_map.find( name );
   if( it != vint_pars_map.end() )
    return( it->second );
@@ -1473,13 +1493,15 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type vdbl_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type vdbl_par_str2idx( const std::string & name )
+  const override {
   return( vdbl_par_is( InnerSolver->vdbl_par_str2idx( name ) ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type vstr_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type vstr_par_str2idx( const std::string & name )
+  const override {
   if( name == "vstr_LDSl_Cfg" )
    return( vstr_LDSl_Cfg );
 
@@ -1488,7 +1510,8 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- const std::string & int_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
+  const override {
   if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
 
@@ -1497,7 +1520,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & dbl_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
+  const override {
   if( ( idx >= dblLastParCDAS ) && ( idx < dblLastLDSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
 
@@ -1506,7 +1530,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & str_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
+  const override {
   if( ( idx >= strLastParCDAS ) && ( idx < strLastLDSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
 
@@ -1515,7 +1540,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & vint_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & vint_par_idx2str( idx_type idx )
+  const override {
   if( ( idx >= vintLastParCDAS ) && ( idx < vintLastLDSlvPar ) )
    return( vint_pars_str[ idx - vintLastParCDAS ] );
 
@@ -1524,13 +1550,15 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & vdbl_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & vdbl_par_idx2str( idx_type idx )
+  const override {
   return( InnerSolver->vdbl_par_idx2str( vdbl_par_lds( idx ) ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & vstr_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & vstr_par_idx2str( idx_type idx )
+  const override {
   static const std::string _vstr_LDSl_Cfg = "vstr_LDSl_Cfg";
   if( idx == vstr_LDSl_Cfg )
    return( _vstr_LDSl_Cfg );
@@ -1538,7 +1566,7 @@ public:
   return( InnerSolver->vstr_par_idx2str( vstr_par_lds( idx ) ) );
   }
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*--------------------- PROTECTED PART OF THE CLASS ------------------------*/
 /*--------------------------------------------------------------------------*/
 

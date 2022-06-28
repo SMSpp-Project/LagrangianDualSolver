@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2022-06-28
+
+
+
+
 ## [0.1.1] - 2021-05-02
 
 Minor point release to avoid the master branch to become too stale:
@@ -25,6 +30,7 @@ Initial release
 
 - Initial release.
 
-[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.0...develop
-[0.1.1]: https://gitlab.com/smspp/lagrangiandualsolver/-/tags/0.1.1
+[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.2...develop
+[0.1.2]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.1...0.1.2
+[0.1.1]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.0...0.1.1
 [0.1.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/tags/0.1.0

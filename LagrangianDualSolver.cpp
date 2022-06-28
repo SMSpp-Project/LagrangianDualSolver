@@ -6,17 +6,11 @@
  * CDASolver interface within the SMS++ framework for a "generic"
  * Lagrangian-based Solver.
  *
- * \version 0.01
- *
- * \date 11 - 11 - 2020
- *
  * \author Antonio Frangioni \n
- *         Operations Research Group \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
  * \author Enrico Gorgone \n
- *         Operations Research Group \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
@@ -24,8 +18,6 @@
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
-/*--------------------------------------------------------------------------*/
-
 /*--------------------------------------------------------------------------*/
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -45,15 +37,21 @@
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-/* Bitwise-coded macro that activate costly checks that should never be done
- * in production, but can be useful during debugging. Currently supported
- * checks are:
- *
- * - bit 0 (+ 1): is_correct() is called on the Lagrangian Dual AbstractBlock
- *   to verify that all Variable and Constraint are properly linked.
- */
 
-#define CHECK_DS 0
+#ifndef NDEBUG
+ #define CHECK_DS 0
+ /* Bitwise-coded macro that activate costly checks that should never be done
+  * in production, but can be useful during debugging. Currently supported
+  * checks are:
+  *
+  * - bit 0 (+ 1): is_correct() is called on the Lagrangian Dual
+  *   AbstractBlock to verify that all Variable and Constraint are properly
+  *   linked. */
+#else
+ #define CHECK_DS 0
+ // never change this
+#endif
+
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
@@ -124,8 +122,7 @@ static constexpr VarValue NaNshift
                               = std::numeric_limits< VarValue >::quiet_NaN();
  ///< convenience constexpr for "NaN", *not* to be used with ==
 
-static constexpr VarValue INFshift
-                               = std::numeric_limits< VarValue >::infinity();
+static constexpr VarValue INFshift = Inf< VarValue >();
  ///< convenience constexpr for "Infty"
 
 static constexpr Index InINF = SMSpp_di_unipi_it::Inf<Index>();
@@ -993,6 +990,8 @@ void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
 
 int LagrangianDualSolver::compute( bool changedvars )
 {
+ lock();  // lock the mutex
+
  bool owned = f_Block->is_owned_by( f_id );
  if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
   throw( std::runtime_error(
@@ -1031,6 +1030,8 @@ int LagrangianDualSolver::compute( bool changedvars )
  else
   if( res == kInfeasible )
    res = kUnbounded;
+
+ unlock();  // unlock the mutex
 
  return( res );
 
