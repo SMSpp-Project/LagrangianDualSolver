@@ -652,7 +652,15 @@ void LagrangianDualSolver::set_Block( Block * block )
    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
    }
 
-  v_LBF[ h ]->set_dual_pairs( std::move( dp ) );
+  // Since this LagBFunction is already part of an Objective (and, therefore,
+  // has an Observer), the method LagBFunction::set_dual_pairs() cannot be
+  // invoked. Notice also that the FRealObjective to which this LagBFunction
+  // belongs cannot be constructed here, nor that this LagBFunction is set as
+  // the Function of its FRealObjective. This is because this FRealObjective
+  // needs to have its LagBFunction when the method split_constraint() (and
+  // thus the method Block2Index()) is invoked above.
+
+  v_LBF[ h ]->add_dual_pairs( std::move( dp ) );
   }
 
  // release the Block- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
