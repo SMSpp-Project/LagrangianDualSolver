@@ -10,7 +10,7 @@ This can "solve" (see below for the reason of the scare quotes) any Block
 - no Variable in (B)
 
 - (B) does not depend on any "external" Variable, i.e., a Variable that does
-  not belong to (B) (or any of its sub-Block, recurively)
+  not belong to (B) (or any of its sub-Block, recursively)
 
 - (B) has at least one sub-Block (necessarily, for otherwise it would be
   "completely empty")
@@ -18,7 +18,7 @@ This can "solve" (see below for the reason of the scare quotes) any Block
 - if there is more than one sub-Block, the Constraint in (B) are all and only
   the ones that link its sub-Block; that is, no sub-Block must depend on any
   "external" Variable, i.e., a Variable that does not belong to the sub-Block
-  (or any of its sub-Block, recurively)
+  (or any of its sub-Block, recursively)
 
 - all the Constraint in (B) are "linear constraint", i.e., FRowConstraint
   with a LinearFunction inside. Note that OneVarConstraint are "linear

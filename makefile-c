@@ -9,8 +9,8 @@
 #   OBJ, H, -I directives, external libraries + -L<libdirs> are added to the #
 #   corresponding LgDSLV* macros.                                            #
 #                                                                            #
-#   Input:  $(CC)       = compiler command                                   #
-#           $(SW)       = compiler options                                   #
+#   Input:  $(CC)        = compiler command                                  #
+#           $(SW)        = compiler options                                  #
 #           $(LgDSLVSDR) = the directory where BundleSolver source is        #
 #           $(LgDSLVODR) = the directory where the objects have to be put    #
 #                                                                            #

@@ -677,7 +677,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  if( ! owned )
   f_Block->unlock( f_id );
 
- // BlockSolverConfig-ure the inividual inner Block- - - - - - - - - - - - - -
+ // BlockSolverConfig-ure the individual inner Block- - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // create the default BlockSolverConfig
  if( ! LagBF_BSCfg.empty() ) {
@@ -770,7 +770,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  // the UpdateSolver do not mess up with the first Solver registered to the
  // inner Block of the LagBFunction, that is the "crucial" one
  //
- // note that the issue only arises when the orignal sub-Block is used, as
+ // note that the issue only arises when the original sub-Block is used, as
  // otherwise the UpdateSolver is attached to it but the LagBFunction uses a
  // copy and therefore the UpdateSolver is not registered there
  //
@@ -796,7 +796,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  else          // evicting the sub-Block
   // register an UpdateSolver to the original sub-Block (which now lives
   // in the LagBFunction) so that any Modification to it is immediately
-  // forwarded to the former father as it it were still its son; note that
+  // forwarded to the former father as it were still its son; note that
   // the UpdateSolver forwards, as opposed to map_*, the Modification
   for( Index i = 0 ; i < f_nsb ; ++i ) {
    v_US[ i ] = new UpdateSolver( f_Block , nullptr , 2 );
@@ -1836,7 +1836,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 {
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 0-th loop: "atomically flatten" v_mod into a temporary list to better
- // handle it, then clear it; meanwhhile discard all Modification not
+ // handle it, then clear it; meanwhile discard all Modification not
  // coming directly from f_Block (i.e., coming from its sub-Block)
 
  Lst_sp_Mod v_mod_tmp;
@@ -1857,7 +1857,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 1st loop: only consider addition and deletion of (dynamic) FRowConstraint
  // Only consider addition and removal of constraints; changes to existing
- // constrants will be considered in the second loop, so that changes to
+ // constraints will be considered in the second loop, so that changes to
  // constraints that are going to be deleted or changes to added constraints
  // can be ignored. indeed, constraints will only be added at the end, hence
  // directly in their current state
@@ -2349,7 +2349,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 					       )->get_function()
 			 )->remove_variables( rng , mp );
 
-    // shift range so that it is in [ 0 , n. dynamic cnstraints )
+    // shift range so that it is in [ 0 , n. dynamic constraints )
     rng.first -= static_cons;
     rng.second -= static_cons;
 
@@ -2371,7 +2371,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 			 )->remove_variables( std::move( Dltdn ) , true , mp );
 
     // adjust the index to dynamic constraint dictionary
-    // shift names so that they are in [ 0 , n. dynamic cnstraints )
+    // shift names so that they are in [ 0 , n. dynamic constraints )
     for( auto & el : Dltdn )
      el -= static_cons;
 
@@ -2401,7 +2401,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 
    }  // end( multiple constraints )
   
-  LagrDual->close_channel( chnl );  // close the cannel
+  LagrDual->close_channel( chnl );  // close the channel
   }
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2485,10 +2485,10 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    v_LBF[ h ]->add_dual_pairs( std::move( dp ) );
    }
 
-  LagrDual->close_channel( chnl );  // close the cannel
+  LagrDual->close_channel( chnl );  // close the channel
   }
 
- // an now, finally, all is done- - - - - - - - - - - - - - - - - - - - - - -
+ // and now, finally, all is done- - - - - - - - - - - - - - - - - - - - - - -
   
  }  // end( LagrangianDualSolver::process_outstanding_Modification )
 
