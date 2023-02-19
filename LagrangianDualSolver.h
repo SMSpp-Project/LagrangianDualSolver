@@ -52,7 +52,7 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
-/// A CDASolver soving the Lagrangian Dual of a "generic" Block
+/// A CDASolver solving the Lagrangian Dual of a "generic" Block
 /** The LagrangianDualSolver class implements the CDASolver interface within
  * the SMS++ framework for a "generic" Lagrangian-based Solver.
  *
@@ -489,11 +489,11 @@ public:
   *     INSIDE set_Block() THE LAGRANGIAN DUAL Block IS CONSTRUCTED, POSSIBLY
   *     "EVICTICTING" THE SUB-Block FROM WITHIN THE ORIGINAL Block
   *
-  * As a consequance, as customary, generate_abstract_*() are immediately
+  * As a consequence, as customary, generate_abstract_*() are immediately
   * called on \p block since LagrangianDualSolver relies on the existence of
   * a proper Objective in the sub-Block (as this is in turn a requirement for
   * LagBFunction to work) and on proper FRowConstraint to relax, as well as
-  * on the *non*-esistence of Variable and an Objective in \p block. Hence
+  * on the *non*-existence of Variable and an Objective in \p block. Hence
   *
   *     THE Block PASSED TO set_Block() MUST BE PROPERLY BlockConfig-URED
   *
@@ -509,7 +509,7 @@ public:
   *
   * In fact, the sub-Block are BlockConfig-ured *before* the Lagrangian Dual
   * Block is formed, and generate_abstract_*() is called for them,
-  * precisely because LagBFunction needs the relevant pieces of abstact
+  * precisely because LagBFunction needs the relevant pieces of abstract
   * representation to work. All this is irrelevant is sub-Block are evicted,
   * since they will need to be BlockConfig-ured from the start and
   * generate_abstract_*() is (supposedly) called for them when it is for the
@@ -518,8 +518,8 @@ public:
  void set_Block( Block * block ) override;
 
 /*--------------------------------------------------------------------------*/
- /// set the int paramaters of LagrangianDualSolver / the inner Solver
- /** Set the int paramaters specific of LagrangianDualSolver, and allow to
+ /// set the int parameters of LagrangianDualSolver / the inner Solver
+ /** Set the int parameters specific of LagrangianDualSolver, and allow to
   * directly set those of the inner Solver used to solve the Lagrangian Dual;
   * see the comments to set_ComputeConfig() for details.
   *
@@ -548,8 +548,8 @@ public:
  void set_par( idx_type par , int value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// set the double paramaters of LagrangianDualSolver / the inner Solver
- /** Set the double paramaters specific of LagrangianDualSolver, and allow to
+ /// set the double parameters of LagrangianDualSolver / the inner Solver
+ /** Set the double parameters specific of LagrangianDualSolver, and allow to
   * directly set those of the inner Solver used to solve the Lagrangian Dual;
   * see the comments to set_ComputeConfig() for details. */
 
@@ -558,8 +558,8 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// set the string paramaters of LagrangianDualSolver / the inner Solver
- /** Set the string paramaters specific of LagrangianDualSolver, and allow to
+ /// set the string parameters of LagrangianDualSolver / the inner Solver
+ /** Set the string parameters specific of LagrangianDualSolver, and allow to
   * directly set those of the inner Solver used to solve the Lagrangian Dual;
   * see the comments to set_ComputeConfig() for details.
   *
@@ -647,8 +647,8 @@ public:
  void set_par( idx_type par , std::string && value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// set the vector-of-int paramaters of LagrangianDualSolver / inner Solver
- /** Set the vector-of-int paramaters specific of LagrangianDualSolver, and
+ /// set the vector-of-int parameters of LagrangianDualSolver / inner Solver
+ /** Set the vector-of-int parameters specific of LagrangianDualSolver, and
   * allow to directly set those of the inner Solver used to solve the
   * Lagrangian Dual; see the comments to set_ComputeConfig() for details.
   *
@@ -658,12 +658,12 @@ public:
   *   created according to vstr_LDSl_Cfg [see] into the actual inner Block
   *   of the LagBFunction of the sub-Block in the Lagrangian Dual Block. The
   *   exact meaning of this parameter, however, depends on vint_LDSl_W2BCfg
-  *   [see]. If the latter is empty, the correspondance is positional:
+  *   [see]. If the latter is empty, the correspondence is positional:
   *   vint_LDSl_WBCfg[ h ] = k means that the (inner Block of the 
   *   LagBFunction of the) h-th sub-Block will be BlockConfig-ured with the
   *   BlockConfig created using the k-th position in vstr_LDSl_Cfg. If k is
   *   not a valid position into vstr_LDSl_Cfg (it is negative or >=
-  *   vstr_LDSl_Cfg.size()), or the corresponding Configueation is not a
+  *   vstr_LDSl_Cfg.size()), or the corresponding Configuration is not a
   *   BlockConfig, then the h-th sub-Block is not BlockConfig-ured by this
   *   mechanism (but there are plenty of other mechanisms that allows this to
   *   happen, see e.g. str_LagBF_BCfg and str_LDBlck_BCfg). If
@@ -675,7 +675,7 @@ public:
   *   that the (inner Block ...) sub-Block vint_LDSl_W2BCfg[ h ] will be
   *   BlockConfig-ured with the BlockConfig created using the k-th position in
   *   vstr_LDSl_Cfg. If k is not a valid position into vstr_LDSl_Cfg (it is
-  *   negative or >= vstr_LDSl_Cfg.size()), or the corresponding Configueation
+  *   negative or >= vstr_LDSl_Cfg.size()), or the corresponding Configuration
   *   is not a BlockConfig, then the h-th sub-Block is not BlockConfig-ured.
   *   This is done only when information is available in both vectors, i.e.,
   *   for h < min( vint_LDSl_WBCfg.size() , vint_LDSl_W2BCfg.size() ).
@@ -691,12 +691,12 @@ public:
   *   actual inner Block of the LagBFunction of the sub-Block in the
   *   Lagrangian Dual Block. The exact meaning of this parameter, however,
   *   depends on vint_LDSl_W2BSCfg [see]. If the latter is empty, the
-  *   correspondance is positional: vint_LDSl_WBSCfg[ h ] = k means that the
+  *   correspondence is positional: vint_LDSl_WBSCfg[ h ] = k means that the
   *   (inner Block of the LagBFunction of the) h-th sub-Block will be
   *   BlockSolverConfig-ured with the BlockSolverConfig created using the
   *   k-th position in vstr_LDSl_Cfg. If k is not a valid position into
   *   vstr_LDSl_Cfg (it is negative or >= vstr_LDSl_Cfg.size()), or the
-  *   corresponding Configueation is not a BlockSolverConfig, then the h-th
+  *   corresponding Configuration is not a BlockSolverConfig, then the h-th
   *   sub-Block is not BlockSolverConfig-ured by this mechanism (but there
   *   are plenty of other mechanisms that allows this to happen, see e.g.
   *   str_LagBF_BSCfg and str_LDBlck_BSCfg). If vint_LDSl_WBSCfg.size() <
@@ -708,7 +708,7 @@ public:
   *   sub-Block vint_LDSl_W2BSCfg[ h ] will be BlockSolverConfig-ured with
   *   the BlockSolverConfig created using the k-th position in vstr_LDSl_Cfg.
   *   If k is not a valid position into vstr_LDSl_Cfg (it is negative or >=
-  *   vstr_LDSl_Cfg.size()), or the corresponding Configueation is not a
+  *   vstr_LDSl_Cfg.size()), or the corresponding Configuration is not a
   *   BlockSolverConfig, then the h-th sub-Block is not
   *   BlockSolverConfig-ured (by this mechanism ...). This is done only when
   *   information is available in both vectors, i.e., for
@@ -725,7 +725,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// set the vector-of-double params of LagrangianDualSolver / inner Solver
- /** Set the vector-of-double paramaters specific of LagrangianDualSolver, and
+ /** Set the vector-of-double parameters specific of LagrangianDualSolver, and
   * allow to directly set those of the inner Solver used to solve the
   * Lagrangian Dual; see the comments to set_ComputeConfig() for details. */
 
@@ -735,7 +735,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// set the vector-of-string params of LagrangianDualSolver / inner Solver
- /** Set the vector-of-string paramaters specific of LagrangianDualSolver, and
+ /** Set the vector-of-string parameters specific of LagrangianDualSolver, and
   * allow to directly set those of the inner Solver used to solve the
   * Lagrangian Dual; see the comments to set_ComputeConfig() for details.
   *
@@ -1618,7 +1618,7 @@ public:
   * FRowConstraint, be it static or dynamic.
   *
   * @param con a pointer to a FRowConstraint
-  * @return the corresponding index as active variablee, Int< Index >() if
+  * @return the corresponding index as active variable, Int< Index >() if
   *         \p con does not correspond to any FRowConstraint */
 
  Index index_of_constraint( const FRowConstraint * con ) {
@@ -1748,7 +1748,7 @@ FRowConstraint * constraint_with_index( Index i ) {
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
- // algorthmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // algorithmic parameters- - - - - - - - - - - - - - - - - - - - - - - - - -
 
  bool iBCopy;         ///< true if the R3Block conversion has to be done
 
