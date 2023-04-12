@@ -22,12 +22,8 @@
 #           $(LgDSLVH)     = the .h files to include                         #
 #           $(LgDSLVINC)   = the -I$( source directory )                     #
 #                                                                            #
-#                                VERSION 1.00                                #
-#                               30 - 12 - 2020                               #
-#                                                                            #
 #                              Antonio Frangioni                             #
 #                               Enrico Gorgone                               #
-#                          Operations Research Group                         #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #
