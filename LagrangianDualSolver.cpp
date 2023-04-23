@@ -125,7 +125,7 @@ static constexpr VarValue NaNshift
 static constexpr VarValue INFshift = Inf< VarValue >();
  ///< convenience constexpr for "Infty"
 
-static constexpr Index InINF = SMSpp_di_unipi_it::Inf<Index>();
+static constexpr Index InINF = SMSpp_di_unipi_it::Inf< Index >();
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
@@ -1591,7 +1591,7 @@ FRowConstraint * LagrangianDualSolver::static_constraint_with_index( Index i )
 bool LagrangianDualSolver::to_be_reversed( const FRowConstraint & con )
 {
  if( f_max ) {  // maximization problem
-  if( con.get_lhs() == - Inf< RowConstraint::RHSValue >() )  // <= constraint
+  if( con.get_lhs() == -Inf< RowConstraint::RHSValue >() )  // <= constraint
    return( true );
   }
  else           // minimization problem
