@@ -1102,8 +1102,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
 			    v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
   };
 
- auto SCvi = dynamic_cast< SimpleConfiguration< std::vector< int > > *
-			   >( solc );
+ auto SCvi = dynamic_cast< SimpleConfiguration< std::vector< int > > * >( solc );
  if( SCvi ) {
   assert( std::is_sorted( SCvi->value().begin() , SCvi->value().end() ) );
   if( ( ! SCvi->value().empty() ) && ( ( SCvi->value().front() < 0 ) ||
@@ -1118,7 +1117,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
   for( Index i = 0 ; i < f_nsb ; ++i )
    getsoli( i );
  
- }  // end( LagrangianDualSolver::get_var_solution() )
+ }  // end( LagrangianDualSolver::get_var_solution )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1260,7 +1259,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
                                con.set_dual( (Ldit++)->get_value() );
                                } , un_any_type< FRowConstraint >() );
   }
- }  // end( LagrangianDualSolver::get_dual_solution() )
+ }  // end( LagrangianDualSolver::get_dual_solution )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1798,7 +1797,7 @@ void LagrangianDualSolver::cleanup_LagrDual( void )
 
  v_LBF.clear();
 
- }  // end( cleanup_LagrDual )
+ }  // end( LagrangianDualSolver::cleanup_LagrDual )
 
 /*--------------------------------------------------------------------------*/
 
