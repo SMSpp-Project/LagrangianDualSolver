@@ -68,7 +68,7 @@ int main( int argc , char **argv )
  // pass the MPSolver to the Bundle  - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- LagrangianDualSolver *BndSlv = static_cast<LagrangianDualSolver *>( Slv );
+ LagrangianDualSolver * BndSlv = static_cast< LagrangianDualSolver * >( Slv );
  if( BndSlv == nullptr )
   throw( std::logic_error( "the solver is not of the Bundle type" ) );
                     
