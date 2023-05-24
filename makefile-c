@@ -41,7 +41,7 @@ include $(SMS++SDR)lib/makefile-inc
 # include the makefile requiring all external modules in input
 include $(LgDSLVSDR)/makefile
 
-# macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
+# macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # append external stuff defined in the other makefiles to LgDSLVOBJ,
 # LgDSLVINC and LgDSLVH, thus the := assignment has to be used (use GNU make)
