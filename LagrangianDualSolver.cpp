@@ -22,7 +22,7 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#include "AbstractBlock.h"
+//#include "AbstractBlock.h"
 
 #include "BlockSolverConfig.h"
 
@@ -44,9 +44,8 @@
   * in production, but can be useful during debugging. Currently supported
   * checks are:
   *
-  * - bit 0 (+ 1): is_correct() is called on the Lagrangian Dual
-  *   AbstractBlock to verify that all Variable and Constraint are properly
-  *   linked. */
+  * - bit 0 (+ 1): is_correct() is called on the Lagrangian Dual Block to
+  *   verify that all Variable and Constraint are properly linked. */
 #else
  #define CHECK_DS 0
  // never change this
@@ -280,7 +279,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  // abstract representation, which may need to be generated for this very
  // purpose, but the generation of the abstract representation may differ
  // according to the BlockConfig, so ensure that all BlockConfig (but *not*
- // the BlockSolverConfig, see later on for why) that can be apply()-ed to
+ // the BlockSolverConfig, see later on for why) that must be apply()-ed to
  // the sub-Block are before doing the checks
  // but at the very least children are required to exist - - - - - - - - - -
 
@@ -301,7 +300,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
   }
 
- LagrDual = new AbstractBlock;  // create the AbstractBlock
+ LagrDual = new LagrangianDualBlock;  // create the Lagrangian Dual Block
 
  // resize the sub-Block dictionary and the pointers to the LagBFunction
  blck_to_idx.resize( f_nsb );
@@ -332,7 +331,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( W2BCfg.empty() )    // in dense format
     h = i;
    else                    // in sparse format
-    if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == i ) )
+    if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == int( i ) ) )
      h = iW2BCfg++;
     else
      h = WBCfg.size();
@@ -677,7 +676,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  if( ! owned )
   f_Block->unlock( f_id );
 
- // BlockSolverConfig-ure the individual inner Block- - - - - - - - - - - - - -
+ // BlockSolverConfig-ure the individual inner Block - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // create the default BlockSolverConfig
  if( ! LagBF_BSCfg.empty() ) {
@@ -700,7 +699,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( W2BSCfg.empty() )    // in dense format
     h = i;
    else                     // in sparse format
-    if( ( iW2BSCfg < W2BSCfg.size() ) && ( W2BSCfg[ iW2BSCfg ] == i ) )
+    if( ( iW2BSCfg < W2BSCfg.size() ) && ( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
      h = iW2BSCfg++;
     else
      h = WBSCfg.size();
@@ -1162,7 +1161,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
                             int  , Configuration * > > > * >( solc ) ) {
   bool get_rel = false;
   for( auto el : c->f_value )
-   if( ( el.first < 0 ) || ( el.first >= f_nsb ) )
+   if( ( el.first < 0 ) || ( el.first >= int( f_nsb ) ) )
     get_rel = true;
    else
     lcfg( el.first , el.second );
@@ -1178,11 +1177,11 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
                             int  , int > > > * >( solc ) ) {
   bool get_rel = false;
   for( auto el : c->f_value )
-   if( ( el.first < 0 ) || ( el.first >= f_nsb ) )
+   if( ( el.first < 0 ) || ( el.first >= int( f_nsb ) ) )
     get_rel = true;
    else
     lcfg( el.first ,
-	  ( ( el.second >= 0 ) && ( el.second < v_Cfg.size() ) ) ?
+	  ( ( el.second >= 0 ) && ( el.second < int( v_Cfg.size() ) ) ) ?
 	  v_Cfg[ el.second ] : nullptr );
 
   if( get_rel )
@@ -1211,7 +1210,8 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
     goto get_duals;
    else {
     auto h = c->f_value[ i ];
-    lcfg( i , ( ( h >= 0 ) && ( h < v_Cfg.size() ) ) ? v_Cfg[ h ] : nullptr );
+    lcfg( i , ( ( h >= 0 ) && ( h < int( v_Cfg.size() ) ) )
+	      ? v_Cfg[ h ] : nullptr );
     }
 
   return;  // if none of the above, do nothing
@@ -1400,7 +1400,8 @@ void LagrangianDualSolver::clear_inner_BlockSolverConfig( bool keepcfg )
     if( W2BSCfg.empty() )    // in dense format
      h = i;
     else                     // in sparse format
-     if( ( iW2BSCfg < W2BSCfg.size() ) && ( W2BSCfg[ iW2BSCfg ] == i ) )
+     if( ( iW2BSCfg < W2BSCfg.size() ) &&
+	 ( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
       h = iW2BSCfg++;
      else
       h = WBSCfg.size();
@@ -1465,7 +1466,7 @@ void LagrangianDualSolver::clear_inner_BlockConfig( bool keepcfg )
     if( W2BCfg.empty() )    // in dense format
      h = i;
     else                     // in sparse format
-     if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == i ) )
+     if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == int( i ) ) )
       h = iW2BCfg++;
      else
       h = WBCfg.size();
@@ -1789,9 +1790,9 @@ void LagrangianDualSolver::cleanup_LagrDual( void )
    f_Block->unlock( f_id );
   }
 
- // LagrDual is an AbstractBlock and therefore its destructor deletes
- // everything inside it, comprised the LagBFunction that therefore must
- // not to be deleted here
+ // LagrDual is a LagrangianDualBlock, i.e., an AbstractBlock, and therefore
+ // its destructor deletes everything inside it, comprised the LagBFunction
+ // that therefore must not to be deleted here
  delete LagrDual;
  LagrDual = nullptr;
 
@@ -2490,6 +2491,44 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
  // and now, finally, all is done- - - - - - - - - - - - - - - - - - - - - - -
   
  }  // end( LagrangianDualSolver::process_outstanding_Modification )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::LagrangianDualBlock::add_Modification(
+						 sp_Mod mod , ChnlName chnl )
+{
+ // specific LagrangianDualBlock behaviour: if Mod is sent to a non-default
+ // channel that is not in the list of the "local channels", revert the
+ // channel to default (0) rather than throw exception. this may be wrong if
+ // the channel had been defined somewhere in the ancestors of the
+ // LagrangianDualBlock, but LagrangianDualBlock is not supposed to have a
+ // father, so this is not an issue
+ //
+ // in fact the check may probably be simplified as it is not expected that
+ // anyone opens a channel in a LagrangianDualBlock, but let's keep it more
+ // general
+
+ if( ! chnl )                           // the default channel
+  chnl = f_channel;                     // possibly silently hijack it
+
+ // if not on the default channel, the list of "local channels" is nonempty
+ // but the channel is not there, just revert to the default channel
+ if( chnl && ( ! v_GroupMod.empty() )  &&
+     ( std::find_if( v_GroupMod.begin() , v_GroupMod.end() ,
+		     [ chnl ] ( auto & a ) -> bool {
+		                return( a.first == chnl );
+		                } ) == v_GroupMod.end() ) )
+  chnl = 0;
+
+ // finishup by calling the base class method
+ // this somewhat convoluted approach is due to the fact that
+ // add_Modification needs to call GroupModification::add() which is a
+ // protected method: Block can do it since it's friend of GroupModification,
+ // but friend-ness is not extended by inheritance so LagrangianDualBlock is
+ // not
+ Block::add_Modification( mod , chnl );
+
+ }  // end( LagrangianDualBlock::add_Modification )
 
 /*--------------------------------------------------------------------------*/
 /*------------------- End File LagrangianDualSolver.cpp --------------------*/

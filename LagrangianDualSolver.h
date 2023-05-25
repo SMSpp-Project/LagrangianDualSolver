@@ -28,6 +28,8 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include "AbstractBlock.h"
+
 #include "CDASolver.h"
 
 #include "LagBFunction.h"
@@ -43,7 +45,7 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
- class AbstractBlock;   // forward declaration of AbstractBlock
+ // class AbstractBlock;   // forward declaration of AbstractBlock
 
  class FRowConstraint;  // forward definition of FRowConstraint
   
@@ -1005,11 +1007,11 @@ public:
   * when set_Block() is called). Note that the structure of the Lagrangian
   * Dual Block is:
   *
-  * - an AbstractBlock having a linear Objective (a FRealObjective with
+  * - a LagrangianDualBlock having a linear Objective (a FRealObjective with
   *   a LinearFunction inside)
   *
-  * - The AbstractBlock has exactly as many sub-Block as the original Block,
-  *   each of them being another AbstractBlock with the Lagrangian function
+  * - The LagrangianDualBlock has exactly as many sub-Block as the original
+  *   Block, each of them being an AbstractBlock with the Lagrangian function
   *   of the corresponding sub-Block (a FRealObjective with a LagBFunction
   *   inside, the LagBFunction containing either the original sub-Block or
   *   ita R3B copy).
@@ -1575,6 +1577,35 @@ public:
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PROTECTED TYPES ------------------------------*/
 /*--------------------------------------------------------------------------*/
+/** Small private "copy" of AbstractBlock, for the Block representing the
+ * Lagrangian Dual that LagrangianDualSolver constructs.
+ *
+ * This does almost eactly everything that AbstractBlock does, save for a
+ * minor detail: in add_Modifiation(), if the Modification is sent to a
+ * channel that is not defined, no exception is raised (as Block does) but
+ * the Modification is simply reverted to the default channel.
+ *
+ * The reason for this is the "eviction mode" in which sub-Block are "stolen"
+ * from the original Block that LagrangianDualSolver is registered to. In
+ * this case, an issue can occur if a channel is opened in that Block, and
+ * a Modification from a sub-Block is sent to the channel: since LagBFunction
+ * keeps the channel information, the Modification arrives to the Lagrangian
+ * Dual Block on a channel that it does not "know", causing the exception to
+ * be raised.
+ */
+ 
+ class LagrangianDualBlock : public AbstractBlock {
+
+ public:
+
+  explicit LagrangianDualBlock( Block * father = nullptr ) :
+           AbstractBlock( father ) {}
+
+  ~LagrangianDualBlock() override {};
+
+  void add_Modification( sp_Mod mod , ChnlName chnl ) override;
+  };
+
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
@@ -1787,7 +1818,8 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  bool f_max;        ///< true if (B) was a max problem, false otherwise
 
- AbstractBlock * LagrDual;  ///< the automatically constructed Lagrangian Dual
+ LagrangianDualBlock * LagrDual;
+                    ///< the automatically constructed Lagrangian Dual
 
  CDASolver * InnerSolver;   ///< the Solver attached to LagrDual
 
