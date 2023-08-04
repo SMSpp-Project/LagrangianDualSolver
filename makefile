@@ -31,20 +31,20 @@
 
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-LgDSLVOBJ = $(LgDSLVSDR)LagrangianDualSolver.o 
+LgDSLVOBJ = $(LgDSLVSDR)/LagrangianDualSolver.o 
 
 LgDSLVINC = -I$(LgDSLVSDR)
 
-LgDSLVH   = $(LgDSLVSDR)LagrangianDualSolver.h 
+LgDSLVH   = $(LgDSLVSDR)/LagrangianDualSolver.h 
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
-	rm -f $(LgDSLVOBJ) $(LgDSLVSDR)*~
+	rm -f $(LgDSLVOBJ) $(LgDSLVSDR)/*~
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(LgDSLVSDR)LagrangianDualSolver.o: $(LgDSLVSDR)LagrangianDualSolver.cpp \
+$(LgDSLVSDR)/LagrangianDualSolver.o: $(LgDSLVSDR)/LagrangianDualSolver.cpp \
 	$(LgDSLVH) $(SMS++OBJ)
 	$(CC) -c $*.cpp -o $@ $(LgDSLVINC) $(SMS++INC) $(SW)
 
