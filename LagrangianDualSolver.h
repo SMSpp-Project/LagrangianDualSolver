@@ -93,14 +93,48 @@ namespace SMSpp_di_unipi_it
  *   or make any direct reference to any of its data.
  *
  * The reason for the last requirement is that LagrangianDualSolver may
- * "cheat" on (B): it stealthily constructs a new Block corresponding to its
- * Lagrangian Dual, possibly "physically moving" the sub-Block of (B) inside
- * it while not changing the pointers in (B). That is, the sub-Block of (B)
- * temporarily change father Block to a new Block that remains hidden inside
- * the LagrangianDualSolver, while (B) still "believes" that they remain its
- * sub-Block. This is undone when the LagrangianDualSolver is unregistered
- * from (B). Consistency is kept, in that any Modification coming from the
- * sub-Block is also "forwarded" to (B).
+ * "cheat" on (B): it stealthily constructs a new Block LB corresponding to
+ * its Lagrangian Dual, possibly "physically moving" the sub-Block of (B)
+ * inside it while not changing the pointers in (B). In fact, LB is
+ * constructed with as many sub-Block as those of (B); for each sub-Block
+ * (B_i) of (B) a sub-Block (LB_i) of (LB) is constructed. (LB_i) is empty
+ * save for a FRealObjective that contains a LagBFunction; in turn, (B_i)
+ * is set as the Block inside that LagBFunction. That is, the father of
+ * (B_i) is set to the LagBFunction in (LB_i) (which is both a Function and
+ * a Block, hence can be a father), while (B) still "believes" that (B_i)
+ * remains its sub-Block. This is undone when the LagrangianDualSolver is
+ * unregistered from (B). Consistency is kept, in that any Modification
+ * coming from (B_i) is also "forwarded" to (B) by the trick of setting (B)
+ * as the father Block of the LagBFunction, exploiting the support that
+ * LagBFunction provides for this (somehow tricky) use case. Note that these
+ * Modification also reach the LagBFunction, where they are "translated" into
+ * FunctionMod; these are the, forwarded to (LB_i) (which Observe-s the
+ * LagBFunction via the FRealObjective) and then to (LB) and all the Solver
+ * registered to it (not to any Solver registered to the LagBFunction, since
+ * there must not be any). Thus, the Modification reach both (LB) (having
+ * been properly "translated") and the otiginal father (B) of (B_i). This also
+ * has the advantage of partly reconstructing the two-way link between (B)
+ * and the (B_i): not only "going down from (B) one reaches the (B_i)", but
+ * also "going up from the (B_i) one eventually gets to (B)". The mapping is
+ * not perfectly kept since now (B_i) is a "grandson" of (B) rather than a
+ * "son" (the LagBFunction having been slotted in the middle), but this is
+ * still good enough for any operation that just requires to be able to
+ * eventually reach up (B) from (B_i) up the father Block chain. An important
+ * example of such an operation is MILPSolver::is_mine(), which checks if a
+ * given Block is a sub-Block of the one the MILPSolver is registered to. By
+ * the above trick the operation stil works even if a LagrangianDualSolver
+ * has been registered to (B) before the MILPSolver is (while otherwise it
+ * would break).
+ *
+ * In case this is still not enough, i.e., something in (B) or in any other
+ * Solver attached to it requires to keep the original father-son relationship
+ * between (B) and its (B_i), the parameter int_LDSlv_iBCopy allows to
+ * instruct LagrangianDualSolver to rather build a copy (B'_i) of (B_i) and
+ * insert (B'_i) into the LagBFunction, with an UpdateSolver forwardng all
+ * Modification from (B_i) to (B'_i). However
+ *
+ *     THIS REQUIRES get_R3_Block( nullptr ) AND map_back_solution() TO
+ *     WORK FOR ALL (B_i)
  *
  * Mathematically speaking, the original (B) can be seen as
  *
@@ -294,7 +328,7 @@ namespace SMSpp_di_unipi_it
  * the Lagrangian Dual Block, and it is used to solve it. The solution is
  * used as the dual solution for (B), while a primal solution is constructed
  * by convexification. Hence, if (B) is *not* a convex program (say, some
- * sub-Block (B^k) has integer variables), then the Lagrangian Dual Block is
+ * sub-Block (B_i) has integer variables), then the Lagrangian Dual Block is
  * *not* equivalent to (B) but to its "convexified relaxation", and this is
  * what is solved. */
 
