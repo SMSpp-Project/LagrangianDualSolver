@@ -791,7 +791,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  // do this properly now
  //
  // fortunately, the issue no longer arise since the introduction of the
- // "father of LagBFunction" trick, since no UpdateSolver is needed any
+ // "father of LagBFunction trick", since no UpdateSolver is needed any
  // longer and the father is set early on in the process
  
  if( iBCopy )  {             // copying the sub-Block 
