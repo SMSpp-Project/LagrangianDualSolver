@@ -14,7 +14,7 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * Copyright &copy 2020 by Antonio Frangioni, Enrico Gorgone
+ * \copyright &copy; by Antonio Frangioni, Enrico Gorgone
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
@@ -22,7 +22,7 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#include "AbstractBlock.h"
+//#include "AbstractBlock.h"
 
 #include "BlockSolverConfig.h"
 
@@ -44,9 +44,8 @@
   * in production, but can be useful during debugging. Currently supported
   * checks are:
   *
-  * - bit 0 (+ 1): is_correct() is called on the Lagrangian Dual
-  *   AbstractBlock to verify that all Variable and Constraint are properly
-  *   linked. */
+  * - bit 0 (+ 1): is_correct() is called on the Lagrangian Dual Block to
+  *   verify that all Variable and Constraint are properly linked. */
 #else
  #define CHECK_DS 0
  // never change this
@@ -280,7 +279,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  // abstract representation, which may need to be generated for this very
  // purpose, but the generation of the abstract representation may differ
  // according to the BlockConfig, so ensure that all BlockConfig (but *not*
- // the BlockSolverConfig, see later on for why) that can be apply()-ed to
+ // the BlockSolverConfig, see later on for why) that must be apply()-ed to
  // the sub-Block are before doing the checks
  // but at the very least children are required to exist - - - - - - - - - -
 
@@ -301,7 +300,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
   }
 
- LagrDual = new AbstractBlock;  // create the AbstractBlock
+ LagrDual = new LagrangianDualBlock;  // create the Lagrangian Dual Block
 
  // resize the sub-Block dictionary and the pointers to the LagBFunction
  blck_to_idx.resize( f_nsb );
@@ -332,7 +331,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( W2BCfg.empty() )    // in dense format
     h = i;
    else                    // in sparse format
-    if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == i ) )
+    if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == int( i ) ) )
      h = iW2BCfg++;
     else
      h = WBCfg.size();
@@ -352,6 +351,13 @@ void LagrangianDualSolver::set_Block( Block * block )
   // after the BlockConfig-uration, in particular for the case where the
   // sub-Block is R3B-copied
   auto lbfi = new LagBFunction( csbi );
+
+  // if the sub-Block are "stealthily stolen" from f_Block rather than
+  // copied, reconstruct the link between them and f_Block by setting the
+  // latter as the father Block of the LagBFunction (which otherwise should
+  // not have any)
+  if( ! iBCopy )
+   lbfi->set_f_Block( f_Block );
 
   // since the Block is locked by f_if, lend the same identity to the
   // LagBFunction in case they need to lock it
@@ -677,7 +683,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  if( ! owned )
   f_Block->unlock( f_id );
 
- // BlockSolverConfig-ure the individual inner Block- - - - - - - - - - - - - -
+ // BlockSolverConfig-ure the individual inner Block - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // create the default BlockSolverConfig
  if( ! LagBF_BSCfg.empty() ) {
@@ -700,7 +706,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( W2BSCfg.empty() )    // in dense format
     h = i;
    else                     // in sparse format
-    if( ( iW2BSCfg < W2BSCfg.size() ) && ( W2BSCfg[ iW2BSCfg ] == i ) )
+    if( ( iW2BSCfg < W2BSCfg.size() ) && ( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
      h = iW2BSCfg++;
     else
      h = WBSCfg.size();
@@ -770,8 +776,8 @@ void LagrangianDualSolver::set_Block( Block * block )
  // the UpdateSolver do not mess up with the first Solver registered to the
  // inner Block of the LagBFunction, that is the "crucial" one
  //
- // note that the issue only arises when the original sub-Block is used, as
- // otherwise the UpdateSolver is attached to it but the LagBFunction uses a
+ // this used to be a problem when when the original sub-Block was used, as
+ // otherwise no UpdateSolver is attached to it but the LagBFunction uses a
  // copy and therefore the UpdateSolver is not registered there
  //
  // HOWEVER, THIS IS CONCEPTUALLY WRONG, AS A Modification COULD ARISE FROM
@@ -783,16 +789,26 @@ void LagrangianDualSolver::set_Block( Block * block )
  // in BlockSolverConfig to set the Solver and in LagBFunction to have a
  // positional-independent notion of what the inner Solver is. no time to
  // do this properly now
+ //
+ // fortunately, the issue no longer arise since the introduction of the
+ // "father of LagBFunction trick", since no UpdateSolver is needed any
+ // longer and the father is set early on in the process
  
- v_US.resize( f_nsb );  // meanwhile handle the UpdateSolver
-
- if( iBCopy )  // copying the sub-Block 
+ if( iBCopy )  {             // copying the sub-Block 
+  v_US.resize( f_nsb );      // construct the UpdateSolvers vector
   // register an UpdateSolver to the original sub-Block so that any
   // Modification to it is immediately forwarded to the copy
   for( Index i = 0 ; i < f_nsb ; ++i ) {
    v_US[ i ] = new UpdateSolver( v_LBF[ i ]->get_inner_block() );
    f_Block->get_nested_Block( i )->register_Solver( v_US[ i ] );
    }
+  }
+ // else nothing need be done, because the forwarding of the Modification
+ // between the inner Block and their original father is already done by
+ // LagBFunction::add_Modification() as the original father has been set
+ // as the father Block of the LagBFunction
+  
+ /* previous version, not using the "father of the LagBFunction trick"
  else          // evicting the sub-Block
   // register an UpdateSolver to the original sub-Block (which now lives
   // in the LagBFunction) so that any Modification to it is immediately
@@ -802,6 +818,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    v_US[ i ] = new UpdateSolver( f_Block , nullptr , 2 );
    v_LBF[ i ]->get_inner_block()->register_Solver( v_US[ i ] );
    }
+   */
 
  // release the Block- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1010,6 +1027,9 @@ int LagrangianDualSolver::compute( bool changedvars )
  if( ! owned )
   f_Block->unlock( f_id );
 
+ /* This is no longer needed, since these Modification happen when
+    f_play_dumb == true in the inner LagBFunction
+
  // if iBCopy == false, inhibit all Modification from the UpdateSolver; these
  // would reach the (disconnected) original Block, but there is no reason for
  // this because these are all "local" changes that will be undone at the end
@@ -1018,17 +1038,19 @@ int LagrangianDualSolver::compute( bool changedvars )
  if( ! iBCopy )
   for( auto us : v_US )
    us->inhibit_Modification( true );
+   */
 
  auto res = InnerSolver->compute( changedvars );
 
  // if iBCopy == false, bring back the inner Block to its original objective
- // "like if nothing ever happened", and re-enable the Modification from the
- // UpdateSolver
+ // "like if nothing ever happened",
  if( ! iBCopy ) {
   for( auto lbf : v_LBF )
    lbf->cleanup_inner_objective();
-  for( auto us : v_US )
-   us->inhibit_Modification( false );
+   /* and re-enable the Modification from the UpdateSolver - no longer needed
+   for( auto us : v_US )
+    us->inhibit_Modification( false );
+    */
   }
 
  // because the inner Solver is solving the dual of the original Block,
@@ -1162,7 +1184,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
                             int  , Configuration * > > > * >( solc ) ) {
   bool get_rel = false;
   for( auto el : c->f_value )
-   if( ( el.first < 0 ) || ( el.first >= f_nsb ) )
+   if( ( el.first < 0 ) || ( el.first >= int( f_nsb ) ) )
     get_rel = true;
    else
     lcfg( el.first , el.second );
@@ -1178,11 +1200,11 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
                             int  , int > > > * >( solc ) ) {
   bool get_rel = false;
   for( auto el : c->f_value )
-   if( ( el.first < 0 ) || ( el.first >= f_nsb ) )
+   if( ( el.first < 0 ) || ( el.first >= int( f_nsb ) ) )
     get_rel = true;
    else
     lcfg( el.first ,
-	  ( ( el.second >= 0 ) && ( el.second < v_Cfg.size() ) ) ?
+	  ( ( el.second >= 0 ) && ( el.second < int( v_Cfg.size() ) ) ) ?
 	  v_Cfg[ el.second ] : nullptr );
 
   if( get_rel )
@@ -1211,7 +1233,8 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
     goto get_duals;
    else {
     auto h = c->f_value[ i ];
-    lcfg( i , ( ( h >= 0 ) && ( h < v_Cfg.size() ) ) ? v_Cfg[ h ] : nullptr );
+    lcfg( i , ( ( h >= 0 ) && ( h < int( v_Cfg.size() ) ) )
+	      ? v_Cfg[ h ] : nullptr );
     }
 
   return;  // if none of the above, do nothing
@@ -1400,7 +1423,8 @@ void LagrangianDualSolver::clear_inner_BlockSolverConfig( bool keepcfg )
     if( W2BSCfg.empty() )    // in dense format
      h = i;
     else                     // in sparse format
-     if( ( iW2BSCfg < W2BSCfg.size() ) && ( W2BSCfg[ iW2BSCfg ] == i ) )
+     if( ( iW2BSCfg < W2BSCfg.size() ) &&
+	 ( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
       h = iW2BSCfg++;
      else
       h = WBSCfg.size();
@@ -1465,7 +1489,7 @@ void LagrangianDualSolver::clear_inner_BlockConfig( bool keepcfg )
     if( W2BCfg.empty() )    // in dense format
      h = i;
     else                     // in sparse format
-     if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == i ) )
+     if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == int( i ) ) )
       h = iW2BCfg++;
      else
       h = WBCfg.size();
@@ -1759,11 +1783,13 @@ void LagrangianDualSolver::cleanup_LagrDual( void )
  // first detach the inner Solver
  unregister_inner_Solver();
 
- // unregister and delete the UpdateSolver
- for( Index i = 0 ; i < f_nsb ; ++i )
-  v_LBF[ i ]->get_inner_block()->unregister_Solver( v_US[ i ] , true );
+ if( iBCopy ) {
+  // unregister and delete the UpdateSolver
+  for( Index i = 0 ; i < f_nsb ; ++i )
+   v_LBF[ i ]->get_inner_block()->unregister_Solver( v_US[ i ] , true );
 
- v_US.clear();
+  v_US.clear();
+  }
 
  clear_LD_BlockSolverConfig( true );
  clear_inner_BlockSolverConfig( true );
@@ -1782,6 +1808,8 @@ void LagrangianDualSolver::cleanup_LagrDual( void )
   const auto & sb = f_Block->get_nested_Blocks();
   for( Index i = 0 ; i < f_nsb ; ++i ) {
    v_LBF[ i ]->set_inner_block( nullptr , false );
+   // reset the f_Block of the LagBFunction
+   v_LBF[ i ]->set_f_Block( nullptr );
    sb[ i ]->set_f_Block( f_Block );
    }
 
@@ -1789,9 +1817,9 @@ void LagrangianDualSolver::cleanup_LagrDual( void )
    f_Block->unlock( f_id );
   }
 
- // LagrDual is an AbstractBlock and therefore its destructor deletes
- // everything inside it, comprised the LagBFunction that therefore must
- // not to be deleted here
+ // LagrDual is a LagrangianDualBlock, i.e., an AbstractBlock, and therefore
+ // its destructor deletes everything inside it, comprised the LagBFunction
+ // that therefore must not to be deleted here
  delete LagrDual;
  LagrDual = nullptr;
 
@@ -2378,8 +2406,12 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     for( auto & el : Dltdn )
      idx_to_dcon[ el ] = nullptr;
 
-    // now remove() them
-    std::remove( idx_to_dcon.begin() , idx_to_dcon.end() , nullptr );
+    // now remove() them; note that we don't use the erase( remove() )
+    // idiom because the container is resized later on, and therefore we
+    // wouldn't need the returned past-to-end iterator, but we collect
+    // it anyway because std::remove() is declared [nodiscard]
+    auto pend = std::remove( idx_to_dcon.begin() , idx_to_dcon.end() ,
+			     nullptr );
 
     // now actually remove the dynamic variable
     LagrDual->remove_dynamic_variables( *Ld , std::move( Dltdn ) );
@@ -2490,6 +2522,44 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
  // and now, finally, all is done- - - - - - - - - - - - - - - - - - - - - - -
   
  }  // end( LagrangianDualSolver::process_outstanding_Modification )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::LagrangianDualBlock::add_Modification(
+						 sp_Mod mod , ChnlName chnl )
+{
+ // specific LagrangianDualBlock behaviour: if Mod is sent to a non-default
+ // channel that is not in the list of the "local channels", revert the
+ // channel to default (0) rather than throw exception. this may be wrong if
+ // the channel had been defined somewhere in the ancestors of the
+ // LagrangianDualBlock, but LagrangianDualBlock is not supposed to have a
+ // father, so this is not an issue
+ //
+ // in fact the check may probably be simplified as it is not expected that
+ // anyone opens a channel in a LagrangianDualBlock, but let's keep it more
+ // general
+
+ if( ! chnl )                           // the default channel
+  chnl = f_channel;                     // possibly silently hijack it
+
+ // if not on the default channel, the list of "local channels" is nonempty
+ // but the channel is not there, just revert to the default channel
+ if( chnl && ( ! v_GroupMod.empty() )  &&
+     ( std::find_if( v_GroupMod.begin() , v_GroupMod.end() ,
+		     [ chnl ] ( auto & a ) -> bool {
+		                return( a.first == chnl );
+		                } ) == v_GroupMod.end() ) )
+  chnl = 0;
+
+ // finishup by calling the base class method
+ // this somewhat convoluted approach is due to the fact that
+ // add_Modification needs to call GroupModification::add() which is a
+ // protected method: Block can do it since it's friend of GroupModification,
+ // but friend-ness is not extended by inheritance so LagrangianDualBlock is
+ // not
+ Block::add_Modification( mod , chnl );
+
+ }  // end( LagrangianDualBlock::add_Modification )
 
 /*--------------------------------------------------------------------------*/
 /*------------------- End File LagrangianDualSolver.cpp --------------------*/
