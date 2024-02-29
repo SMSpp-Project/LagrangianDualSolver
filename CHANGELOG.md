@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.3] - 2024-02-28
 
+### Changed 
+
+- adapted to new CMake / makefile organisation
+
 ### Fixed 
 
 - exploiting the new "father of LagBFunction" mechanism to make Modification
@@ -48,7 +52,8 @@ Initial release
 
 - Initial release.
 
-[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.2...develop
+[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.3...develop
+[0.1.3]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.2...0.1.3
 [0.1.2]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.1...0.1.2
 [0.1.1]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.0...0.1.1
 [0.1.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/tags/0.1.0
