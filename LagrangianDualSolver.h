@@ -490,10 +490,10 @@ public:
   f_BSCfg( nullptr ) ,  f_DBCfg( nullptr ) , f_DBSCfg( nullptr ) ,
   static_cons( 0 ) {
   // ensure all parameters are properly given their default value
-  iBCopy   = dflt_int_par[ int_LDSlv_iBCopy - intLastParCDAS ];
-  NNMult   = dflt_int_par[ int_LDSlv_NNMult - intLastParCDAS ];
-  CloneCfg = dflt_int_par[ int_LDSlv_CloneCfg - intLastParCDAS ];
-  ISName   = dflt_str_par[ str_LDSlv_ISName - strLastParCDAS ];
+  iBCopy   = get_dflt_int_par( int_LDSlv_iBCopy );
+  NNMult   = get_dflt_int_par( int_LDSlv_NNMult );
+  CloneCfg = get_dflt_int_par( int_LDSlv_CloneCfg );
+  ISName   = get_dflt_str_par( str_LDSlv_ISName );
 
   // ensure that the inner Solver is always well defined
   auto ts = new_Solver( ISName );
@@ -1399,6 +1399,12 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
+  static const std::array< int , 3 > dflt_int_par = {
+   0 ,  // int_LDSlv_iBCopy
+   1 ,  // int_LDSlv_NNMult
+   0    // int_LDSlv_CloneCfg
+   };
+
   if( ( par >= intLastParCDAS ) && ( par < intLastLDSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
 
@@ -1408,9 +1414,6 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  // if( ( par >= dblLastParCDAS ) && ( par < dblLastLDSlvPar ) )
-  //  return( dflt_dbl_par[ par - dblLastParCDAS ] );
-
   return( InnerSolver->get_dflt_dbl_par( dbl_par_lds( par ) ) );
   }
 
@@ -1418,6 +1421,14 @@ public:
  
  [[nodiscard]] const std::string & get_dflt_str_par( idx_type par ) const
   override {
+  static const std::array< std::string , 5 > dflt_str_par = {
+   "FakeCDASolver" ,  // str_LDSlv_ISName
+   "" ,               // str_LagBF_BCfg
+   "" ,               // str_LagBF_BSCfg
+   "" ,               // str_LDBlck_BCfg
+   ""                 // str_LDBlck_BSCfg
+   };
+
   if( ( par >= strLastParCDAS ) && ( par < strLastLDSlvPar ) )
    return( dflt_str_par[ par - strLastParCDAS ] );
 
@@ -1456,20 +1467,50 @@ public:
 
 /*--------------------------------------------------------------------------*/
  
- [[nodiscard]] int get_int_par( idx_type par ) const override;
+ [[nodiscard]] int get_int_par( idx_type par ) const override {
+  switch( par ) {
+   case( int_LDSlv_iBCopy ):   return( iBCopy );
+   case( int_LDSlv_NNMult ):   return( NNMult );
+   case( int_LDSlv_CloneCfg ): return( CloneCfg );
+   }
+
+  return( InnerSolver->get_int_par( int_par_lds( par ) ) );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- [[nodiscard]] double get_dbl_par( idx_type par ) const override;
+ [[nodiscard]] double get_dbl_par( idx_type par ) const override {
+  return( InnerSolver->get_dbl_par( dbl_par_lds( par ) ) );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- [[nodiscard]] const std::string & get_str_par( idx_type par ) const override;
+ [[nodiscard]] const std::string & get_str_par( idx_type par )
+  const override {
+  switch( par ) {
+   case( str_LDSlv_ISName ): return( ISName );
+   case( str_LagBF_BCfg ):   return( LagBF_BCfg );
+   case( str_LagBF_BSCfg ):  return( LagBF_BSCfg );
+   case( str_LDBlck_BCfg ):  return( LDBlck_BCfg );
+   case( str_LDBlck_BSCfg ): return( LDBlck_BSCfg );
+   }
+
+  return( InnerSolver->get_str_par( str_par_lds( par ) ) );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- [[nodiscard]] const std::vector< int > & get_vint_par( idx_type par ) const
-  override;
+ [[nodiscard]] const std::vector< int > & get_vint_par( idx_type par )
+  const override {
+  switch( par ) {
+   case( vint_LDSl_WBCfg ):   return( WBCfg );
+   case( vint_LDSl_W2BCfg ):  return( W2BCfg );
+   case( vint_LDSl_WBSCfg ):  return( WBSCfg );
+   case( vint_LDSl_W2BSCfg ): return( W2BSCfg );
+   }
+
+  return( InnerSolver->get_vint_par( vint_par_lds( par ) ) );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -1481,12 +1522,23 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] const std::vector< std::string > & get_vstr_par( idx_type par )
-  const override;
+  const override  {
+  if( par == vstr_LDSl_Cfg )
+   return( FCfg );
+
+  return( InnerSolver->get_vstr_par( vstr_par_lds( par ) ) );
+  }
 
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
   const override {
+  static const std::map< std::string , idx_type > int_pars_map = {
+   { "int_LDSlv_iBCopy"   , LagrangianDualSolver::int_LDSlv_iBCopy } ,
+   { "int_LDSlv_NNMult"   , LagrangianDualSolver::int_LDSlv_NNMult } ,
+   { "int_LDSlv_CloneCfg" , LagrangianDualSolver::int_LDSlv_CloneCfg }
+   };
+
   const auto it = int_pars_map.find( name );
   if( it != int_pars_map.end() )
    return( it->second );
@@ -1498,10 +1550,6 @@ public:
 
  [[nodiscard]] idx_type dbl_par_str2idx( const std::string & name )
   const override {
-  const auto it = dbl_pars_map.find( name );
-  if( it != dbl_pars_map.end() )
-   return( it->second );
-
   return( dbl_par_is( InnerSolver->dbl_par_str2idx( name ) ) );
   }
 
@@ -1509,6 +1557,14 @@ public:
 
  [[nodiscard]] idx_type str_par_str2idx( const std::string & name )
   const override {
+  static const std::map< std::string , idx_type > str_pars_map = {
+   { "str_LDSlv_ISName" , LagrangianDualSolver::str_LDSlv_ISName } ,
+   { "str_LagBF_BCfg"   , LagrangianDualSolver::str_LagBF_BCfg } ,
+   { "str_LagBF_BSCfg"  , LagrangianDualSolver::str_LagBF_BSCfg } ,
+   { "str_LDBlck_BCfg"  , LagrangianDualSolver::str_LDBlck_BCfg } ,
+   { "str_LDBlck_BSCfg" , LagrangianDualSolver::str_LDBlck_BSCfg }
+   };
+
   const auto it = str_pars_map.find( name );
   if( it != str_pars_map.end() )
    return( it->second );
@@ -1520,6 +1576,13 @@ public:
 
  [[nodiscard]] idx_type vint_par_str2idx( const std::string & name )
   const override {
+  static const std::map< std::string , idx_type > vint_pars_map = {
+   { "vint_LDSl_WBCfg"   , LagrangianDualSolver::vint_LDSl_WBCfg } ,
+   { "vint_LDSl_W2BCfg"  , LagrangianDualSolver::vint_LDSl_W2BCfg } ,
+   { "vint_LDSl_WBSCfg"  , LagrangianDualSolver::vint_LDSl_WBSCfg } ,
+   { "vint_LDSl_W2BSCfg" , LagrangianDualSolver::vint_LDSl_W2BSCfg }
+   };
+
   const auto it = vint_pars_map.find( name );
   if( it != vint_pars_map.end() )
    return( it->second );
@@ -1548,6 +1611,9 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
+  static const std::array< std::string , 3 > int_pars_str = {
+   "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_LDSlv_CloneCfg" };
+
   if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
 
@@ -1558,9 +1624,6 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastLDSlvPar ) )
-   return( dbl_pars_str[ idx - dblLastParCDAS ] );
-
   return( InnerSolver->dbl_par_idx2str( dbl_par_lds( idx ) ) );
   }
 
@@ -1568,6 +1631,10 @@ public:
 
  [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
   const override {
+  static const std::array< std::string , 5 > str_pars_str = {
+   "str_LDSlv_ISName" , "str_LagBF_BCfg" , "str_LagBF_BSCfg" ,
+   "str_LDBlck_BCfg" , "str_LDBlck_BSCfg" };
+
   if( ( idx >= strLastParCDAS ) && ( idx < strLastLDSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
 
@@ -1578,6 +1645,10 @@ public:
 
  [[nodiscard]] const std::string & vint_par_idx2str( idx_type idx )
   const override {
+  static const std::array< std::string , 4 > vint_pars_str = {
+   "vint_LDSl_WBCfg"  , "vint_LDSl_W2BCfg" ,
+   "vint_LDSl_WBSCfg" , "vint_LDSl_W2BSCfg" };
+
   if( ( idx >= vintLastParCDAS ) && ( idx < vintLastLDSlvPar ) )
    return( vint_pars_str[ idx - vintLastParCDAS ] );
 
@@ -1926,54 +1997,6 @@ FRowConstraint * constraint_with_index( Index i ) {
  std::vector< blck_int > blck_to_idx;  ///< from Block * to index
 
 /*--------------------------------------------------------------------------*/
-
- const static std::vector< int > dflt_int_par;
- ///< the (static const) vector of int parameters default values
-
- // const static std::vector< double > dflt_dbl_par;
- //< the (static const) vector of double parameters default values
-
- const static std::vector< std::string > dflt_str_par;
- ///< the (static const) vector of string parameters default values
-
- const static std::vector< std::string > int_pars_str;
- ///< the (static const) vector of int parameters names
-
- const static std::vector< std::string > vint_pars_str;
- ///< the (static const) vector of vector-of-int parameters names
-
- // const static std::vector< std::string > vstr_pars_str;
- //< the (static const) vector of vector-of-string parameters names
-
- // const static std::vector< std::string > dbl_pars_str;
- //< the (static const) vector of double parameters names
-
- const static std::vector< std::string > str_pars_str;
- ///< the (static const) vector of string parameters names
-
- const static std::vector< std::string > str_vint_str;
- ///< the (static const) vector of vector-of-int parameters names
-
- const static std::vector< std::string > str_vstr_str;
- ///< the (static const) vector of vector-of-string parameters names
-
- const static std::map< std::string , idx_type > int_pars_map;
-  ///< the (static const) map for int parameters names
-
- // const static std::map< std::string , idx_type > dbl_pars_map;
- //< the (static const) map for double parameters names
-
- const static std::map< std::string , idx_type > str_pars_map;
- ///< the (static const) map for string parameters names
-
- const static std::map< std::string , idx_type > vint_pars_map;
-  ///< the (static const) map for vector-of-int parameters names
-
- // const static std::map< std::string , idx_type > vstr_pars_map;
- //< the (static const) map for vector-of-string parameters names
-
-
-/*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -2003,8 +2026,6 @@ FRowConstraint * constraint_with_index( Index i ) {
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------ PRIVATE FIELDS  ---------------------------*/
-/*--------------------------------------------------------------------------*/
-
 /*--------------------------------------------------------------------------*/
 
  SMSpp_insert_in_factory_h;
