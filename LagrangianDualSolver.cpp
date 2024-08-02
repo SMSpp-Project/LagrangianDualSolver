@@ -970,9 +970,15 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
 
- // first ensure that the optimal convex multipliers are written as the
- // important_linearization_coefficients() of the LagBFunction
- InnerSolver->get_dual_solution();
+ // pick up the proper Configuration for get_dual_solution(), if any
+ Configuration * dcfg = nullptr;
+ if( ( WDualSCfg >= 0 ) && ( WDualSCfg < v_Cfg.size() ) )
+  dcfg = v_Cfg[ WDualSCfg ];
+ 
+ // call get_dual_solution() to ensure that the optimal convex multipliers
+ // are written as the important_linearization_coefficients() of the
+ // LagBFunction
+ InnerSolver->get_dual_solution( dcfg );
 
  // define a lambda that does the solution (computation and) retrieval
  // for a specific sub-Block
@@ -1041,6 +1047,13 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  if( ! LagrDual )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
+
+ // pick up the proper Configuration for get_var_solution(), if any
+ Configuration * cfg = nullptr;
+ if( ( WVarSCfg >= 0 ) && ( WVarSCfg < v_Cfg.size() ) )
+  cfg = v_Cfg[ WVarSCfg ];
+
+ InnerSolver->get_var_solution( cfg );  // call get_var_solution()
 
  // define a Lambda which does the configuration - - - - - - - - - - - - - -
  // Notice that this lambda cannot be static in its current form, since it

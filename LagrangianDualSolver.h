@@ -372,6 +372,10 @@ public:
 
  int_LDSlv_CloneCfg ,  ///< if BlockSolverConfig need be clone()-d
 
+ int_InnerS_WVarSCfg ,  ///< the Configuration for InnerSolver->get_var_sol
+
+ int_InnerS_WDualSCfg ,  ///< the Configuration for InnerSolver->get_dual_sol
+
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of int algorithmic parameters. */
@@ -493,6 +497,8 @@ public:
   iBCopy   = get_dflt_int_par( int_LDSlv_iBCopy );
   NNMult   = get_dflt_int_par( int_LDSlv_NNMult );
   CloneCfg = get_dflt_int_par( int_LDSlv_CloneCfg );
+  WVarSCfg = get_dflt_int_par( int_InnerS_WVarSCfg );
+  WDualSCfg = get_dflt_int_par( int_InnerS_WDualSCfg );
   ISName   = get_dflt_str_par( str_LDSlv_ISName );
 
   // ensure that the inner Solver is always well defined
@@ -579,7 +585,17 @@ public:
   *   it is therefore in general necessary to foresee the possibility of
   *   cloning, but this is not done by default unless this parameter is
   *   properly set (in which case it will apply to *all* BlockSolverConfig,
-  *   which may be overkill in some cases but a balance need be had). */
+  *   which may be overkill in some cases but a balance need be had).
+  *
+  * - int_InnerS_WVarSCfg [-1]: the index in the "cache of Configurations"
+  *   created with vstr_LDSl_Cfg of the Configuration that is used in the
+  *   call of InnerSolver->get_var_solution() to retrieve the dual solution
+  *   of the Lagrangian Dual.
+  *
+  * - int_InnerS_WDualSCfg [-1]: the index in the "cache of Configurations"
+  *   created with vstr_LDSl_Cfg of the Configuration that is used in the
+  *   call of InnerSolver->get_dual_solution() to retrieve the var solution
+  *   of the Lagrangian Dual. */
 
  void set_par( idx_type par , int value ) override;
 
@@ -641,7 +657,7 @@ public:
   *   Block of a LagBFunction inside the FRealObjective of the corresponding
   *   sub-Block of the Lagrangian Dual Block. doing so allows complete and
   *   fine control on what is done at the cost of being a bit more complex
-  *   to handle, which is why the "simpler" str_LagBF_BCfg and vstr_LDSl_BCfg
+  *   to handle, which is why the "simpler" str_LagBF_BCfg and vstr_LDSl_Cfg
   *   parameters are provided to spare the user the need to constructing such
   *   a more complex BlockConfig. note that:
   *
@@ -650,7 +666,7 @@ public:
   *     LagrangianDualSolver, see set_ComputeConfig();
   *
   *   = this BlockConfig is only apply()-ed *after* that these created via
-  *     str_LagBF_BCfg and vstr_LDSl_BCfg (if any) have been apply()-ed
+  *     str_LagBF_BCfg and vstr_LDSl_Cfg (if any) have been apply()-ed
  *
   * - str_LDBlck_BSCfg [""]: the filename of the BlockSolverConfig that is
   *   apply()-ed to the whole Lagrangian Dual Block. This can be used to set
@@ -664,7 +680,7 @@ public:
   *   inside the FRealObjective of the corresponding sub-Block of the
   *   Lagrangian Dual Block. doing so allows complete and fine control on
   *   what is done at the cost of being a bit more complex to handle, which
-  *   is why the "simpler" str_LagBF_BSCfg and vstr_LDSl_BSCfg parameters
+  *   is why the "simpler" str_LagBF_BSCfg and vstr_LDSl_Cfg parameters
   *   are provided to spare the user the need to constructing such a more
   *   complex BlockSolverConfig. note that:
   *
@@ -673,7 +689,7 @@ public:
   *     of the LagrangianDualSolver, see set_ComputeConfig();
   *
   *   = this BlockSolverConfig is only apply()-ed *after* that these created
-  *     via str_LagBF_BSCfg and vstr_LDSl_BSCfg (if any) have been apply()-ed
+  *     via str_LagBF_BSCfg and vstr_LDSl_Cfg (if any) have been apply()-ed
   *
   *   note that each LagBFunction does require a working Solver attached to
   *   its inner Block (unless the inner Solver can avoid it for some specially
@@ -777,23 +793,13 @@ public:
   *
   * The parameters handled here are:
   *
-  * - vstr_LDSl_BCfg [empty]: if non-empty(), this has to contain a vector of
-  *   filenames out of which a vector of BlockConfig is created. then, each of
-  *   these BlockConfig is (potentially) used to BlockConfig-ure one or more
-  *   of the inner Block of the LagBFunction of the sub-Block in the
-  *   Lagrangian Dual Block, which ones being dictated by vint_LDSl_WBCfg
-  *   [see]. note that this is one of the many mechanisms that allows
-  *   BlockConfig-uration to happen, see e.g. str_LagBF_BCfg and
-  *   str_LDBlck_BCfg
-  *
-  * - vstr_LDSl_BSCfg [empty]: if non-empty(), this has to contain a vector of
-  *   filenames out of which a vector of BlockSolverConfig is created. then,
-  *   each of these BlockSolverConfig is (potentially) used to
-  *   BlockSolverConfig-ure one or more of the inner Block of the LagBFunction
-  *   of the sub-Block in the Lagrangian Dual Block, which ones being dictated
-  *   by vint_LDSl_WBSCfg [see]. note that this is one of the many mechanisms
-  *   that allows BlockSolverConfig-uration to happen, see e.g.
-  *   str_LagBF_BSCfg and str_LDBlck_BSCfg */
+  * - vstr_LDSl_Cfg [empty]: if non-empty(), this has to contain a vector of
+  *   filenames out of which a vector of Configuration is created; this is a
+  *   "chace" of Configurations, that may be BlockConfig, BlockSolverConfig
+  *   or any other Configuration, whose elements can then be used for
+  *   various purposes; see all times where vstr_LDSl_Cfg is mentioned, such
+  *   as str_LagBF_BCfg, str_LDBlck_BCfg, str_LagBF_BSCfg and
+  *   str_LDBlck_BSCfg. */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
@@ -1186,6 +1192,15 @@ public:
   * Dual, and therefore the *dual* solution of the  Lagrangian Dual itself;
   * basically, this is the "important linearization" of the LagBFunction.
   *
+  * Since LagrangianDualSolver hinges on the InnerSolver to actually solve
+  * the Lagrangian Dual, it must first of all call get_dual_solution() to
+  * retrieve the optimal dual solution there. This may require an
+  * appropriate Configuration to be passed, which is handled via the
+  * int_InnerS_WDualSCfg parameter, giving the index into the "cache of
+  * Configuration" constructed via vstr_LDSl_Cfg; if the index provided in
+  * this way is invalid (< 0, or larger than the number of Configuration
+  * available in the cache), nullptr is used.
+  *
   * Note that it is possible for each sub-Block to only generate "a part" of
   * the solution in case this is all the user wants and time/memory can be
   * saved by not dealing with the whole solution. This can be controlled via
@@ -1210,6 +1225,16 @@ public:
  /// write the "current" dual solution
  /** Write the current dual solution in the dual values of the RowConstraint
   * of the Block.
+  *
+  * Since LagrangianDualSolver hinges on the InnerSolver to actually solve
+  * the Lagrangian Dual, it must first of all call get_var_solution() to
+  * retrieve the optimal var solution there (a primal solution for the
+  * original Block, since the Lagrangia Dual is its dual). This may require
+  * an appropriate Configuration to be passed, which is handled via the
+  * int_InnerS_WVarSCfg parameter, giving the index into the "cache of
+  * Configuration" constructed via vstr_LDSl_Cfg; if the index provided in
+  * this way is invalid (< 0, or larger than the number of Configuration
+  * available in the cache), nullptr is used.
   *
   * The dual solution is actually made by different "pieces":
   *
@@ -1399,10 +1424,12 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 3 > dflt_int_par = {
+  static const std::array< int , 5 > dflt_int_par = {
    0 ,  // int_LDSlv_iBCopy
    1 ,  // int_LDSlv_NNMult
    0    // int_LDSlv_CloneCfg
+   -1 , // int_InnerS_WVarSCfg
+   -1 , // int_InnerS_WDualSCfg
    };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastLDSlvPar ) )
@@ -1469,9 +1496,11 @@ public:
  
  [[nodiscard]] int get_int_par( idx_type par ) const override {
   switch( par ) {
-   case( int_LDSlv_iBCopy ):   return( iBCopy );
-   case( int_LDSlv_NNMult ):   return( NNMult );
-   case( int_LDSlv_CloneCfg ): return( CloneCfg );
+   case( int_LDSlv_iBCopy ):     return( iBCopy );
+   case( int_LDSlv_NNMult ):     return( NNMult );
+   case( int_LDSlv_CloneCfg ):   return( CloneCfg );
+   case( int_InnerS_WVarSCfg ):  return( WVarSCfg );
+   case( int_InnerS_WDualSCfg ): return( WDualSCfg );
    }
 
   return( InnerSolver->get_int_par( int_par_lds( par ) ) );
@@ -1534,9 +1563,11 @@ public:
  [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
   const override {
   static const std::map< std::string , idx_type > int_pars_map = {
-   { "int_LDSlv_iBCopy"   , LagrangianDualSolver::int_LDSlv_iBCopy } ,
-   { "int_LDSlv_NNMult"   , LagrangianDualSolver::int_LDSlv_NNMult } ,
-   { "int_LDSlv_CloneCfg" , LagrangianDualSolver::int_LDSlv_CloneCfg }
+   { "int_LDSlv_iBCopy"     , int_LDSlv_iBCopy } ,
+   { "int_LDSlv_NNMult"     , int_LDSlv_NNMult } ,
+   { "int_LDSlv_CloneCfg"   , int_LDSlv_CloneCfg } ,
+   { "int_InnerS_WVarSCfg"  , int_InnerS_WVarSCfg } ,
+   { "int_InnerS_WDualSCfg" , int_InnerS_WDualSCfg }
    };
 
   const auto it = int_pars_map.find( name );
@@ -1577,10 +1608,10 @@ public:
  [[nodiscard]] idx_type vint_par_str2idx( const std::string & name )
   const override {
   static const std::map< std::string , idx_type > vint_pars_map = {
-   { "vint_LDSl_WBCfg"   , LagrangianDualSolver::vint_LDSl_WBCfg } ,
-   { "vint_LDSl_W2BCfg"  , LagrangianDualSolver::vint_LDSl_W2BCfg } ,
-   { "vint_LDSl_WBSCfg"  , LagrangianDualSolver::vint_LDSl_WBSCfg } ,
-   { "vint_LDSl_W2BSCfg" , LagrangianDualSolver::vint_LDSl_W2BSCfg }
+   { "vint_LDSl_WBCfg"   , vint_LDSl_WBCfg } ,
+   { "vint_LDSl_W2BCfg"  , vint_LDSl_W2BCfg } ,
+   { "vint_LDSl_WBSCfg"  , vint_LDSl_WBSCfg } ,
+   { "vint_LDSl_W2BSCfg" , vint_LDSl_W2BSCfg }
    };
 
   const auto it = vint_pars_map.find( name );
@@ -1611,8 +1642,9 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 3 > int_pars_str = {
-   "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_LDSlv_CloneCfg" };
+  static const std::array< std::string , 5 > int_pars_str = {
+   "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_LDSlv_CloneCfg" ,
+   "int_InnerS_WVarSCfg" , "int_InnerS_WDualSCfg" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
@@ -1892,6 +1924,10 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  bool CloneCfg;       ///< true if BlockSolverConfig need be clone()-d
 
+ int WVarSCfg;        ///< the Configuration for IS->get_var_solution()
+
+ int WDualSCfg;       ///< the Configuration for IS->get_dual_solution()
+ 
  std::string ISName;  ///< classname of the inner Solver
 
  std::string LagBF_BCfg;
