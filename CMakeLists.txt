@@ -101,7 +101,7 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
 if (BUILD_TESTING)
-#    add_subdirectory(test)
+    # add_subdirectory(test)
 endif ()
 
 # ----- Install instructions ------------------------------------------------ #
