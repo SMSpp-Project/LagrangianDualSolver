@@ -139,113 +139,6 @@ static constexpr Index InINF = SMSpp_di_unipi_it::Inf< Index >();
 SMSpp_insert_in_factory_cpp_0( LagrangianDualSolver );
 
 /*--------------------------------------------------------------------------*/
-// define and initialize here the vector of int parameters names
-
-const std::vector< std::string > LagrangianDualSolver::int_pars_str = {
- "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_LDSlv_CloneCfg"
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the vector of double parameters names
-
-// const std::vector< std::string > LagrangianDualSolver::dbl_pars_str = { };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the vector of string parameters names
-
-const std::vector< std::string > LagrangianDualSolver::str_pars_str = {
- "str_LDSlv_ISName" , "str_LagBF_BCfg" , "str_LagBF_BSCfg" ,
- "str_LDBlck_BCfg" , "str_LDBlck_BSCfg"
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the vector of vector-of-int parameters names
-
-const std::vector< std::string > LagrangianDualSolver::vint_pars_str = {
- "vint_LDSl_WBCfg"  , "vint_LDSl_W2BCfg" ,
- "vint_LDSl_WBSCfg" , "vint_LDSl_W2BSCfg"
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the vector of vector-of-string parameters names
-
-// const std::vector< std::string > LagrangianDualSolver::vstr_pars_str = {
-//  "vstr_LDSl_Cfg"
-//  };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for int parameters names
-
-const std::map< std::string , LagrangianDualSolver::idx_type >
- LagrangianDualSolver::int_pars_map = {
- { "int_LDSlv_iBCopy"   , LagrangianDualSolver::int_LDSlv_iBCopy } ,
- { "int_LDSlv_NNMult"   , LagrangianDualSolver::int_LDSlv_NNMult } ,
- { "int_LDSlv_CloneCfg" , LagrangianDualSolver::int_LDSlv_CloneCfg }
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for double parameters names
-
-// const std::map< std::string , LagrangianDualSolver::idx_type >
-// LagrangianDualSolver::dbl_pars_map = { };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for string parameters names
-
-const std::map< std::string , LagrangianDualSolver::idx_type >
- LagrangianDualSolver::str_pars_map = {
- { "str_LDSlv_ISName" , LagrangianDualSolver::str_LDSlv_ISName } ,
- { "str_LagBF_BCfg"   , LagrangianDualSolver::str_LagBF_BCfg } ,
- { "str_LagBF_BSCfg"  , LagrangianDualSolver::str_LagBF_BSCfg } ,
- { "str_LDBlck_BCfg"  , LagrangianDualSolver::str_LDBlck_BCfg } ,
- { "str_LDBlck_BSCfg" , LagrangianDualSolver::str_LDBlck_BSCfg }
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for vector-of-int parameters names
-
-const std::map< std::string , LagrangianDualSolver::idx_type >
- LagrangianDualSolver::vint_pars_map = {
- { "vint_LDSl_WBCfg"   , LagrangianDualSolver::vint_LDSl_WBCfg } ,
- { "vint_LDSl_W2BCfg"  , LagrangianDualSolver::vint_LDSl_W2BCfg } ,
- { "vint_LDSl_WBSCfg"  , LagrangianDualSolver::vint_LDSl_WBSCfg } ,
- { "vint_LDSl_W2BSCfg" , LagrangianDualSolver::vint_LDSl_W2BSCfg }
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for vector-of-string parameters names
-
-// const std::map< std::string , LagrangianDualSolver::idx_type >
-//  LagrangianDualSolver::vstr_pars_map = {
-//  { "vstr_LDSl_Cfg"  , LagrangianDualSolver::vstr_LDSl_Cfg }
-//  };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the default int parameters
-
-const std::vector< int > LagrangianDualSolver::dflt_int_par = {
- 0 ,  // int_LDSlv_iBCopy
- 1 ,  // int_LDSlv_NNMult
- 0    // int_LDSlv_CloneCfg
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the default double parameters
-
-// const std::vector< double > LagrangianDualSolver::dflt_dbl_par = { };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the default string parameters
-
-const std::vector< std::string > LagrangianDualSolver::dflt_str_par = {
- "FakeCDASolver" ,  // str_LDSlv_ISName
- "" ,               // str_LagBF_BCfg
- "" ,               // str_LagBF_BSCfg
- "" ,               // str_LDBlck_BCfg
- ""                 // str_LDBlck_BSCfg
- };
-
-/*--------------------------------------------------------------------------*/
 /*-------------------- METHODS OF LagrangianDualSolver ---------------------*/
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
@@ -1077,9 +970,15 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
 
- // first ensure that the optimal convex multipliers are written as the
- // important_linearization_coefficients() of the LagBFunction
- InnerSolver->get_dual_solution();
+ // pick up the proper Configuration for get_dual_solution(), if any
+ Configuration * dcfg = nullptr;
+ if( ( WDualSCfg >= 0 ) && ( WDualSCfg < v_Cfg.size() ) )
+  dcfg = v_Cfg[ WDualSCfg ];
+ 
+ // call get_dual_solution() to ensure that the optimal convex multipliers
+ // are written as the important_linearization_coefficients() of the
+ // LagBFunction
+ InnerSolver->get_dual_solution( dcfg );
 
  // define a lambda that does the solution (computation and) retrieval
  // for a specific sub-Block
@@ -1148,6 +1047,13 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  if( ! LagrDual )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
+
+ // pick up the proper Configuration for get_var_solution(), if any
+ Configuration * cfg = nullptr;
+ if( ( WVarSCfg >= 0 ) && ( WVarSCfg < v_Cfg.size() ) )
+  cfg = v_Cfg[ WVarSCfg ];
+
+ InnerSolver->get_var_solution( cfg );  // call get_var_solution()
 
  // define a Lambda which does the configuration - - - - - - - - - - - - - -
  // Notice that this lambda cannot be static in its current form, since it
@@ -1285,67 +1191,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  }  // end( LagrangianDualSolver::get_dual_solution )
 
 /*--------------------------------------------------------------------------*/
-
-int LagrangianDualSolver::get_int_par( idx_type par ) const
-{
- switch( par ) {
-  case( int_LDSlv_iBCopy ):   return( iBCopy );
-  case( int_LDSlv_NNMult ):   return( NNMult );
-  case( int_LDSlv_CloneCfg ): return( CloneCfg );
-  }
-
- return( InnerSolver->get_int_par( int_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-double LagrangianDualSolver::get_dbl_par( idx_type par ) const
-{
- return( InnerSolver->get_dbl_par( dbl_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-const std::string & LagrangianDualSolver::get_str_par( idx_type par ) const
-{
- switch( par ) {
-  case( str_LDSlv_ISName ): return( ISName );
-  case( str_LagBF_BCfg ):   return( LagBF_BCfg );
-  case( str_LagBF_BSCfg ):  return( LagBF_BSCfg );
-  case( str_LDBlck_BCfg ):  return( LDBlck_BCfg );
-  case( str_LDBlck_BSCfg ): return( LDBlck_BSCfg );
-  }
-
- return( InnerSolver->get_str_par( str_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-const std::vector< int > & LagrangianDualSolver::get_vint_par( idx_type par )
- const {
- switch( par ) {
-  case( vint_LDSl_WBCfg ):   return( WBCfg );
-  case( vint_LDSl_W2BCfg ):  return( W2BCfg );
-  case( vint_LDSl_WBSCfg ):  return( WBSCfg );
-  case( vint_LDSl_W2BSCfg ): return( W2BSCfg );
-  }
-
- return( InnerSolver->get_vint_par( vint_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-const std::vector< std::string > & LagrangianDualSolver::get_vstr_par(
-					              idx_type par ) const {
- if( par == vstr_LDSl_Cfg )
-  return( FCfg );
-
- return( InnerSolver->get_vstr_par( vstr_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
-/*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 void LagrangianDualSolver::clear_LD_BlockSolverConfig( bool keepcfg )
