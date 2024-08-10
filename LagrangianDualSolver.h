@@ -45,8 +45,6 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
- // class AbstractBlock;   // forward declaration of AbstractBlock
-
  class FRowConstraint;  // forward definition of FRowConstraint
   
 /*--------------------------------------------------------------------------*/

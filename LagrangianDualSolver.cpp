@@ -737,6 +737,12 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
   case( int_LDSlv_CloneCfg ):
    CloneCfg = bool( value );
    break;
+  case( int_InnerS_WVarSCfg ):
+   WVarSCfg = value;
+   break;
+  case( int_InnerS_WDualSCfg ):
+   WDualSCfg = value;
+   break;
   default:
    InnerSolver->set_par(  int_par_lds( par ) , value );
   }
