@@ -972,7 +972,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
 
  // pick up the proper Configuration for get_dual_solution(), if any
  Configuration * dcfg = nullptr;
- if( ( WDualSCfg >= 0 ) && ( WDualSCfg < v_Cfg.size() ) )
+ if( ( WDualSCfg >= 0 ) && ( WDualSCfg < int( v_Cfg.size() ) ) )
   dcfg = v_Cfg[ WDualSCfg ];
  
  // call get_dual_solution() to ensure that the optimal convex multipliers
@@ -1050,7 +1050,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
 
  // pick up the proper Configuration for get_var_solution(), if any
  Configuration * cfg = nullptr;
- if( ( WVarSCfg >= 0 ) && ( WVarSCfg < v_Cfg.size() ) )
+ if( ( WVarSCfg >= 0 ) && ( WVarSCfg < int( v_Cfg.size() ) ) )
   cfg = v_Cfg[ WVarSCfg ];
 
  InnerSolver->get_var_solution( cfg );  // call get_var_solution()
@@ -1067,8 +1067,10 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   if( LSBb->get_registered_solvers().empty() )
    return;
 
-  if( auto SBSb = dynamic_cast< CDASolver * >(
-				LSBb->get_registered_solvers().front() ) ) {
+  // ask it to the Solver that was used to compute() the inner Block
+  auto rsp = LSBb->get_registered_solvers().begin();
+  std::advance( rsp , v_LBF[ b ]->get_int_par( LagBFunction::intInnrSlvr ) );
+  if( auto SBSb = dynamic_cast< CDASolver * >( *rsp ) ) {
    SBSb->get_dual_solution( cfg );
    if( iBCopy )  // the sub-Block is a copy
     f_Block->get_nested_Block( b )->map_back_solution( LSBb , nullptr , cfg );
