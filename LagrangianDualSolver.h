@@ -1704,6 +1704,47 @@ public:
   }
 
 /** @} ---------------------------------------------------------------------*/
+/*------- METHODS FOR HANDLING THE State OF THE LagrangianDualSolver -------*/
+/*--------------------------------------------------------------------------*/
+/** @name Handling the State of the LagrangianDualSolver
+ *  @{ */
+
+/*--------------------------------------------------------------------------*/
+ /// returns the current "internal state" of the inner Solver
+ /** If this LagrangianDualSolver has an inner Solver, then it simply
+  * returns the State of the inner Solver. Otherwise, it returns nullptr. */
+
+ State * get_State( void ) const override {
+  if( InnerSolver )
+   return( InnerSolver->get_State() );
+  return( nullptr );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// sets the current "internal state" of the inner Solver
+ /** If this LagrangianDualSolver has an inner Solver, then this
+  * method sets the State of the inner Solver by simply calling
+  * put_State() of the inner Solver and passing the given State
+  * on. Otherwise, it does nothing. */
+
+ void put_State( const State & state ) override {
+  if( InnerSolver )
+   InnerSolver->put_State( state );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// sets the current "internal state" of the iiner Solver
+ /** If this LagrangianDualSolver has an inner Solver, then this
+  * method sets the State of the inner Solver by simply calling
+  * put_State() of the inner Solver and passing the given State
+  * on. Otherwise, it does nothing. */
+
+ void put_State( State && state ) override {
+  if( InnerSolver )
+   InnerSolver->put_State( std::move ( state ) );
+  }
+
+/** @} ---------------------------------------------------------------------*/
 /*--------------------- PROTECTED PART OF THE CLASS ------------------------*/
 /*--------------------------------------------------------------------------*/
 
