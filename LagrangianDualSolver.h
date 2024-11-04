@@ -1741,7 +1741,7 @@ public:
 
  void put_State( State && state ) override {
   if( InnerSolver )
-   InnerSolver->put_State( std::move ( state ) );
+   InnerSolver->put_State( std::move( state ) );
   }
 
 /** @} ---------------------------------------------------------------------*/
