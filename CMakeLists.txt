@@ -119,7 +119,7 @@ install(TARGETS ${modName}
 
 # Install the headers
 install(FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/LagrangianDualSolver.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/LagrangianDualSolver.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
 
 # Install the auto-generated configuration header (see above).
