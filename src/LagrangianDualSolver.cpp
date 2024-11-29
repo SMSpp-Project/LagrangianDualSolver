@@ -40,7 +40,7 @@
 
 #ifndef NDEBUG
  #define CHECK_DS 0
- /* Bitwise-coded macro that activate costly checks that should never be done
+ /* Bitwise-coded macro that activates costly checks that should never be done
   * in production, but can be useful during debugging. Currently supported
   * checks are:
   *
