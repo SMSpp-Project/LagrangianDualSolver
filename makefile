@@ -33,9 +33,9 @@
 
 LgDSLVOBJ = $(LgDSLVSDR)/obj/LagrangianDualSolver.o
 
-LgDSLVINC = -I$(LgDSLVSDR)
+LgDSLVINC = -I$(LgDSLVSDR)/include
 
-LgDSLVH   = $(LgDSLVSDR)/LagrangianDualSolver.h 
+LgDSLVH   = $(LgDSLVSDR)/include/LagrangianDualSolver.h 
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -44,8 +44,9 @@ clean::
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(LgDSLVSDR)/obj/LagrangianDualSolver.o: $(LgDSLVSDR)/src/LagrangianDualSolver.cpp \
-	$(LgDSLVH) $(SMS++OBJ)
-	$(CC) -c $*.cpp -o $@ $(LgDSLVINC) $(SMS++INC) $(SW)
+$(LgDSLVSDR)/obj/LagrangianDualSolver.o: \
+	$(LgDSLVSDR)/src/LagrangianDualSolver.cpp $(LgDSLVH) $(SMS++OBJ)
+	$(CC) -c $(LgDSLVSDR)/src/LagrangianDualSolver.cpp -o $@ \
+	$(LgDSLVINC) $(SMS++INC) $(SW)
 
 ########################## End of makefile ###################################
