@@ -148,7 +148,7 @@ void LagrangianDualSolver::set_Block( Block * block )
 {
  if( f_Block ) {  // changing from a previous Block- - - - - - - - - - - - - -
                   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  cleanup_LagrDual();
+  cleanup_LagrDual( true );
   }
 
  Solver::set_Block( block );  // attach to the new Block
@@ -1254,134 +1254,105 @@ void LagrangianDualSolver::clear_LD_BlockConfig( bool keepcfg )
 
 /*--------------------------------------------------------------------------*/
 
-void LagrangianDualSolver::clear_inner_BlockSolverConfig( bool keepcfg )
+void LagrangianDualSolver::clear_inner_BlockSolverConfig( void )
 {
+ if( ! LagrDual )
+  return;
+
  if( ( ! f_DBSCfg ) && ( v_Cfg.empty() || WBSCfg.empty() ) )
   return;
 
- if( LagrDual ) {
-  auto DBSC = f_DBSCfg;
-  if( DBSC ) {
-   if( keepcfg )
-    DBSC = f_DBSCfg->clone();
-   DBSC->clear();
+ Index iW2BSCfg = 0;  // index in W2BSCfg
+ for( Index i = 0 ; i < f_nsb ; ++i ) {
+  // the default individual BlockSolverConfig
+  BlockSolverConfig * BSCi = f_DBSCfg;
+
+  if( ! WBSCfg.empty() ) {  // individual BlockSolverConfig are provided
+   Index h;                 // the index in WBSCfg
+
+   if( W2BSCfg.empty() )    // in dense format
+    h = i;
+   else                     // in sparse format
+    if( ( iW2BSCfg < W2BSCfg.size() ) &&
+	( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
+     h = iW2BSCfg++;
+    else
+     h = WBSCfg.size();
+ 
+   if( ( h < WBSCfg.size() ) &&
+       ( WBSCfg[ h ] >= 0 ) && ( WBSCfg[ h ] < int( v_Cfg.size() ) ) )
+    if( auto c = dynamic_cast< BlockSolverConfig * >( v_Cfg[ WBSCfg[ h ] ] ) )
+     BSCi = c;
    }
 
-  Index iW2BSCfg = 0;  // index in W2BSCfg
-  for( Index i = 0 ; i < f_nsb ; ++i ) {
-   BlockSolverConfig * BSCi = nullptr;
+  if( BSCi ) {  // if an individual BlockSolverConfig is specified
+   BSCi = BSCi->clone();                          // clone it
+   BSCi->clear();                                 // clear it
+   BSCi->apply( v_LBF[ i ]->get_inner_block() );  // apply it
+   delete BSCi;                                   // delete it
+   }
 
-   if( ! WBSCfg.empty() ) {  // individual BlockSolverConfig provided
-    Index h;                 // the index in WBSCfg
-
-    if( W2BSCfg.empty() )    // in dense format
-     h = i;
-    else                     // in sparse format
-     if( ( iW2BSCfg < W2BSCfg.size() ) &&
-	 ( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
-      h = iW2BSCfg++;
-     else
-      h = WBSCfg.size();
- 
-    if( ( h < WBSCfg.size() ) &&
-	( WBSCfg[ h ] >= 0 ) && ( WBSCfg[ h ] < int( v_Cfg.size() ) ) )
-     if( auto c = dynamic_cast< BlockSolverConfig * >( v_Cfg[ WBSCfg[ h ] ] ) )
-      BSCi = c;
-    }
-
-   if( BSCi ) {
-    if( keepcfg )
-     BSCi = BSCi->clone();
-    BSCi->clear();
+  if( ! WBSCfg.empty() ) {
+   if( W2BSCfg.empty() ) {
+    if( i >= WBSCfg.size() )
+     break;
     }
    else
-    BSCi = DBSC;
-
-   if( BSCi )
-    BSCi->apply( v_LBF[ i ]->get_inner_block() );
-
-   if( ! WBSCfg.empty() ) {
-    if( W2BSCfg.empty() ) {
-     if( i >= WBSCfg.size() )
-      break;
-     }
-    else
-     if( iW2BSCfg >= W2BSCfg.size() )
-      break;
-    }
+    if( iW2BSCfg >= W2BSCfg.size() )
+     break;
    }
   }
-
- if( ! keepcfg ) {
-  delete f_DBSCfg;
-  f_DBSCfg = nullptr;
-  }
- }
+ }  // end( LagrangianDualSolver::clear_inner_BlockSolverConfig )
 
 /*--------------------------------------------------------------------------*/
 
-void LagrangianDualSolver::clear_inner_BlockConfig( bool keepcfg )
+void LagrangianDualSolver::clear_inner_BlockConfig( void )
 {
+ if( ! LagrDual )
+  return;
+
  if( ( ! f_DBCfg ) && ( v_Cfg.empty() || WBCfg.empty() ) )
   return;
 
- if( LagrDual ) {
-  auto DBC = f_DBCfg;
-  if( DBC ) {
-   if( keepcfg )
-    DBC = f_DBCfg->clone();
-   DBC->clear();
+ Index iW2BCfg = 0;  // index in W2BCfg
+ for( Index i = 0 ; i < f_nsb ; ++i ) {
+  BlockConfig * BCi = f_DBCfg;  // the default individual BlockConfig
+
+  if( ! WBCfg.empty() ) {  // individual BlockConfig are provided
+   Index h;                // the index in WBCfg
+
+   if( W2BCfg.empty() )    // in dense format
+    h = i;
+   else                     // in sparse format
+    if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == int( i ) ) )
+     h = iW2BCfg++;
+    else
+     h = WBCfg.size();
+ 
+   if( ( h < WBCfg.size() ) &&
+       ( WBCfg[ h ] >= 0 ) && ( WBCfg[ h ] < int( v_Cfg.size() ) ) )
+    if( auto c = dynamic_cast< BlockConfig * >( v_Cfg[ WBCfg[ h ] ] ) )
+     BCi = c;
    }
 
-  Index iW2BCfg = 0;  // index in W2BCfg
-  for( Index i = 0 ; i < f_nsb ; ++i ) {
-   BlockConfig * BCi = nullptr;
+  if( BCi ) {  // if an individual BlockSolverConfig is specified
+   BCi = BCi->clone();                           // clone it
+   BCi->clear();                                 // clear it
+   BCi->apply( v_LBF[ i ]->get_inner_block() );  // apply it
+   delete BCi;                                   // delete it
+   }
 
-   if( ! WBCfg.empty() ) {  // individual BlockConfig provided
-    Index h;                // the index in WBCfg
-
-    if( W2BCfg.empty() )    // in dense format
-     h = i;
-    else                     // in sparse format
-     if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == int( i ) ) )
-      h = iW2BCfg++;
-     else
-      h = WBCfg.size();
- 
-    if( ( h < WBCfg.size() ) &&
-	( WBCfg[ h ] >= 0 ) && ( WBCfg[ h ] < int( v_Cfg.size() ) ) )
-     if( auto c = dynamic_cast< BlockConfig * >( v_Cfg[ WBCfg[ h ] ] ) )
-      BCi = c;
-    }
-
-   if( BCi ) {
-    if( keepcfg )
-     BCi = BCi->clone();
-    BCi->clear();
+  if( ! WBCfg.empty() ) {
+   if( W2BCfg.empty() ) {
+    if( i >= WBCfg.size() )
+     break;
     }
    else
-    BCi = DBC;
-
-   if( BCi )
-    BCi->apply( v_LBF[ i ]->get_inner_block() );
-
-   if( ! WBCfg.empty() ) {
-    if( W2BCfg.empty() ) {
-     if( i >= WBCfg.size() )
-      break;
-     }
-    else
-     if( iW2BCfg >= W2BCfg.size() )
-      break;
-    }
+    if( iW2BCfg >= W2BCfg.size() )
+     break;
    }
   }
-
- if( ! keepcfg ) {
-  delete f_DBCfg;
-  f_DBCfg = nullptr;
-  }
- }
+ }  // end( LagrangianDualSolver::clear_inner_BlockConfig )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1629,7 +1600,7 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void LagrangianDualSolver::cleanup_LagrDual( void )
+void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
 {
  if( ! LagrDual )  // nothing to be cleaned up
   return;          // all done
@@ -1645,10 +1616,10 @@ void LagrangianDualSolver::cleanup_LagrDual( void )
   v_US.clear();
   }
 
- clear_LD_BlockSolverConfig( true );
- clear_inner_BlockSolverConfig( true );
- clear_LD_BlockConfig( true );
- clear_inner_BlockConfig( true );
+ clear_LD_BlockSolverConfig( keepcfg );
+ clear_inner_BlockSolverConfig();
+ clear_LD_BlockConfig( keepcfg );
+ clear_inner_BlockConfig();
 
  // if necessary put back the sub_Block
  if( ! iBCopy ) {
@@ -1688,12 +1659,13 @@ void LagrangianDualSolver::guts_of_destructor( void )
  unregister_inner_Solver();
  delete InnerSolver;
  InnerSolver = nullptr;
- clear_LD_BlockSolverConfig();
- clear_inner_BlockSolverConfig();
- clear_LD_BlockConfig();
- clear_inner_BlockConfig();
  cleanup_LagrDual();
-		 
+
+ delete f_DBSCfg;
+ delete f_DBCfg;
+ for( auto Ci : v_Cfg )
+  delete Ci;
+
  }  // end( LagrangianDualSolver:guts_of_destructor )
 
 /*--------------------------------------------------------------------------*/

@@ -1814,11 +1814,11 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- void clear_inner_BlockSolverConfig( bool keepcfg = false );
+ void clear_inner_BlockSolverConfig( void );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- void clear_inner_BlockConfig( bool keepcfg = false );
+ void clear_inner_BlockConfig( void );
 
 /*--------------------------------------------------------------------------*/
  /** Returns the index as active variable of the LagBFunction of the given
@@ -2085,7 +2085,7 @@ FRowConstraint * constraint_with_index( Index i ) {
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
- void cleanup_LagrDual( void );
+ void cleanup_LagrDual( bool keepcfg = false );
 
 /*--------------------------------------------------------------------------*/
 
