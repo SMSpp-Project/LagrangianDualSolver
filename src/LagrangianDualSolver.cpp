@@ -324,7 +324,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    throw( std::invalid_argument(
 	  "LagrangianDualSolver: Block sense differs form sub-Block one" ) );
   }
- 
+
  // count and check the FRowConstraint in the Block - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -343,39 +343,62 @@ void LagrangianDualSolver::set_Block( Block * block )
  {
   Index pos = 0;
   for( const auto & el : f_Block->get_static_constraints() ) {
-   // Singles
+
+   // Single
    if( un_any_thing_0( FRowConstraint , el ,
-		       {
-			scon_to_idx[ pos ] =
-			 con_int_int( & var , NumVar , 1 );
-			idx_to_scon[ pos++ ] = int_const( NumVar++ , & var );
-		        } ) )
+       {
+        scon_to_idx[ pos ] = con_int_int( & var , NumVar , 1 );
+        idx_to_scon[ pos++ ] = int_const( NumVar++ , & var );
+       } ) )
     continue;
-   // Vectors
+
+   // Vector
    if( un_any_thing_1( FRowConstraint , el ,
-		       {
-			scon_to_idx[ pos ] =
-			 con_int_int( var.data() , NumVar , var.size() );
-			idx_to_scon[ pos++ ] =
-			 int_const( NumVar , var.data() );
-			NumVar += var.size();
-		        } ) )
+       {
+        scon_to_idx[ pos ] = con_int_int( var.data() , NumVar , var.size() );
+        idx_to_scon[ pos++ ] = int_const( NumVar , var.data() );
+        NumVar += var.size();
+       } ) )
     continue;
-   // Multiarrays
+
+   // Vector of vector
+   if( un_any_thing_1( std::vector< FRowConstraint > , el ,
+       {
+        Index local_size = 0;
+        for( auto & subvec : var )
+          local_size += subvec.size();
+        scon_to_idx[ pos ] = con_int_int( var.front().data() , NumVar , local_size );
+        idx_to_scon[ pos++ ] = int_const( NumVar , var.front().data() );
+        NumVar += local_size;
+       } ) )
+    continue;
+
+   // Multiarray
    if( un_any_thing_K( FRowConstraint , el ,
-		       {
-			scon_to_idx[ pos ] =
-			 con_int_int( var.data() , NumVar ,
-				      var.num_elements() );
-			idx_to_scon[ pos++ ] =
-			 int_const( NumVar , var.data() );
-			NumVar += var.num_elements();
-		        } ) )
+       {
+        scon_to_idx[ pos ] = con_int_int( var.data() , NumVar , var.num_elements() );
+        idx_to_scon[ pos++ ] = int_const( NumVar , var.data() );
+        NumVar += var.num_elements();
+       } ) )
     continue;
+
+   // Multiarray of vector
+   if( un_any_thing_K( std::vector< FRowConstraint > , el ,
+       {
+        Index local_size = 0;
+        auto it = var.data();
+        for( Index i = var.num_elements(); i-- ; ++it )
+          local_size += it->size();
+        scon_to_idx[ pos ] = con_int_int( var.data()->data() , NumVar , local_size );
+        idx_to_scon[ pos++ ] = int_const( NumVar , var.data()->data() );
+        NumVar += local_size;
+       } ) )
+    continue;
+
    throw( std::invalid_argument(
-       "LagrangianDualSolver: static constraint not a FRowConstraint" ) );
-   }
+    "LagrangianDualSolver: static constraint not a FRowConstraint" ) );
   }
+ }
 
  static_cons = NumVar;
 
@@ -386,28 +409,32 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  // count and check the dynamic FRowConstraint- - - - - - - - - - - - - - - -
  for( const auto & el : f_Block->get_dynamic_constraints() ) {
-  // Singles lists
-  if( un_any_thing_0( std::list< FRowConstraint > , el ,
-		      { NumVar += var.size(); } ) )
-   continue;
-  // Vectors of lists
-  if( un_any_thing_1( std::list< FRowConstraint > , el ,
-                      {
-		       for( auto & lel: var )
-			NumVar += lel.size();
-		       } ) )
+
+  // Single list
+   if( un_any_thing_0( std::list< FRowConstraint > , el ,
+     { NumVar += var.size(); } ) )
     continue;
-  // Multiarrays of lists
-  if( un_any_thing_K( std::list< FRowConstraint > , el ,
-		      {
-		       auto it = var.data();
-		       for( auto i = var.num_elements() ; i-- ; ++it )
-			NumVar += it->size();
-		       } ) )
-   continue;
+
+   // Vector of list
+   if( un_any_thing_1( std::list< FRowConstraint > , el ,
+     {
+      for( auto & lel : var )
+       NumVar += lel.size();
+     } ) )
+    continue;
+
+  // Multiarray of list
+   if( un_any_thing_K( std::list< FRowConstraint > , el ,
+     {
+      auto it = var.data();
+      for( auto i = var.num_elements() ; i-- ; ++it )
+       NumVar += it->size();
+     } ) )
+    continue;
+
   throw( std::invalid_argument(
-         "LagrangianDualSolver: dynamic constraint not a FRowConstraint" ) );
-  }
+   "LagrangianDualSolver: dynamic constraint not a FRowConstraint" ) );
+ }
 
  // create the static and dynamic Lagrangian variables- - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
