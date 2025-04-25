@@ -409,7 +409,7 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  // count and check the dynamic FRowConstraint- - - - - - - - - - - - - - - -
  for( const auto & el : f_Block->get_dynamic_constraints() ) {
-  Index count = un_any_thing_count_dynamic( FRowConstraint , el );
+  auto count = un_any_thing_count_dynamic( FRowConstraint , el );
   if( count == Inf< std::size_t >() )
    throw( std::invalid_argument(
      "LagrangianDualSolver: dynamic constraint not a FRowConstraint" ) );
