@@ -1072,7 +1072,7 @@ public:
   * precedence over doing the same via the str_LDBlck_BCfg and
   * str_LDBlck_BSCfg parameters. */
 
- void set_ComputeConfig( ComputeConfig * scfg = nullptr ) override;
+ void set_ComputeConfig( const ComputeConfig * scfg = nullptr ) override;
 
 /*--------------------------------------------------------------------------*/
  /// set the ostream for the LagrangianDualSolver log

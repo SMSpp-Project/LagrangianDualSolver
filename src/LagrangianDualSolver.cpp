@@ -843,7 +843,7 @@ void LagrangianDualSolver::set_par( idx_type par ,
 
 /*--------------------------------------------------------------------------*/
 
-void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
+void LagrangianDualSolver::set_ComputeConfig( const ComputeConfig * scfg )
 {
  if( ! scfg ) {  // factory reset
   delete f_BCfg;
@@ -877,8 +877,7 @@ void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
     throw( std::invalid_argument(
        "LagrangianDualSolver::set_ComputeConfig: invalid extra_Config.fist"
 				 ) );
-   scpp->f_value.first = nullptr; // set it to nullptr since it has been
-                                  // "extracted"
+   f_BSCfg = f_BSCfg->clone();  // keep a copy
    }
 
   if( scpp->f_value.second ) {
@@ -888,25 +887,20 @@ void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
     throw( std::invalid_argument(
        "LagrangianDualSolver::set_ComputeConfig: invalid extra_Config.second"
 				 ) );
-   scpp->f_value.second = nullptr; // set it to nullptr since it has been
-                                   // "extracted"
+   f_BCfg = f_BCfg->clone();  // keep a copy
    }
   return;
   }
 
  if( auto BSC = dynamic_cast< p_BSC >( scfg->f_extra_Configuration ) ) {
   clear_LD_BlockSolverConfig();
-  f_BSCfg = BSC;
-  scfg->f_extra_Configuration = nullptr; // set it to nullptr since it has
-                                         // been "extracted"
+  f_BSCfg = BSC->clone();  // keep a copy
   return;
   }
   
  if( auto BC = dynamic_cast< p_BC >( scfg->f_extra_Configuration ) ) {
   clear_LD_BlockConfig();
-  f_BCfg = BC;
-  scfg->f_extra_Configuration = nullptr; // set it to nullptr since it has
-                                         // been "extracted"
+  f_BCfg = BC->clone();  // keep a copy
   return;
   }
 
