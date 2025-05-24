@@ -499,12 +499,21 @@ public:
   f_BSCfg( nullptr ) ,  f_DBCfg( nullptr ) , f_DBSCfg( nullptr ) ,
   static_cons( 0 ) {
   // ensure all parameters are properly given their default value
-  iBCopy   = get_dflt_int_par( int_LDSlv_iBCopy );
-  NNMult   = get_dflt_int_par( int_LDSlv_NNMult );
-  CloneCfg = get_dflt_int_par( int_LDSlv_CloneCfg );
-  WVarSCfg = get_dflt_int_par( int_InnerS_WVarSCfg );
-  WDualSCfg = get_dflt_int_par( int_InnerS_WDualSCfg );
-  ISName   = get_dflt_str_par( str_LDSlv_ISName );
+  iBCopy          = get_dflt_int_par( int_LDSlv_iBCopy );
+  NNMult          = get_dflt_int_par( int_LDSlv_NNMult );
+  CloneCfg        = get_dflt_int_par( int_LDSlv_CloneCfg );
+  WVarSCfg        = get_dflt_int_par( int_InnerS_WVarSCfg );
+  WDualSCfg       = get_dflt_int_par( int_InnerS_WDualSCfg );
+  PushCostToOwner = get_dflt_int_par( intPushCostToOwner );
+  ISName          = get_dflt_str_par( str_LDSlv_ISName );
+  // all the other string parameters are empty by default, which corresponds
+  // to f_BCfg == f_BSCfg == f_DBCfg == f_DBSCfg == nullptr
+
+  // being lazy and not redefining all the other vint parameters, as their
+  // default value is empty
+
+  // being lazy and not redefining all the other vdbl parameters, as their
+  // default value is empty
 
   // ensure that the inner Solver is always well defined
   auto ts = new_Solver( ISName );
@@ -1452,12 +1461,13 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 5 > dflt_int_par = {
-   0 ,  // int_LDSlv_iBCopy
-   1 ,  // int_LDSlv_NNMult
-   0    // int_LDSlv_CloneCfg
+  static const std::array< int , 6 > dflt_int_par = {
+    0 , // int_LDSlv_iBCopy
+    1 , // int_LDSlv_NNMult
+    0   // int_LDSlv_CloneCfg
    -1 , // int_InnerS_WVarSCfg
    -1 , // int_InnerS_WDualSCfg
+    1 , // intPushCostToOwner
    };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastLDSlvPar ) )
@@ -1496,7 +1506,8 @@ public:
   const override {
   static const std::vector< int > _empty;
   if( ( par == vint_LDSl_WBCfg ) || ( par == vint_LDSl_W2BCfg ) ||
-      ( par == vint_LDSl_WBSCfg ) || ( par == vint_LDSl_W2BSCfg ) )
+      ( par == vint_LDSl_WBSCfg ) || ( par == vint_LDSl_W2BSCfg ) ||
+      ( par == vintWhichPushCost ) )
    return( _empty );
   else
    return( InnerSolver->get_dflt_vint_par( vint_par_lds( par ) ) );
