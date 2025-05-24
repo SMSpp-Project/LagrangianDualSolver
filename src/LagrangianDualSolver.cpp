@@ -270,8 +270,11 @@ void LagrangianDualSolver::set_Block( Block * block )
   sbi->set_objective( osbi );
 
   LagrDual->add_nested_Block( sbi );  // add the sub-Block
-  }
 
+  }  // end( for( all the sub-Block )
+
+ set_PushCostToOwner();  // ensure PushCostToOwner is properly set
+ 
  // sort the sub-Block dictionary by Block address
  std::sort( blck_to_idx.begin() , blck_to_idx.end() );
 
@@ -750,6 +753,10 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
   case( int_InnerS_WDualSCfg ):
    WDualSCfg = value;
    break;
+  case( intPushCostToOwner ):
+   PushCostToOwner = bool( value );
+   set_PushCostToOwner();
+   break;   
   default:
    InnerSolver->set_par(  int_par_lds( par ) , value );
   }
@@ -816,6 +823,11 @@ void LagrangianDualSolver::set_par( idx_type par ,
    break;
   case( vint_LDSl_W2BSCfg ):
    W2BSCfg = value;
+   break;
+  case( vintWhichPushCost ):
+   WhichPushCost = value;
+   std::sort( WhichPushCost.begin() , WhichPushCost.end() );
+   set_PushCostToOwner();
    break;
   default:
    InnerSolver->set_par( vint_par_lds( par ) , std::move( value ) );
@@ -1596,6 +1608,44 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
     lel.second = - lel.second;
 
  }  // end( LagrangianDualSolver::split_constraint )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::set_PushCostToOwner( void )
+{
+ if( ! LagrDual )  // the LagrangianDualBlock has not been defined yet
+  return;          // nothing to do
+
+ auto sbit = ( LagrDual->get_nested_Blocks() ).begin();
+
+ if( WhichPushCost.empty() )
+  for( Index h = 0 ; h < f_nsb ; ++h ) {
+   auto Oi = static_cast< FRealObjective * >( (*(sbit++))->get_objective() );
+   auto LBFi = static_cast< LagBFunction * >( Oi->get_function() );
+   LBFi->set_par( LagBFunction::intPushCostToOwner ,
+		  PushCostToOwner ? 1 : 0 );
+   }
+ else {
+  // note that WhichPushCost has been ordered into set_par()
+  if( ( WhichPushCost.front() < 0 ) || ( WhichPushCost.back() >= f_nsb ) )
+   throw( std::invalid_argument(
+			  "Invalid component index in wintWhichPushCost" ) );
+
+  auto WPCit = WhichPushCost.begin();
+  for( Index h = 0 ; h < f_nsb ; ++h , ++sbit ) {
+   auto Oi = static_cast< FRealObjective * >( (*(sbit++))->get_objective() );
+   auto LBFi = static_cast< LagBFunction * >( Oi->get_function() );
+   if( *WPCit == h ) {
+    LBFi->set_par( LagBFunction::intPushCostToOwner ,
+		   PushCostToOwner ? 1 : 0 );
+    ++WPCit;
+    }
+   else
+   LBFi->set_par( LagBFunction::intPushCostToOwner ,
+		   PushCostToOwner ? 0 : 1 );
+   }
+  }
+ }  // end( LagrangianDualSolver::set_PushCostToOwner )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/

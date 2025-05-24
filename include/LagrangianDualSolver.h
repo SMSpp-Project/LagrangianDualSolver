@@ -374,6 +374,8 @@ public:
 
  int_InnerS_WDualSCfg ,  ///< the Configuration for InnerSolver->get_dual_sol
 
+ intPushCostToOwner ,  ///< where the Objective is changed in sub-Block
+
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of int algorithmic parameters. */
@@ -455,6 +457,11 @@ public:
    * Lagrangian Dual need be BlockSolverConfig-ured, basically changing the
    * meaning of vint_WBSCfg [see] from "dense" to "sparse"; see
    * set_par( std::vector< int > ) for details. */
+
+  vintWhichPushCost ,  ///< in which sub-Block the Objective is changed
+                       /** The vector vintWhichPushCost works in tandem
+			* with intPushCostToOwner to decide for which
+   * LagBFunction their intPushCostToOwner is (not) activated. */
 
   vintLastLDSlvPar  ///< first allowed new vector-of-int parameter
                     /**< Convenience value for easily allow derived classes
@@ -593,7 +600,18 @@ public:
   * - int_InnerS_WDualSCfg [-1]: the index in the "cache of Configurations"
   *   created with vstr_LDSl_Cfg of the Configuration that is used in the
   *   call of InnerSolver->get_dual_solution() to retrieve the var solution
-  *   of the Lagrangian Dual. */
+  *   of the Lagrangian Dual.
+  *
+  * - intPushCostToOwner [1]: whether the LagBFunction are instructed (via
+  *   the same-named parameter) to change the Objective of all the sub-Block
+  *   of the inner Block (in particular, for each variable change the
+  *   Objective in the Block in which the variable is defined) as opposed to
+  *   changing only the Objective of the "root" inner Block of the
+  *   LagBFunction. The parameter works in tandem with vintWhichPushCost
+  *   (see) to allow setting intPushCostToOwner differently for each
+  *   LagBFunction. If neither this parameter nor vintWhichPushCost are set,
+  *   the default behaviour of the LagBFunction (intPushCostToOwner == 1) is
+  *   manatained. */
 
  void set_par( idx_type par , int value ) override;
 
@@ -769,7 +787,19 @@ public:
   *   BlockSolverConfig-ured using the Configuration created using
   *   vstr_LDSl_Cfg indicated by vint_LDSl_WBSCfg; see the comments to that
   *   parameter for details. The vector needs be ordered in increasing sense
-  *   and without replications. */
+  *   and without replications.
+  *
+  * - vintWhichPushCost [empty]: this works in tandem with intPushCostToOwner
+  *   to decide for which of the LagBFunction their own intPushCostToOwner
+  *   parameter is set (to a non-default value, i.e., changing only the
+  *   objective of the "root" sub-Block of LagBFunction). If not empty(),
+  *   vintWhichPushCost[] must contain valid indices of sub-Block: all the
+  *   LagBFunction in the given sub-Block are set to the value specified by
+  *   intPushCostToOwner, all the others to the opposite value. If
+  *   vintWhichPushCost is empty, then *all* the LagBFunction are set to the
+  *   value specified by intPushCostToOwner. If neither this parameter nor
+  *   intPushCostToOwner are set, the default behaviour of the LagBFunction
+  *   (intPushCostToOwner == 1) is manatained. */
 
  void set_par( idx_type par , std::vector< int > && value ) override;
 
@@ -1499,6 +1529,7 @@ public:
    case( int_LDSlv_CloneCfg ):   return( CloneCfg );
    case( int_InnerS_WVarSCfg ):  return( WVarSCfg );
    case( int_InnerS_WDualSCfg ): return( WDualSCfg );
+   case( intPushCostToOwner ):   return( PushCostToOwner );
    }
 
   return( InnerSolver->get_int_par( int_par_lds( par ) ) );
@@ -1534,6 +1565,7 @@ public:
    case( vint_LDSl_W2BCfg ):  return( W2BCfg );
    case( vint_LDSl_WBSCfg ):  return( WBSCfg );
    case( vint_LDSl_W2BSCfg ): return( W2BSCfg );
+   case( vintWhichPushCost ): return( WhichPushCost );
    }
 
   return( InnerSolver->get_vint_par( vint_par_lds( par ) ) );
@@ -1565,7 +1597,8 @@ public:
    { "int_LDSlv_NNMult"     , int_LDSlv_NNMult } ,
    { "int_LDSlv_CloneCfg"   , int_LDSlv_CloneCfg } ,
    { "int_InnerS_WVarSCfg"  , int_InnerS_WVarSCfg } ,
-   { "int_InnerS_WDualSCfg" , int_InnerS_WDualSCfg }
+   { "int_InnerS_WDualSCfg" , int_InnerS_WDualSCfg } ,
+   { "intPushCostToOwner"   , intPushCostToOwner }
    };
 
   const auto it = int_pars_map.find( name );
@@ -1609,7 +1642,8 @@ public:
    { "vint_LDSl_WBCfg"   , vint_LDSl_WBCfg } ,
    { "vint_LDSl_W2BCfg"  , vint_LDSl_W2BCfg } ,
    { "vint_LDSl_WBSCfg"  , vint_LDSl_WBSCfg } ,
-   { "vint_LDSl_W2BSCfg" , vint_LDSl_W2BSCfg }
+   { "vint_LDSl_W2BSCfg" , vint_LDSl_W2BSCfg } ,
+   { "vintWhichPushCost" , vintWhichPushCost }
    };
 
   const auto it = vint_pars_map.find( name );
@@ -1640,9 +1674,9 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 5 > int_pars_str = {
+  static const std::array< std::string , 6 > int_pars_str = {
    "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_LDSlv_CloneCfg" ,
-   "int_InnerS_WVarSCfg" , "int_InnerS_WDualSCfg" };
+   "int_InnerS_WVarSCfg" , "int_InnerS_WDualSCfg" , "intPushCostToOwner" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
@@ -1675,9 +1709,9 @@ public:
 
  [[nodiscard]] const std::string & vint_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 4 > vint_pars_str = {
+  static const std::array< std::string , 5 > vint_pars_str = {
    "vint_LDSl_WBCfg"  , "vint_LDSl_W2BCfg" ,
-   "vint_LDSl_WBSCfg" , "vint_LDSl_W2BSCfg" };
+   "vint_LDSl_WBSCfg" , "vint_LDSl_W2BSCfg" , "vintWhichPushCost" };
 
   if( ( idx >= vintLastParCDAS ) && ( idx < vintLastLDSlvPar ) )
    return( vint_pars_str[ idx - vintLastParCDAS ] );
@@ -1952,6 +1986,10 @@ FRowConstraint * constraint_with_index( Index i ) {
 			std::vector< LinearFunction::v_coeff_pair > & split );
 
 /*--------------------------------------------------------------------------*/
+
+ void set_PushCostToOwner( void );
+
+/*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1966,6 +2004,8 @@ FRowConstraint * constraint_with_index( Index i ) {
  int WVarSCfg;        ///< the Configuration for IS->get_var_solution()
 
  int WDualSCfg;       ///< the Configuration for IS->get_dual_solution()
+
+ bool PushCostToOwner;  ///< how to set the same-named LagBFunction parameter
  
  std::string ISName;  ///< classname of the inner Solver
 
@@ -1987,6 +2027,9 @@ FRowConstraint * constraint_with_index( Index i ) {
  std::vector< int > WBSCfg;   ///< map between sub-Block and BlockSolverConfig
 
  std::vector< int > W2BSCfg;  ///< which sub-Block to BlockSolverConfig
+
+ std::vector< int > WhichPushCost;
+ ///< for which sub-Block change PushCostToOwner
 
  std::vector< std::string > FCfg;  ///< filenames for Configurations
  
