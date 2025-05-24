@@ -22,8 +22,6 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-//#include "AbstractBlock.h"
-
 #include "BlockSolverConfig.h"
 
 #include "LagrangianDualSolver.h"
@@ -31,8 +29,6 @@
 #include "FRealObjective.h"
 
 #include "FRowConstraint.h"
-
-#include "RBlockConfig.h"
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
@@ -461,7 +457,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || con.is_relaxed() ) {
     // this constraint is eiter "infinitely loose" or relaxed: its rhs is
     // 0 and the Lagrangian term is empty
-    *(objit++) = std::make_pair( & *(Lit++) , 0 );
+    *( objit++ ) = std::make_pair( &*( Lit++ ) , 0 );
     ++LTit;
     return;
     }
@@ -469,10 +465,10 @@ void LagrangianDualSolver::set_Block( Block * block )
    auto coef = constr2val( con , *Lit );
 
    // write the coefficient in the objective
-   *(objit++) = std::make_pair( & *(Lit++) , coef );
+   *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
    // split the linear constraint among the sub-Block
-   split_constraint( con , *(LTit++) );
+   split_constraint( con , *( LTit++ ) );
    };
 
   // finally apply the lambda to all static constraints
@@ -501,8 +497,8 @@ void LagrangianDualSolver::set_Block( Block * block )
    Lit->set_value( con.get_dual() );
 
    // first write the dictionaries
-   *(dc2iit++) = std::make_pair( & con , i++ );
-   *(i2dcit++) = & con;
+   *( dc2iit++ ) = std::make_pair( &con , i++ );
+   *( i2dcit++ ) = &con;
 
    // then check the LHS/RHS
    auto lhs = con.get_lhs();
@@ -511,7 +507,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || con.is_relaxed() ) {
     // this constraint is eiter "infinitely loose" or relaxed: its rhs is
     // 0 and the Lagrangian term is empty
-    *(objit++) = std::make_pair( & *(Lit++) , 0 );
+    *( objit++ ) = std::make_pair( &*( Lit++ ) , 0 );
     ++LTit;
     return;
     }
@@ -519,10 +515,10 @@ void LagrangianDualSolver::set_Block( Block * block )
    auto coef = constr2val( con , *Lit );
 
    // write the coefficient in the objective
-   *(objit++) = std::make_pair( & *(Lit++) , coef );
+   *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
    // split the linear constraint among the sub-Block
-   split_constraint( con , *(LTit++) );
+   split_constraint( con , *( LTit++ ) );
    };
 
   // finally apply the lambda to all dynamic constraints
@@ -557,7 +553,7 @@ void LagrangianDualSolver::set_Block( Block * block )
 
   auto Lit = Ld->begin();
   for( ; i < NumVar ; ++i ) {
-   dp[ i ].first = & (*Lit++);
+   dp[ i ].first = &( *Lit++ );
    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
    }
 
@@ -1183,7 +1179,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   // get the static part
   for( const auto & el : f_Block->get_static_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-     auto val = (Lsit++)->get_value();
+     auto val = ( Lsit++ )->get_value();
      if( to_be_reversed( con ) )
       val = - val;
      con.set_dual( val );
@@ -1191,7 +1187,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   // get the dynamic part
   for( const auto & el : f_Block->get_dynamic_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-     auto val = (Ldit++)->get_value();
+     auto val = ( Ldit++ )->get_value();
      if( to_be_reversed( con ) )
       val = - val;
      con.set_dual( val );
@@ -1201,12 +1197,12 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   // get the static part
   for( const auto & el : f_Block->get_static_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-                               con.set_dual( (Lsit++)->get_value() );
+                               con.set_dual( ( Lsit++ )->get_value() );
                                } , un_any_type< FRowConstraint >() );
   // get the dynamic part
   for( const auto & el : f_Block->get_dynamic_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-                               con.set_dual( (Ldit++)->get_value() );
+                               con.set_dual( ( Ldit++ )->get_value() );
                                } , un_any_type< FRowConstraint >() );
   }
  }  // end( LagrangianDualSolver::get_dual_solution )
@@ -1620,7 +1616,7 @@ void LagrangianDualSolver::set_PushCostToOwner( void )
 
  if( WhichPushCost.empty() )
   for( Index h = 0 ; h < f_nsb ; ++h ) {
-   auto Oi = static_cast< FRealObjective * >( (*(sbit++))->get_objective() );
+   auto Oi = static_cast< FRealObjective * >( ( *( sbit++ ) )->get_objective() );
    auto LBFi = static_cast< LagBFunction * >( Oi->get_function() );
    LBFi->set_par( LagBFunction::intPushCostToOwner ,
 		  PushCostToOwner ? int( 1 ) : int( 0 ) );
@@ -1634,7 +1630,7 @@ void LagrangianDualSolver::set_PushCostToOwner( void )
 
   auto WPCit = WhichPushCost.begin();
   for( Index h = 0 ; h < f_nsb ; ++h , ++sbit ) {
-   auto Oi = static_cast< FRealObjective * >( (*(sbit++))->get_objective() );
+   auto Oi = static_cast< FRealObjective * >( ( *( sbit++ ) )->get_objective() );
    auto LBFi = static_cast< LagBFunction * >( Oi->get_function() );
    if( *WPCit == int( h ) ) {
     LBFi->set_par( LagBFunction::intPushCostToOwner ,
@@ -1849,13 +1845,13 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
   auto Arit = ++Awit;
   for( Index cnt = 1 ; cnt < AddDltd.size() ; ++Arit )
    if( AddDltd.find( *Awit ) == AddDltd.end() )
-    *(Awit++) = *Arit;
+    *( Awit++ ) = *Arit;
    else
     ++cnt;
 
   // finish copying the last part after the last added-then-deleted constraint
   while( Arit != Addd.end() )
-   *(Awit++) = *(Arit++);
+   *( Awit++ ) = *( Arit++ );
 
   // consistency check
   assert( decltype( Addd )::size_type( std::distance( Addd.begin() , Awit ) )
@@ -2226,7 +2222,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    Subset Dltdn( Dltds.size() );  // set of indices of deleted constraint
    auto Dnit = Dltdn.begin();
    for( auto el : Dltds )
-    *(Dnit++) = index_of_constraint( el );
+    *( Dnit++ ) = index_of_constraint( el );
 
    std::sort( Dltdn.begin() , Dltdn.end() );
 
@@ -2356,7 +2352,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || el->is_relaxed() ) {
     // this constraint is eiter "infinitely loose" or relaxed: its rhs is
     // 0 and the Lagrangian term is empty
-    *(objit++) = std::make_pair( & *(Lit++) , 0 );
+    *( objit++ ) = std::make_pair( &*( Lit++ ) , 0 );
     ++LTit;
     return;
     }
@@ -2364,10 +2360,10 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    auto coef = constr2val( *el , *Lit );
 
    // write the coefficient in the objective
-   *(objit++) = std::make_pair( & *(Lit++) , coef );
+   *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
    // split the linear constraint among the sub-Block
-   split_constraint( *el , *(LTit++) );
+   split_constraint( *el , *( LTit++ ) );
    }
 
   // re-sort the dynamic constraints-->Lagrangian-variables dictionary
@@ -2387,7 +2383,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    Lit = NLDLit;
    v_dual_pair dp( NAddd );  // construct the dual pairs
    for( Index i = 0 ; i < NAddd ; ++i ) {
-    dp[ i ].first = & (*Lit++);
+    dp[ i ].first = &( *Lit++ );
     dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
     }
 

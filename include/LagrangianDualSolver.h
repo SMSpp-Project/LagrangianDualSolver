@@ -110,7 +110,7 @@ namespace SMSpp_di_unipi_it
  * LagBFunction via the FRealObjective) and then to (LB) and all the Solver
  * registered to it (not to any Solver registered to the LagBFunction, since
  * there must not be any). Thus, the Modification reach both (LB) (having
- * been properly "translated") and the otiginal father (B) of (B_i). This also
+ * been properly "translated") and the original father (B) of (B_i). This also
  * has the advantage of partly reconstructing the two-way link between (B)
  * and the (B_i): not only "going down from (B) one reaches the (B_i)", but
  * also "going up from the (B_i) one eventually gets to (B)". The mapping is
@@ -120,7 +120,7 @@ namespace SMSpp_di_unipi_it
  * eventually reach up (B) from (B_i) up the father Block chain. An important
  * example of such an operation is MILPSolver::is_mine(), which checks if a
  * given Block is a sub-Block of the one the MILPSolver is registered to. By
- * the above trick the operation stil works even if a LagrangianDualSolver
+ * the above trick the operation still works even if a LagrangianDualSolver
  * has been registered to (B) before the MILPSolver is (while otherwise it
  * would break).
  *
@@ -128,7 +128,7 @@ namespace SMSpp_di_unipi_it
  * Solver attached to it requires to keep the original father-son relationship
  * between (B) and its (B_i), the parameter int_LDSlv_iBCopy allows to
  * instruct LagrangianDualSolver to rather build a copy (B'_i) of (B_i) and
- * insert (B'_i) into the LagBFunction, with an UpdateSolver forwardng all
+ * insert (B'_i) into the LagBFunction, with an UpdateSolver forwarding all
  * Modification from (B_i) to (B'_i). However
  *
  *     THIS REQUIRES get_R3_Block( nullptr ) AND map_back_solution() TO
@@ -204,11 +204,11 @@ namespace SMSpp_di_unipi_it
  * destroyed; yet, this is in general possible.
  *
  * Hence, LagrangianDualSolver ASSUMES ONLY ONE MULTIPLIER PER RELAXED
- * CONSTRAINTS IN ALL CASES. However THE CONSTRUCTION OF THE
+ * CONSTRAINTS IN ALL CASES. However, THE CONSTRUCTION OF THE
  * "MINI-LagBFunction" FOR THE s VARIABLE IS NOT SUPPORTED YET, WHICH MEANS
  * THAT TRUE TWO-SIDED FRowConstraint ARE NOT ALLOWED YET. Fortunately, true
  * two-sided FRowConstraint are rare in practice, and they can always be
- * avoided by explicitly modelling them as the less-than and greater-than
+ * avoided by explicitly modeling them as the less-than and greater-than
  * version if needed. Yet, the mini-LagBFunction will hopefully one day be
  * actually handled.
  *
@@ -592,14 +592,14 @@ public:
   *
   * - int_LDSlv_CloneCfg [0]: true (nonzero) if each time a BlockSolverConfig
   *   is apply()-ed to a Block (either the inner Block in a LagBFunction or
-  *   the Lagrangian Dual Block itself) it needs be clone()-d. this is only
+  *   the Lagrangian Dual Block itself) it needs to be clone()-d. this is only
   *   necessary if the BlockSolverConfig contains any component (typically,
   *   something in the "extra" Configuration of a ComputeConfig) that gets
-  *   "consumed" when apply()-ed, which can happen but it is not frequent.
+  *   "consumed" when apply()-ed, which can happen, but it is not frequent.
   *   it is therefore in general necessary to foresee the possibility of
   *   cloning, but this is not done by default unless this parameter is
   *   properly set (in which case it will apply to *all* BlockSolverConfig,
-  *   which may be overkill in some cases but a balance need be had).
+  *   which may be overkill in some cases but a balance needs to be had).
   *
   * - int_InnerS_WVarSCfg [-1]: the index in the "cache of Configurations"
   *   created with vstr_LDSl_Cfg of the Configuration that is used in the
@@ -620,7 +620,7 @@ public:
   *   (see) to allow setting intPushCostToOwner differently for each
   *   LagBFunction. If neither this parameter nor vintWhichPushCost are set,
   *   the default behaviour of the LagBFunction (intPushCostToOwner == 1) is
-  *   manatained. */
+  *   maintained. */
 
  void set_par( idx_type par , int value ) override;
 
@@ -645,7 +645,7 @@ public:
   * - str_LDSlv_ISName [FakeCDASolver]: the classname used in the Solver
   *   factory to create the inner Solver that actually solves the Lagrangian
   *   Dual. the default FakeCDASolver corresponds to a placeholder that is not
-  *   really a suitable choice and it has to be replaced with a functional one
+  *   really a suitable choice, and it has to be replaced with a functional one
   *   for LagrangianDualSolver to work, but at least it ensures that
   *   LagrangianDualSolver is not dependent on any other SMS++ module except
   *   the "core" SMS++.
