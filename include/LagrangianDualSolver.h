@@ -808,7 +808,7 @@ public:
   *   vintWhichPushCost is empty, then *all* the LagBFunction are set to the
   *   value specified by intPushCostToOwner. If neither this parameter nor
   *   intPushCostToOwner are set, the default behaviour of the LagBFunction
-  *   (intPushCostToOwner == 1) is manatained. */
+  *   (intPushCostToOwner == 1) is maintained. */
 
  void set_par( idx_type par , std::vector< int > && value ) override;
 
@@ -1461,10 +1461,10 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 6 > dflt_int_par = {
+  static const std::array dflt_int_par = {
     0 , // int_LDSlv_iBCopy
     1 , // int_LDSlv_NNMult
-    0   // int_LDSlv_CloneCfg
+    0 , // int_LDSlv_CloneCfg
    -1 , // int_InnerS_WVarSCfg
    -1 , // int_InnerS_WDualSCfg
     1 , // intPushCostToOwner
