@@ -187,7 +187,6 @@ void LagrangianDualSolver::set_Block( Block * block )
    delete c;
    throw( std::invalid_argument(
 		  "LagrangianDualSolver: LagBF_BCfg not a BlockConfig" ) );
-
    }
   }
 
