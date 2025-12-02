@@ -1,0 +1,1 @@
+./LDS_UC_test ./netCDF_files/UC_Data/T-Ramp/10_0_1_w.nc4 ProxHeur.txt

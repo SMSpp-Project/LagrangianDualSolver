@@ -51,11 +51,6 @@
  // never change this
 #endif
 
-#ifndef DEBUGPP
- //#define DEBUGPP 1
- //#define INFOS 1
-#endif
-
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -131,8 +126,6 @@ static constexpr VarValue INFshift = Inf< VarValue >();
  ///< convenience constexpr for "Infty"
 
 static constexpr Index InINF = SMSpp_di_unipi_it::Inf< Index >();
-
-//static const int MAX_ITERS = 50;
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
@@ -330,11 +323,11 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  double sol[NumBinStatVar];
 
- while (!is_the_same){
+ while ( !is_the_same and iters < maxIter ){
 
-#ifdef DEBUGPP
+ if( logVerb - get_int_par( intLogVerb ) >= 2 ){
    std::cout << "\niteration = " << iters << "\n";
-#endif
+ }
 
  changed_penalties = false;
 
@@ -581,10 +574,6 @@ for( const auto & sbi : f_Block->get_nested_Blocks() ) {
 
   const auto chnl = sbi->open_channel();
   const auto mp = Observer::make_par( eModBlck , chnl );
-  
-#ifdef DEBUGPP  
-  std::cout << "INDEX=" << index << std::endl;
-#endif
  
  for( Index ivar = 0 ; ivar < pos_id_sbi[index] ; ++ivar ){  
   	 auto indexz = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()
@@ -607,10 +596,6 @@ for( const auto & sbi : f_Block->get_nested_Blocks() ) {
 
     pos++;
  }
- 
-#ifdef DEBUGPP
- std::cout << "NumVarStatBinPos: " << pos << "\n";
-#endif
 
 sbi->close_channel(chnl);
 index += 1;

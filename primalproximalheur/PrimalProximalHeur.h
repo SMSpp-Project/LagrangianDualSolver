@@ -96,7 +96,8 @@ public:
 
  enum dbl_par_type_LDSlv {
   dblLastLDSlvPar = dblLastParCDAS ,
-  dbl_penaltyFactor 
+  dbl_penaltyFactor ,
+  maxIterPP
    ///< first allowed new double parameter for derived classes
   /**< Convenience value for easily allow derived classes to extend the set
    * of double algorithmic parameters. */
@@ -113,7 +114,7 @@ public:
 
  PrimalProximalHeur( void ) : LagrangianDualSolver() , best_bound( Inf< double >() ) ,
     best_solutions( std::vector<sol_value>{std::make_pair( nullptr , Inf< double >() )} ) ,
-    R( 0.0 ) , logVerb( 2 ) { }
+    R( 0.0 ) , logVerb( 2 ) , maxIter( 3.0 ) { }
 
 /*--------------------------------------------------------------------------*/
  /// destructor: cleanly detaches the PrimalProximalHeur from the Block
@@ -227,6 +228,7 @@ public:
  [[nodiscard]] double get_dbl_par( idx_type par ) const override {
   switch( par ) {
     case( dbl_penaltyFactor ):     return( R );
+    case( maxIterPP ):     return( maxIter );
   }
   return( InnerSolver->get_dbl_par( dbl_par_lds( par ) ) );
   }
@@ -237,6 +239,7 @@ public:
   const override {
   static const std::map< std::string , idx_type > dbl_pars_map = {
     { "dbl_penaltyFactor" , PrimalProximalHeur::dbl_penaltyFactor } ,
+    { "maxIterPP" , PrimalProximalHeur::maxIterPP } ,
   };
 
   const auto it = dbl_pars_map.find( name );
@@ -275,6 +278,7 @@ public:
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  int logVerb;
+ double maxIter;
 
  double penalty = 0.0;
  double R;
