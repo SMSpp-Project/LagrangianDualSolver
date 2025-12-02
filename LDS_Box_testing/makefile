@@ -11,7 +11,7 @@
 ##############################################################################
 
 # module name
-NAME = LDS_UC_test
+NAME = LDS_Box_test
 
 # basic directory
 DIR = .

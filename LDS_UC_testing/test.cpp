@@ -109,8 +109,6 @@
 
 #include "PrimalProximalHeur.h"
 
-//#include "PPHeurSolver.h"
-
 #include "BlockSolverConfig.h"
 
 #include "PolyhedralFunctionBlock.h"

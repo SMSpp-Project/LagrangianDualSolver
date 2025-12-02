@@ -672,7 +672,7 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
 
  for( auto mod : v_mod ){
   if( mod->get_Block() == f_Block ) {
-    LagrangianDualSolver::process_outstanding_Modification();
+    //LagrangianDualSolver::process_outstanding_Modification();
   } else { 
     for( const auto & sbi : f_Block->get_nested_Blocks() ) {
       if( mod->get_Block() == sbi && ! changed_penalties ) {
@@ -685,11 +685,14 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
   }
  }
 
- std::cout << "check_feasibility = " << check_feasibility << std::endl;
+ if( logVerb - get_int_par( intLogVerb ) >= 2 )
+  std::cout << "check_feasibility = " << check_feasibility << std::endl;
 
- if(reload)
+ if(reload){
+  if( logVerb - get_int_par( intLogVerb ) >= 2 )
+    std::cout << "reload..." << std::endl;
   initialize();
-
+ }
  int indexSol = 0;
 
  if(check_feasibility)
