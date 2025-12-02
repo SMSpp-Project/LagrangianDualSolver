@@ -60,11 +60,6 @@ clean::
 SMS++SDR = ../smspp
 include $(SMS++SDR)/lib/makefile-inc
 
-# SFDCRBlock
-UCBckDIR = ../ucblock_linear
-UCBckDIR = ../ucblock_quadratic
-include $(UCBckDIR)/lib/makefile
-
 LAGRANGIANDR = ./lagrangiandualsolver
 BUNDLEDR = ../bundlesolver
 
