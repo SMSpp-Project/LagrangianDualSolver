@@ -107,8 +107,6 @@
 
 #include <random>
 
-#include "PrimalProximalHeur.h"
-
 #include "BlockSolverConfig.h"
 
 #include "PolyhedralFunctionBlock.h"
@@ -261,7 +259,7 @@ static bool SolveBoth( void ) {
                    && ( rtrn1st != Solver::kInfeasible ) )
                  || ( rtrn1st == Solver::kLowPrecision ) );
   // the Lagrangian Dual computes lower bounds, so that's what we compare
-  double fo1st = (static_cast< PrimalProximalHeur * >(Slvr1))->get_best_bound();
+  double fo1st = Slvr1->get_ub();
 
   if( TestBlock->get_registered_solvers().size() == 1 ) {
    #if( LOG_LEVEL >= 1 )

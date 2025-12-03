@@ -114,7 +114,7 @@ public:
 
  PrimalProximalHeur( void ) : LagrangianDualSolver() , best_bound( Inf< double >() ) ,
     best_solutions( std::vector<sol_value>{std::make_pair( nullptr , Inf< double >() )} ) ,
-    R( 0.0 ) , logVerb( 2 ) , maxIter( 3.0 ) { }
+    R( 0.0 ) , logVerb( 2 ) , maxIter( 10.0 ) { }
 
 /*--------------------------------------------------------------------------*/
  /// destructor: cleanly detaches the PrimalProximalHeur from the Block
@@ -179,19 +179,30 @@ public:
 /** @name Accessing the found solutions (if any)
  *  @{ */
 
- OFValue get_lb( void ) override { return( InnerSolver->get_lb() + penalty ); }
+ OFValue get_lb( void ) override { return( f_max ? best_bound : - Inf<double>() ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- OFValue get_ub( void ) override { return( InnerSolver->get_ub() + penalty ); }
+ OFValue get_ub( void ) override { return( f_max ? Inf<double>() : best_bound ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ bool has_var_solution( void ) override { 
+    return( best_solutions[0].first == nullptr ? false : true ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ OFValue get_var_value( void ) override {
+  if( best_solutions[0].first != nullptr ) return( best_solutions[0].second ); }
+
+/*--------------------------------------------------------------------------*/
+
+ void get_var_solution( Configuration * solc = nullptr ) override { return( 
+    best_solutions[0].first->write( f_Block )); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  OFValue get_funct_value( void ) { return(value_FUNCTION); }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- OFValue get_best_bound( void ) { return( best_bound ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -289,7 +300,7 @@ public:
  bool changed_penalties = false;
 
  Index NumVar;      ///< (current) number of variables
- Index NumBinStatVar;      ///< (current) number of variables
+ Index NumStatVar;      ///< (current) number of static variables
  Index pos_id;
 
  typedef std::pair< Solution * , double > sol_value;

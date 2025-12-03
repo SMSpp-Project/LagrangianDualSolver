@@ -6,15 +6,15 @@
  * CDASolver interface within the SMS++ framework for a "generic"
  * Lagrangian-based Solver.
  *
+ * \author Luca Mencarelli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
  * \author Antonio Frangioni \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \author Enrico Gorgone \n
- *         Dipartimento di Informatica \n
- *         Universita' di Pisa \n
- *
- * \copyright &copy; by Antonio Frangioni, Enrico Gorgone
+ * \copyright &copy; by Luca Mencarelli, Antonio Frangioni
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
@@ -150,7 +150,7 @@ void PrimalProximalHeur::initialize(){
   // count and check the binary ColVariable - - - - - - - - - - - - - - - - - 
  // meanwhile construct the static dictionaries
 
- NumBinStatVar = 0;
+ NumStatVar = 0;
 
  int svn = 0;
 
@@ -196,7 +196,7 @@ void PrimalProximalHeur::initialize(){
       ints.push_back(t);
 			int_vars.push_back(&var);
       pos_id++;
-			NumBinStatVar++;
+			NumStatVar++;
           } ) )
      continue;
    // Vectors
@@ -223,14 +223,14 @@ void PrimalProximalHeur::initialize(){
 			  }
         pos_id++;
       }
-			NumBinStatVar += var.size();
+			NumStatVar += var.size();
 			ints.push_back(t);
           } ) )
     continue;
    // Multiarrays
    if( un_any_thing_K( ColVariable , el ,
 		  {
-			NumBinStatVar += var.num_elements();
+			NumStatVar += var.num_elements();
 			ints.push_back(t);
       for (Index j = 0 ; j < var.num_elements() ; ++j){
 			  int_vars.push_back(var.data()+j);
@@ -306,11 +306,10 @@ int PrimalProximalHeur::compute( bool changedvars )
 {
 
  initialize();
-
+ 
  Index iters = 0;
  bool is_the_same = false;
  bool is_integer_sol = false; 
- Solution *solution;
  int res;
  double integer_viol;
  double integer_viol_sum;
@@ -318,10 +317,10 @@ int PrimalProximalHeur::compute( bool changedvars )
  value_FUNCTION = Inf<double>();
 
  if( logVerb - get_int_par( intLogVerb ) >= 2 ){
-  std::cout << "\nNumBinStatVar: " << NumBinStatVar << "\n";
+  std::cout << "\nNumStatVar: " << NumStatVar << "\n";
  }
 
- double sol[NumBinStatVar];
+ double sol[NumStatVar];
 
  while ( !is_the_same and iters < maxIter ){
 
@@ -359,12 +358,12 @@ int PrimalProximalHeur::compute( bool changedvars )
   //int ivar = 0;
 
  if(iters==0){
-  for( Index kvar = 0 ; kvar < NumBinStatVar ; ++kvar ){
+  for( Index kvar = 0 ; kvar < NumStatVar ; ++kvar ){
     sol[kvar] = rand() % 2;
   }
  }
  
- previous_sol.insert(previous_sol.begin(), &sol[0], &sol[NumBinStatVar]);
+ previous_sol.insert(previous_sol.begin(), &sol[0], &sol[NumStatVar]);
 
   if( iters >= 1 ){
     if( logVerb - get_int_par( intLogVerb ) >= 2 ){
@@ -384,16 +383,9 @@ int PrimalProximalHeur::compute( bool changedvars )
   }
 
 if ( iters >= 0 ){
-    InnerSolver->get_dual_solution();
-    solution = f_Block->get_Solution();
-
-    auto sols = new ColVariableSolution;
-    sols->read( f_Block );
-    sols->write( f_Block );
-
     Index kvar = 0;
     double auxl = 0.0;
-    for( Index kvar = 0 ; kvar < NumBinStatVar ; ++kvar ){
+    for( Index kvar = 0 ; kvar < NumStatVar ; ++kvar ){
       sol[kvar] = idx_to_var1[kvar].second->get_value();
     }
   }
@@ -412,12 +404,13 @@ if ( iters >= 0 ){
     std::cout << "SOL LB: " << InnerSolver->get_lb() << std::endl;
     std::cout << "SOL UB: " << InnerSolver->get_ub() << std::endl;
     std::cout << "FUNCT Value: " << get_funct_value() << std::endl;
-    std::cout << "Best Value: " << get_best_bound() << std::endl;
+    auto bound = f_max ? get_lb() : get_ub();
+    std::cout << "Best Value: " << bound << std::endl;
   }
 
   penalty = 0.0;
   double addterm = 0.0;
-  for( int ivar = 0 ; ivar < NumBinStatVar ; ++ivar ){
+  for( int ivar = 0 ; ivar < NumStatVar ; ++ivar ){
     penalty += R* pow((previous_sol[ivar] - sol[ivar]), 2.0);
     addterm += R* pow(sol[ivar], 2.0) - 2.0 * R* (previous_sol[ivar] * sol[ivar]);
   }
@@ -437,7 +430,7 @@ if(f_Block->is_feasible()){
               } 
               best_solutions.push_back(std::pair( f_Block->get_Solution() , value_FUNCTION ));
               std::sort(best_solutions.begin(), best_solutions.end(), [](auto &left, auto &right) {
-                  return left.second < right.second;
+                  return left.second > right.second;
               });
           } else {
               if(value_FUNCTION < best_bound){
@@ -445,7 +438,7 @@ if(f_Block->is_feasible()){
               }
               best_solutions.push_back(std::pair( f_Block->get_Solution() , value_FUNCTION ));
               std::sort(best_solutions.begin(), best_solutions.end(), [](auto &left, auto &right) {
-                return left.second < right.second;
+                return left.second > right.second;
               });
           }
 
@@ -460,7 +453,7 @@ if(f_Block->is_feasible()){
     
   if ( iters >= 0 ){
     is_the_same = true;
-    for( int ivar = 0 ; ivar < NumBinStatVar ; ++ivar ){
+    for( int ivar = 0 ; ivar < NumStatVar ; ++ivar ){
      if (!(sol[ivar] < previous_sol[ivar]+1e-6 && sol[ivar] > previous_sol[ivar]-1e-6)) { //1e-12
             is_the_same = false;
             break;
@@ -475,7 +468,7 @@ if(f_Block->is_feasible()){
     is_integer_sol = true;
     integer_viol = -Inf<double>();
     integer_viol_sum = 0.0;
-    for( int ivar = 0 ; ivar < NumBinStatVar ; ++ivar ){
+    for( int ivar = 0 ; ivar < NumStatVar ; ++ivar ){
       integer_viol_sum += std::min(std::abs(sol[ivar]),std::abs(1-sol[ivar]));
       if(std::min(std::abs(sol[ivar]),std::abs(1-sol[ivar])) > integer_viol)
         integer_viol = std::min(std::abs(sol[ivar]),std::abs(1-sol[ivar]));
@@ -539,7 +532,8 @@ if(f_Block->is_feasible()){
       std::cout << "NUMBER ITERS: " << iters-1 << "\n";
       std::cout << "LB: " << InnerSolver->get_lb() << "\n";
       std::cout << "UB: " << InnerSolver->get_ub() << "\n";
-      std::cout << "Best Feasible solution: " << get_best_bound() << std::endl;
+      auto bound = f_max ? get_lb() : get_ub();
+      std::cout << "Best Feasible solution: " << bound << std::endl;
   }
 
     return( res );

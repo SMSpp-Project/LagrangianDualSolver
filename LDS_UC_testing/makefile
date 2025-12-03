@@ -89,7 +89,7 @@ MOBJ =  $(UCBckOBJ) $(SMS++OBJ)
 MLIB =  $(SMS++LIB) $(UCBckLIB) -L"/Library/gurobi1001/macos_universal2/lib" -lgurobi100
 
 $(DIR)/$(NAME): $(MOBJ) $(DIR)/test.o  
-	$(CC) -o $(DIR)/$(NAME) ../milpsolver/obj/MILPSolver.o ../milpsolver/obj/CPXMILPSolver.o ../milpsolver/obj/GRBMILPSolver.o ../lagrangiandualsolver/LagrangianDualSolver.o ../bundlesolver/BundleSolver.o ../bundlesolver/ParallelBundleSolver.o ../primalproximalheur/PrimalProximalHeur.o $(libNDOOBJ) $^ $(MLIB) $(libNDOINC) $(BNDSLVINC) $(libOSIINC) $(libOSILIB) $(SW) -lpthread -lm 
+	$(CC) -o $(DIR)/$(NAME) ../milpsolver/obj/MILPSolver.o ../milpsolver/obj/CPXMILPSolver.o ../milpsolver/obj/GRBMILPSolver.o ../lagrangiandualsolver/LagrangianDualSolver.o ../bundlesolver/BundleSolver.o ../bundlesolver/ParallelBundleSolver.o ../primalproximalheur/PrimalProximalHeur.o ../ppheursolver/PPHeurSolver.o $(libNDOOBJ) $^ $(MLIB) $(libNDOINC) $(BNDSLVINC) $(libOSIINC) $(libOSILIB) $(SW) -lpthread -lm 
 
 #$(DIR)/$(NAME): $(MOBJ) $(DIR)/test.o  
 #	$(CC) -o $(DIR)/$(NAME) ../milpsolver/obj/MILPSolver.o ../milpsolver/obj/CPXMILPSolver.o ../milpsolver/obj/GRBMILPSolver.o ../lagrangiandualsolver/LagrangianDualSolver.o ../bundlesolver/BundleSolver.o ../primalproximalheur/PrimalProximalHeur.o $(libNDOOBJ) $^ $(MLIB) $(libNDOINC) $(BNDSLVINC) $(libOSIINC) $(libOSILIB) $(SW) -lpthread -lm 
@@ -106,7 +106,7 @@ MH =    $(SMS++H) $(UCBckH)
 # compile command
 
 $(DIR)/test.o: $(DIR)/test.cpp $(MH)
-	$(CC) -c $*.cpp -o $@ $(MINC) -I../lagrangiandualsolver/ -I../bundlesolver/ -I../milpsolver/include/ -I../bundlesolver/ -I$(libNDOSDR)/OPTUtils -I../bundlesolver/NdoFiOracle/NDOSlver -I../primalproximalheur/ -I$(libNDOINC) -I$(BNDSLVINC) $(libOSIINC) $(libOSILIB) -I"/Library/gurobi1001/macos_universal2/include/" $(SW)
+	$(CC) -c $*.cpp -o $@ $(MINC) -I../lagrangiandualsolver/ -I../bundlesolver/ -I../milpsolver/include/ -I../bundlesolver/ -I$(libNDOSDR)/OPTUtils -I../bundlesolver/NdoFiOracle/NDOSlver -I../primalproximalheur/ -I../ppheursolver/ -I$(libNDOINC) -I$(BNDSLVINC) $(libOSIINC) $(libOSILIB) -I"/Library/gurobi1001/macos_universal2/include/" $(SW)
 
 #$(DIR)/test.o: $(DIR)/test.cpp $(MH)
 #	$(CC) -c $*.cpp -o $@ $(MINC) -I../lagrangiandualsolver/ -I../bundlesolver/ -I../milpsolver/include/ -I../bundlesolver/ -I$(libNDOSDR)/OPTUtils -I../bundlesolver/NdoFiOracle/NDOSlver -I../primalproximalheur/ -I$(libNDOINC) -I$(BNDSLVINC) $(libOSIINC) $(libOSILIB) -I"/Library/gurobi1001/macos_universal2/include/" $(SW)
