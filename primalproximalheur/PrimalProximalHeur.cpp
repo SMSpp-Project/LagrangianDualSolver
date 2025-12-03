@@ -577,7 +577,7 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
     }
   }
 
-  best_solutions = best_solutions_new;
+ best_solutions = best_solutions_new;
 
  v_mod.clear();
 
