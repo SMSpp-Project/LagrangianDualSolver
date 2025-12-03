@@ -3,8 +3,7 @@
 /*--------------------------------------------------------------------------*/
 /** @file
  * Definition of the PrimalProximalHeur class, which implements the
- * CDASolver interface within the SMS++ framework for a "generic"
- * Lagrangian-based Solver.
+ * CDASolver interface within the SMS++ framework.
  *
  * \author Luca Mencarelli \n
  *         Dipartimento di Informatica \n
@@ -60,7 +59,7 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /// A CDASolver solving the Lagrangian Dual of a "generic" Block
 /** The PrimalProximalHeur class implements the CDASolver interface within
- * the SMS++ framework for a "generic" Lagrangian-based Solver.
+ * the SMS++ framework.
  */
 
 class PrimalProximalHeur :  public LagrangianDualSolver

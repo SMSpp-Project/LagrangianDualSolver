@@ -3,8 +3,7 @@
 /*--------------------------------------------------------------------------*/
 /** @file
  * Implementation of the PrimalProximalHeur class, which implements the
- * CDASolver interface within the SMS++ framework for a "generic"
- * Lagrangian-based Solver.
+ * CDASolver interface within the SMS++ framework.
  *
  * \author Luca Mencarelli \n
  *         Dipartimento di Informatica \n
@@ -149,7 +148,7 @@ SMSpp_insert_in_factory_cpp_0( PrimalProximalHeur );
 
 void PrimalProximalHeur::initialize(){
 
-  // count and check the binary ColVariable - - - - - - - - - - - - - - - - - 
+ // count and check the binary ColVariable - - - - - - - - - - - - - - - - - 
  // meanwhile construct the static dictionaries
 
  NumStatVar = 0;
@@ -159,9 +158,6 @@ void PrimalProximalHeur::initialize(){
  for( const auto & sbi : f_Block->get_nested_Blocks() )
   svn += sbi->get_static_variables().size();
 
- //std::cout << "svn: " << svn << "\n";
- //var_to_idx.resize( svn );
- //idx_to_var.resize( svn );
 {
  pos_id_sbi.resize(f_Block->get_number_nested_Blocks());
  idx_to_var_sbi1.resize(f_Block->get_number_nested_Blocks());
@@ -311,7 +307,6 @@ int PrimalProximalHeur::compute( bool changedvars )
  
  Index iters = 0;
  bool is_the_same = false;
- bool is_integer_sol = false; 
  int res;
  double integer_viol;
  double integer_viol_sum;
@@ -344,21 +339,6 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  if( ! owned )
   f_Block->unlock( f_id );
-
- /* This is no longer needed, since these Modification happen when
-    f_play_dumb == true in the inner LagBFunction
-
- // if iBCopy == false, inhibit all Modification from the UpdateSolver; these
- // would reach the (disconnected) original Block, but there is no reason for
- // this because these are all "local" changes that will be undone at the end
- // of the solution process, so the Solver attached to the father (and other
- // ancestors) have no reason to act upon them
- if( ! iBCopy )
-  for( auto us : v_US )
-   us->inhibit_Modification( true );
-*/
-
-  //int ivar = 0;
 
  if(iters==0){
   for( Index kvar = 0 ; kvar < NumStatVar ; ++kvar ){
@@ -458,22 +438,6 @@ if(f_Block->is_feasible()){
             break;
       }
     }
-
-    //if(f_Block->is_feasible())
-      //is_the_same = true;
-  }
-
-  if ( iters >= 0 ){
-    is_integer_sol = true;
-    integer_viol = -Inf<double>();
-    integer_viol_sum = 0.0;
-    for( int ivar = 0 ; ivar < NumStatVar ; ++ivar ){
-      integer_viol_sum += std::min(std::abs(sol[ivar]),std::abs(1-sol[ivar]));
-      if(std::min(std::abs(sol[ivar]),std::abs(1-sol[ivar])) > integer_viol)
-        integer_viol = std::min(std::abs(sol[ivar]),std::abs(1-sol[ivar]));
-    }
-    if(integer_viol >= 1e-3)
-      is_integer_sol = false;
   }
 
   iters++;
@@ -491,7 +455,7 @@ if(f_Block->is_feasible()){
 
    unlock();  // unlock the mutex
 
-   // because the inner Solver is solving the dual of the original Block,
+  // because the inner Solver is solving the dual of the original Block,
   // the unbounded an unfeasible return states have to be exchanged
   if( res == kUnbounded ){
     res = kInfeasible;
@@ -513,21 +477,10 @@ if(f_Block->is_feasible()){
     }
   }
 
-  if( is_integer_sol ){
-    if( logVerb - get_int_par( intLogVerb ) >= 2 ){
-      std::cout << "R = " << R << std::endl;
-      std::cout << "IS_INTEGER_SOL = TRUE\n"; 
-      std::cout << "NUMBER ITERS: " << iters-1 << "\n";
-    }
-  }
-
   if( is_the_same ){
   if( logVerb - get_int_par( intLogVerb ) >= 2 ){
       std::cout << "R = " << R << std::endl;
       std::cout << "IS_THE_SAME = TRUE\n"; 
-      if( is_integer_sol ){
-        std::cout << "IS_INTEGER_SOL = TRUE\n"; 
-      }
       std::cout << "NUMBER ITERS: " << iters-1 << "\n";
       std::cout << "LB: " << InnerSolver->get_lb() << "\n";
       std::cout << "UB: " << InnerSolver->get_ub() << "\n";
