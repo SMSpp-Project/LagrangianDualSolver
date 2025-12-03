@@ -27,12 +27,6 @@
 
 #include "FRealObjective.h"
 
-#include "FRowConstraint.h"
-
-#include "RBlockConfig.h"
-
-#include "ColVariableSolution.h"
-
 #include <queue>
 
 /*--------------------------------------------------------------------------*/
@@ -62,71 +56,13 @@ using namespace SMSpp_di_unipi_it;
 /*---------------------------------- TYPES ---------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-using VarValue = Function::FunctionValue;
-using c_VarValue = Function::c_FunctionValue;
-using Vec_FunctionValue = Function::Vec_FunctionValue;
-
-using Vec_VarValue = Function::Vec_FunctionValue;
-using c_Vec_VarValue = Function::c_Vec_FunctionValue;
-
-using coeff_pair = LinearFunction::coeff_pair;
-using v_coeff_pair = LinearFunction::v_coeff_pair;
-using v_c_coeff_pair = LinearFunction::v_c_coeff_pair;
-
-using LinearCombination = C05Function::LinearCombination;
-using c_LinearCombination = C05Function::c_LinearCombination;
-
-using dual_pair = LagBFunction::dual_pair;
-using v_dual_pair = std::vector< dual_pair >;
-using v_c_dual_pair = const v_dual_pair;
-
-using p_AB = AbstractBlock *;
-using p_FRC = FRowConstraint *;
 using p_FRO = FRealObjective *;
 using p_LF = LinearFunction *;
-using p_LBF = LagBFunction *;
 using p_DQF = DQuadFunction *;
-
-using p_BC = BlockConfig *;
-using p_BSC = BlockSolverConfig *;
-
-using p_SConf_p_p = SimpleConfiguration< std::pair< Configuration * ,
-						    Configuration * > > *;
-
-/*--------------------------------------------------------------------------*/
-/* PrimalProximalHeur always need to have an "inner CDASolver" set, but at
- * the beginning it would have none: it will then have a FakeCDASolver one,
- * which does nothing. Clearly, a "real" one will have to be set of
- * PrimalProximalHeur::compute() is to work. */
-/*
-class FakeCDASolver : public CDASolver {
- public:
- FakeCDASolver( void ) : CDASolver() {}
- virtual ~FakeCDASolver() {}
- int compute( bool changedvars = true ) override final { return( kError ); }
- bool has_var_solution( void ) override final { return( false ); }
- void get_var_solution( Configuration *solc = nullptr ) override final {}
- bool has_dual_solution( void ) override final { return( false ); }
- void get_dual_solution( Configuration *solc = nullptr ) override final {}
- void add_Modification( sp_Mod & mod ) override final {}
- SMSpp_insert_in_factory_h;
- };
-
-SMSpp_insert_in_factory_cpp_0( FakeCDASolver );
-*/
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
-
-static constexpr VarValue NaNshift
-                              = std::numeric_limits< VarValue >::quiet_NaN();
- ///< convenience constexpr for "NaN", *not* to be used with ==
-
-static constexpr VarValue INFshift = Inf< VarValue >();
- ///< convenience constexpr for "Infty"
-
-static constexpr Index InINF = SMSpp_di_unipi_it::Inf< Index >();
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
@@ -148,15 +84,10 @@ SMSpp_insert_in_factory_cpp_0( PrimalProximalHeur );
 
 void PrimalProximalHeur::initialize(){
 
- // count and check the binary ColVariable - - - - - - - - - - - - - - - - - 
+ // count and check the static ColVariable - - - - - - - - - - - - - - - - - 
  // meanwhile construct the static dictionaries
 
  NumStatVar = 0;
-
- int svn = 0;
-
- for( const auto & sbi : f_Block->get_nested_Blocks() )
-  svn += sbi->get_static_variables().size();
 
 {
  pos_id_sbi.resize(f_Block->get_number_nested_Blocks());
@@ -191,8 +122,6 @@ void PrimalProximalHeur::initialize(){
         idx_to_var1.push_back(double_var( 0.0 , & var ));
         idx_to_var2.push_back(double_var( 0.0 , & var ));
       }
-      ints.push_back(t);
-			int_vars.push_back(&var);
       pos_id++;
 			NumStatVar++;
           } ) )
@@ -201,7 +130,6 @@ void PrimalProximalHeur::initialize(){
    if( un_any_thing_1( ColVariable , el ,
 		  {
 			for (Index j = 0 ; j < var.size() ; ++j){
-			  int_vars.push_back(var.data()+j);
         if(static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
             get_num_active_var() > static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
             )->get_function())->is_active(var.data()+j)){ 
@@ -222,16 +150,13 @@ void PrimalProximalHeur::initialize(){
         pos_id++;
       }
 			NumStatVar += var.size();
-			ints.push_back(t);
           } ) )
     continue;
    // Multiarrays
    if( un_any_thing_K( ColVariable , el ,
 		  {
 			NumStatVar += var.num_elements();
-			ints.push_back(t);
       for (Index j = 0 ; j < var.num_elements() ; ++j){
-			  int_vars.push_back(var.data()+j);
 			  if(static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
             get_num_active_var() > static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
             )->get_function())->is_active(var.data()+j)){ 

@@ -27,19 +27,7 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#include "AbstractBlock.h"
-
-#include "CDASolver.h"
-
-#include "LagBFunction.h"
-
-#include "LinearFunction.h"
-
-#include "UpdateSolver.h"
-
 #include "LagrangianDualSolver.h"
-
-#include "ColVariableSolution.h"
 
 #include <queue>
 
@@ -189,12 +177,11 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  bool has_var_solution( void ) override { 
-    return( best_solutions.empty() ? false : true ); }
+  return( best_solutions.empty() ? false : true ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- bool new_var_solution( void ) override { 
-    return( has_new_solution ? true : false ); }
+ bool new_var_solution( void ) override { return( has_new_solution ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -213,11 +200,6 @@ public:
 /** @} ---------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE Solver ----------------*/
 /*--------------------------------------------------------------------------*/
-
-/*
- virtual bool is_dual_exact( void ) const override { return( true ); }
-*/
- 
 /*--------------------------------------------------------------------------*/
 /*------------------- METHODS FOR HANDLING THE PARAMETERS ------------------*/
 /*--------------------------------------------------------------------------*/
@@ -274,6 +256,10 @@ public:
 /*--------------------------- PROTECTED TYPES ------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+ typedef std::pair< Solution * , double > sol_value;
+ typedef std::pair< double , ColVariable * > double_var;
+ typedef std::tuple< ColVariable * , Index , Index > var_col_int;
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -281,10 +267,6 @@ public:
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
-
- // algorithmic parameters- - - - - - - - - - - - - - - - - - - - - - - - - -
- 
- // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  int logVerb;
  double maxIter;
@@ -298,27 +280,21 @@ public:
  bool changed_penalties = false;
  bool has_new_solution = false;
 
- Index NumVar;      ///< (current) number of variables
  Index NumStatVar;      ///< (current) number of static variables
  Index pos_id;
 
- typedef std::pair< Solution * , double > sol_value;
- typedef std::pair< double , ColVariable * > double_var;
- typedef std::tuple< ColVariable * , Index , Index > var_int_int;
-
  std::vector<int> pos_id_sbi;
- std::vector<int> ints;
- std::vector< double > previous_sol;  
+ std::vector< double > previous_sol; 
 
- std::vector< var_int_int > var_to_idx; ///< from static variable to index
+ std::vector< var_col_int > var_to_idx;   ///< from static variable to index
  std::vector< double_var > idx_to_var1;   ///< from index to static variable
  std::vector< double_var > idx_to_var2;   ///< from index to static variable
- std::priority_queue< sol_value > best_solutions;
- std::vector<p_DQF> Funct_sbi;
- std::vector<ColVariable *> int_vars;
+ std::vector<p_DQF> Funct_sbi;            ///< vector of objective functions for sub-block sbi
 
- std::vector<std::vector< double_var >> idx_to_var_sbi1;   ///< from index to static variable
- std::vector<std::vector< double_var >> idx_to_var_sbi2;   ///< from index to static variable
+ std::vector<std::vector< double_var >> idx_to_var_sbi1;   ///< from index to static variable (linear term)
+ std::vector<std::vector< double_var >> idx_to_var_sbi2;   ///< from index to static variable (quadratic)
+
+ std::priority_queue< sol_value > best_solutions; ///< best feasible solutions 
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
