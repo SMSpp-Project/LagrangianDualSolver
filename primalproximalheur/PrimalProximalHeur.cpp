@@ -34,6 +34,8 @@
 
 #include "ColVariableSolution.h"
 
+#include <queue>
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -315,6 +317,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  double integer_viol_sum;
  double funct_old = 0.0;
  value_FUNCTION = Inf<double>();
+ has_new_solution = false;
 
  if( logVerb - get_int_par( intLogVerb ) >= 2 ){
   std::cout << "\nNumStatVar: " << NumStatVar << "\n";
@@ -421,6 +424,7 @@ if ( iters >= 0 ){
   }
 
 if(f_Block->is_feasible()){
+  has_new_solution = true;
   if( logVerb - get_int_par( intLogVerb ) >= 2 ){
     std::cout << "IS_FEASIBLE_SOL" << std::endl;
   }
@@ -428,27 +432,22 @@ if(f_Block->is_feasible()){
               if(value_FUNCTION > best_bound){
                 best_bound = value_FUNCTION;
               } 
-              best_solutions.push_back(std::pair( f_Block->get_Solution() , value_FUNCTION ));
-              std::sort(best_solutions.begin(), best_solutions.end(), [](auto &left, auto &right) {
-                  return left.second > right.second;
-              });
+              best_solutions.push(std::pair( f_Block->get_Solution() , value_FUNCTION ));
           } else {
               if(value_FUNCTION < best_bound){
                   best_bound = value_FUNCTION;
               }
-              best_solutions.push_back(std::pair( f_Block->get_Solution() , value_FUNCTION ));
-              std::sort(best_solutions.begin(), best_solutions.end(), [](auto &left, auto &right) {
-                return left.second > right.second;
-              });
+              best_solutions.push(std::pair( f_Block->get_Solution() , value_FUNCTION ));
           }
 
   if(size(best_solutions) > get_int_par( intMaxSol ))
-    best_solutions.erase(best_solutions.begin());
+    best_solutions.pop();
        
  } else {
   if( logVerb - get_int_par( intLogVerb ) >= 2 ){
     std::cout << "IS_INFEASIBLE_SOL" << std::endl;
   }
+  has_new_solution = false;
  } 
     
   if ( iters >= 0 ){
@@ -687,16 +686,20 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
     std::cout << "reload..." << std::endl;
   initialize();
  }
- int indexSol = 0;
+
+ std::priority_queue< sol_value > best_solutions_new;
 
  if(check_feasibility)
-  for( auto sol : best_solutions ){
+  while(!best_solutions.empty()){
+    auto sol = best_solutions.top();
     sol.first->write( f_Block );
-    if(! f_Block->is_feasible()){
-      best_solutions.erase(best_solutions.begin() + indexSol);
+    if( f_Block->is_feasible() ){
+      best_solutions_new.push( best_solutions.top()) ;
+      best_solutions.pop();
     }
-    indexSol++;
- }
+  }
+
+  best_solutions = best_solutions_new;
 
  v_mod.clear();
 

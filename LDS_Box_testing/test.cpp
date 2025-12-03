@@ -369,7 +369,7 @@ static bool SolveBoth( void )
                    && ( rtrn1st != Solver::kUnbounded )
                    && ( rtrn1st != Solver::kInfeasible ) )
                  || ( rtrn1st == Solver::kLowPrecision ) );
-  double fo1st = Slvr1->get_ub();
+  double fo1st = minobj ? Slvr1->get_ub() : Slvr1->get_lb();
 
   if( TestBlock->get_registered_solvers().size() == 1 ) {
    #if( LOG_LEVEL >= 1 )

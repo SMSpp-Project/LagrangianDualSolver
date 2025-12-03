@@ -6,15 +6,15 @@
  * CDASolver interface within the SMS++ framework for a "generic"
  * Lagrangian-based Solver.
  *
+ * \author Luca Mencarelli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
  * \author Antonio Frangioni \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \author Enrico Gorgone \n
- *         Dipartimento di Matematica ed Informatica \n
- *         Universita' di Cagliari \n
- *
- * \copyright &copy; by Antonio Frangioni, Enrico Gorgone
+ * \copyright &copy; by Luca Mencarelli, Antonio Frangioni
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/
@@ -41,6 +41,8 @@
 #include "LagrangianDualSolver.h"
 
 #include "ColVariableSolution.h"
+
+#include <queue>
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
@@ -113,7 +115,7 @@ public:
  /// constructor: ensure every field is initialized
 
  PrimalProximalHeur( void ) : LagrangianDualSolver() , best_bound( Inf< double >() ) ,
-    best_solutions( std::vector<sol_value>{std::make_pair( nullptr , Inf< double >() )} ) ,
+    best_solutions( ) ,
     R( 0.0 ) , logVerb( 2 ) , maxIter( 10.0 ) { }
 
 /*--------------------------------------------------------------------------*/
@@ -188,29 +190,26 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  bool has_var_solution( void ) override { 
-    return( best_solutions[0].first == nullptr ? false : true ); }
+    return( best_solutions.empty() ? false : true ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ bool new_var_solution( void ) override { 
+    return( has_new_solution ? true : false ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  OFValue get_var_value( void ) override {
-  if( best_solutions[0].first != nullptr ) return( best_solutions[0].second ); }
+  if( best_solutions.empty() ) return( best_solutions.top().second ); }
 
 /*--------------------------------------------------------------------------*/
 
  void get_var_solution( Configuration * solc = nullptr ) override { return( 
-    best_solutions[0].first->write( f_Block )); }
+    best_solutions.top().first->write( f_Block )); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- OFValue get_funct_value( void ) { return(value_FUNCTION); }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- std::vector<std::pair< Solution * , double >> get_feasible_solutions( void ) 
- { 
-  best_solutions.pop_back(); 
-  return( best_solutions ); 
- }
+ OFValue get_funct_value( void ) { return( value_FUNCTION ); }
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE Solver ----------------*/
@@ -298,6 +297,7 @@ public:
  double best_bound;
 
  bool changed_penalties = false;
+ bool has_new_solution = false;
 
  Index NumVar;      ///< (current) number of variables
  Index NumStatVar;      ///< (current) number of static variables
@@ -314,7 +314,7 @@ public:
  std::vector< var_int_int > var_to_idx; ///< from static variable to index
  std::vector< double_var > idx_to_var1;   ///< from index to static variable
  std::vector< double_var > idx_to_var2;   ///< from index to static variable
- std::vector< sol_value > best_solutions;
+ std::priority_queue< sol_value > best_solutions;
  std::vector<p_DQF> Funct_sbi;
  std::vector<ColVariable *> int_vars;
 
