@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------*/
-/*--------------------- File PrimalProximalHeur.cpp ----------------------*/
+/*--------------------- File PrimalProximalHeur.cpp ------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
  * Implementation of the PrimalProximalHeur class, which implements the
@@ -77,7 +77,7 @@ using p_DQF = DQuadFunction *;
 SMSpp_insert_in_factory_cpp_0( PrimalProximalHeur );
 
 /*--------------------------------------------------------------------------*/
-/*-------------------- METHODS OF PrimalProximalHeur ---------------------*/
+/*-------------------- METHODS OF PrimalProximalHeur -----------------------*/
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -85,7 +85,8 @@ SMSpp_insert_in_factory_cpp_0( PrimalProximalHeur );
 void PrimalProximalHeur::initialize(){
 
  // count and check the static ColVariable - - - - - - - - - - - - - - - - - 
- // meanwhile construct the static dictionaries
+ // meanwhile construct the static dictionaries for the linear and quadratic
+ // terms of the (quadratic) objective functions of the sub-blocks
 
  NumStatVar = 0;
 
@@ -329,6 +330,8 @@ if ( iters >= 0 ){
   }
 
 if(f_Block->is_feasible()){
+  // if new solution is feasible, add to best_solutions 
+  // queue and possibly update the best bound 
   has_new_solution = true;
   if( logVerb - get_int_par( intLogVerb ) >= 2 ){
     std::cout << "IS_FEASIBLE_SOL" << std::endl;
@@ -345,6 +348,7 @@ if(f_Block->is_feasible()){
               best_solutions.push(std::pair( f_Block->get_Solution() , value_FUNCTION ));
           }
 
+  // if best solutions queue size greater than intMaxSol, pop last solution (the worst one)
   if(size(best_solutions) > get_int_par( intMaxSol ))
     best_solutions.pop();
        
@@ -356,9 +360,10 @@ if(f_Block->is_feasible()){
  } 
     
   if ( iters >= 0 ){
+    // stop criterion : check if the current and previous solutions are the same 
     is_the_same = true;
     for( int ivar = 0 ; ivar < NumStatVar ; ++ivar ){
-     if (!(sol[ivar] < previous_sol[ivar]+1e-6 && sol[ivar] > previous_sol[ivar]-1e-6)) { //1e-12
+     if (!(sol[ivar] < previous_sol[ivar]+1e-6 && sol[ivar] > previous_sol[ivar]-1e-6)) { 
             is_the_same = false;
             break;
       }
@@ -436,6 +441,9 @@ if(f_Block->is_feasible()){
 void PrimalProximalHeur::add_penalty_terms()
 {
 
+ // adding the penality terms to the (quadratic) objective functions of the 
+ // sub-blocks using the static dictionaries 
+
  Index pos = 0;
  Index index = 0;
  penalty = 0.0;
@@ -478,6 +486,9 @@ index += 1;
 void PrimalProximalHeur::remove_penalty_terms()
 {
 
+ // removing the penality terms to the (quadratic) objective functions of the 
+ // sub-blocks using the static dictionaries 
+
  Index pos = 0;
  Index index = 0;
  double value_FUNCTION1 = 0.0;
@@ -505,6 +516,10 @@ void PrimalProximalHeur::remove_penalty_terms()
         }
     pos++;
   }   
+  
+
+// compute the corresponding the objective function value for the current 
+// solution (use the original objective functions without penalty terms)
 
 Funct_sbi[index]->compute(true);
 value_FUNCTION1 += Funct_sbi[index]->get_value();  
@@ -518,6 +533,10 @@ if( logVerb - get_int_par( intLogVerb ) >= 2 ){
 
 value_FUNCTION = 0.0;
 index = 0;
+
+// compute the corresponding the objective function value for the current 
+// solution (use the original objective functions without penalty terms)
+// double check: value_FUNCTION == value_FUNCTION1
 
 for( const auto & sbi : f_Block->get_nested_Blocks() ) {
   static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->compute(true);
@@ -548,8 +567,12 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
     for( const auto & sbi : f_Block->get_nested_Blocks() ) {
       if( mod->get_Block() == sbi && ! changed_penalties ) {
         if( auto tmod = dynamic_cast< C05FunctionModLinRngd * >( mod.get() ) ) 
+        // modifications in the objective of sub-blocks: possible reloading
+        // of the static dictionaries for objective (linear and quadratic) terms  
           reload = true;
         else
+        // modifications in the constraints of the objective of the sub-block:
+        // possibly some of the (best) solutions become infeasible (check feasibility) 
           check_feasibility = true;
       }
     }
@@ -584,7 +607,7 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
  f_mod_lock.clear( std::memory_order_release );  // release lock
 
  if( v_mod.empty() )  // no Modification coming directly from f_Block
-  return;                 // all done
+  return;             // all done
   
  }  // end( PrimalProximalHeur::process_outstanding_Modification )
 

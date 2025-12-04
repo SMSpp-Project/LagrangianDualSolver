@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------*/
-/*---------------------- File PrimalProximalHeur.h -----------------------*/
+/*---------------------- File PrimalProximalHeur.h -------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
  * Definition of the PrimalProximalHeur class, which implements the
@@ -41,13 +41,14 @@ namespace SMSpp_di_unipi_it
  class FRowConstraint;  // forward definition of FRowConstraint
   
 /*--------------------------------------------------------------------------*/
-/*-------------------- CLASS PrimalProximalHeur --------------------------*/
+/*-------------------- CLASS PrimalProximalHeur ----------------------------*/
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /// A CDASolver solving the Lagrangian Dual of a "generic" Block
 /** The PrimalProximalHeur class implements the CDASolver interface within
- * the SMS++ framework.
+ * the SMS++ framework. The PrimalProximalHeur class is derived from the
+ * LagrangianDualSolver class
  */
 
 class PrimalProximalHeur :  public LagrangianDualSolver
@@ -85,8 +86,8 @@ public:
 
  enum dbl_par_type_LDSlv {
   dblLastLDSlvPar = dblLastParCDAS ,
-  dbl_penaltyFactor ,
-  maxIterPP
+  dbl_penaltyFactor ,   // PrimalProximalHeur penalty factor
+  maxIterPP             // PrimalProximalHeur maximum number of iterations
    ///< first allowed new double parameter for derived classes
   /**< Convenience value for easily allow derived classes to extend the set
    * of double algorithmic parameters. */
@@ -94,7 +95,7 @@ public:
   };  // end( dbl_par_type_LDSlv )
 
 /** @} ---------------------------------------------------------------------*/
-/*------------- CONSTRUCTING AND DESTRUCTING PrimalProximalHeur ----------*/
+/*------------- CONSTRUCTING AND DESTRUCTING PrimalProximalHeur ------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Constructing and destructing PrimalProximalHeur
  *  @{ */
@@ -102,8 +103,7 @@ public:
  /// constructor: ensure every field is initialized
 
  PrimalProximalHeur( void ) : LagrangianDualSolver() , best_bound( Inf< double >() ) ,
-    best_solutions( ) ,
-    R( 0.0 ) , logVerb( 2 ) , maxIter( 10.0 ) { }
+    best_solutions( ) , R( 0.0 ) , logVerb( 2 ) , maxIter( 10.0 ) { }
 
 /*--------------------------------------------------------------------------*/
  /// destructor: cleanly detaches the PrimalProximalHeur from the Block
@@ -268,17 +268,17 @@ public:
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
- int logVerb;
- double maxIter;
+ int logVerb; // verbosity of PrimalProximalHeur is verbosity of InnerSolver + 2 
+ double maxIter; // maximum number of iterations for PrimalProximalHeur
 
- double penalty = 0.0;
  double R;
- double value_FUNCTION;
- double value_FUNCTION1;
- double best_bound;
+ double penalty = 0.0;    // penalty factor
+ double value_FUNCTION;   // objective function value for the current solution
+ double value_FUNCTION1;  // objective function value for the current solution
+ double best_bound;       // best bound for the feasibility solutions  
 
- bool changed_penalties = false;
- bool has_new_solution = false;
+ bool changed_penalties = false;  // true if penalty terms changed
+ bool has_new_solution = false;   // true if new (feasible) solution found
 
  Index NumStatVar;      ///< (current) number of static variables
  Index pos_id;
@@ -291,10 +291,11 @@ public:
  std::vector< double_var > idx_to_var2;   ///< from index to static variable
  std::vector<p_DQF> Funct_sbi;            ///< vector of objective functions for sub-block sbi
 
- std::vector<std::vector< double_var >> idx_to_var_sbi1;   ///< from index to static variable (linear term)
- std::vector<std::vector< double_var >> idx_to_var_sbi2;   ///< from index to static variable (quadratic)
+ std::vector<std::vector< double_var >> idx_to_var_sbi1; ///< from index to static variable (linear terms)
+ std::vector<std::vector< double_var >> idx_to_var_sbi2; ///< from index to static variable (quadratic terms)
 
  std::priority_queue< sol_value > best_solutions; ///< best feasible solutions 
+ // we maintain a sorted vector with the best intMaxSol feasible solutions
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
@@ -341,5 +342,5 @@ public:
 #endif  /* PrimalProximalHeur.h included */
 
 /*--------------------------------------------------------------------------*/
-/*-------------------- End File PrimalProximalHeur.h ---------------------*/
+/*-------------------- End File PrimalProximalHeur.h -----------------------*/
 /*--------------------------------------------------------------------------*/
