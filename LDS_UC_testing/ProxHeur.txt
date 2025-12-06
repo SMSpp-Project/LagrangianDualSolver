@@ -114,7 +114,7 @@ dbl_penaltyFactor 5e+2
 # now all the string parameters
 # first those of LagrangianDualSolver proper
 str_LDSlv_ISName	ParallelBundleSolver  # the inner Solver used by LagrangianDualSolver
-str_LagBF_BSCfg		MILPPar3.txt   # the BlockSolverConfig for inner Block
+str_LagBF_BSCfg		LPBSCfg.txt   # the BlockSolverConfig for inner Block
 
 # then those of BundleSolver as its inner Solver
 # [none]
