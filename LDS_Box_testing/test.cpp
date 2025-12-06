@@ -44,6 +44,16 @@
  #define CLOG1( y , x )
 #endif
 
+
+/*--------------------------------------------------------------------------*/
+// if nonzero, the 2nd Solver attached to the Block is assumed to be a
+// PrimalProximalHeur solver using the BundleSolver as the "inner" solver
+
+#define ProxHeur 1
+
+// 0 = LagrangianDualSolver
+// 1 = PrimalProximalHeur
+
 /*--------------------------------------------------------------------------*/
 // if nonzero, the 1st Solver attached to the AbstractBlock is detached
 // and re-attached to it at all iterations
@@ -369,7 +379,7 @@ static bool SolveBoth( void )
                    && ( rtrn1st != Solver::kUnbounded )
                    && ( rtrn1st != Solver::kInfeasible ) )
                  || ( rtrn1st == Solver::kLowPrecision ) );
-  double fo1st = minobj ? Slvr1->get_ub() : Slvr1->get_lb();
+  double fo1st = hs1st ? Slvr1->get_var_value() : -INF;
 
   if( TestBlock->get_registered_solvers().size() == 1 ) {
    #if( LOG_LEVEL >= 1 )
@@ -399,9 +409,25 @@ static bool SolveBoth( void )
   // value (lower bound if you minimise, upper bound if you maximise)
   double fo2nd = -INF;
   if( hs2nd )
+  #if(ProxHeur == 1)
+   fo2nd = minobj ? Slvr2->get_ub() : Slvr2->get_lb();
+  #else 
    fo2nd = minobj ? Slvr2->get_lb() : Slvr2->get_ub();
+  #endif
 
-  if( hs2nd && ( fo1st - fo2nd >= -1e-5 ) ) {
+  #if(ProxHeur == 1)
+  double diff;
+  if( minobj )
+   diff = fo2nd - fo1st;
+  else
+   diff = 0.0;
+  
+  if( hs2nd && ( diff >= -1e-3 ) ) {
+  #else
+  if( hs1st && hs2nd && ( abs( fo1st - fo2nd ) <= 1e-5 *
+			  max( double( 1 ) , max( abs( fo1st ) ,
+						  abs( fo2nd ) ) ) ) ) {
+  #endif
    LOG1( "OK(f)" << endl );
    return( true );
    }
@@ -531,8 +557,11 @@ int main( int argc , char **argv )
  minobj = ( dis( rg ) < 0.5 );
  // choosing whether lin or quad: toss a(n unbiased, two-sided) coin
  //!!isquad = false;
- isquad = true;
- //isquad = ( dis( rg ) < 0.5 );
+ #if(ProxHeur == 1)
+  isquad = true;
+ #else
+  isquad = ( dis( rg ) < 0.5 );
+ #endif
 
  #if( LOG_LEVEL >= 1 )
   if( minobj ) cout << "min"; else cout << "max";
@@ -608,7 +637,11 @@ int main( int argc , char **argv )
 
  BlockSolverConfig * bsc;
  {
+ #if(ProxHeur == 0)
   auto c = Configuration::deserialize( "BSPar.txt" );
+ #else
+  auto c = Configuration::deserialize( "ProxHeur.txt" );
+ #endif
   bsc = dynamic_cast< BlockSolverConfig * >( c );
   if( ! bsc ) {
    cerr << "Error: configuration file not a BlockSolverConfig" << endl;

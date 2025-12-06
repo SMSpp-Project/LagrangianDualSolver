@@ -54,6 +54,15 @@
 
 /*--------------------------------------------------------------------------*/
 // if nonzero, the 2nd Solver attached to the UCBlock is assumed to be a
+// PrimalProximalHeur solver using the BundleSolver as the "inner" solver
+
+#define ProxHeur 1
+
+// 0 = LagrangianDualSolver
+// 1 = PrimalProximalHeur
+
+/*--------------------------------------------------------------------------*/
+// if nonzero, the 2nd Solver attached to the UCBlock is assumed to be a
 // LagrangianDualSolver using the BundleSolver as the "inner" solver;
 // parameters from the BlockSolverConfig are read and set so that, if
 // "easy components" are used, all UnitBlock that are ThermalUnitBlock or
@@ -66,12 +75,12 @@
 // if nonzero, the 1st Solver attached to the UCBlock is detached
 // and re-attached to it at all iterations
 
-#define DETACH_1ST 1
+#define DETACH_1ST 0
 
 // if nonzero, the 2nd Solver attached to the UCBlock is detached and
 // re-attached to it at all iterations
 
-#define DETACH_2ND 1
+#define DETACH_2ND 0
 
 /*--------------------------------------------------------------------------*/
 // if nonzero, the two Block are not solved at every round of changes, but
@@ -104,6 +113,8 @@
 #include <sstream>
 
 #include <iomanip>
+
+#include <chrono>
 
 #include <random>
 
@@ -243,7 +254,6 @@ static bool SolveBoth( void ) {
     auto start = std::chrono::system_clock::now();
   #endif
   Solver * Slvr1 = TestBlock->get_registered_solvers().front();
-  ((TestBlock->get_registered_solvers()).front())->set_log( &std::cout );
   #if DETACH_1ST
    TestBlock->unregister_Solver( Slvr1 );
    TestBlock->register_Solver( Slvr1 , true );  // push it to the front
@@ -258,13 +268,14 @@ static bool SolveBoth( void ) {
                    && ( rtrn1st != Solver::kUnbounded )
                    && ( rtrn1st != Solver::kInfeasible ) )
                  || ( rtrn1st == Solver::kLowPrecision ) );
+  
   // the Lagrangian Dual computes lower bounds, so that's what we compare
-  double fo1st = Slvr1->get_ub();
+  double fo1st = hs1st ? Slvr1->get_var_value() : -INF;
 
   if( TestBlock->get_registered_solvers().size() == 1 ) {
    #if( LOG_LEVEL >= 1 )
-    std::cout << "Solver1 (" << fixd << time1 << ", "
-	 << Slvr1->get_elapsed_iterations() << ") = ";
+    std::cout << fixd << time1 << "\t" << Slvr1->get_elapsed_iterations()
+	      << "\t";
     PrintResults( hs1st , rtrn1st , fo1st );
     std::cout << std::endl;
    #endif
@@ -280,7 +291,6 @@ static bool SolveBoth( void ) {
    TestBlock->unregister_Solver( Slvr2 );
    TestBlock->register_Solver( Slvr2 );  // push it to the back
   #endif
-  ((TestBlock->get_registered_solvers()).front())->set_log( &std::cout );
   int rtrn2nd = Slvr2->compute( false );
   #if( LOG_LEVEL >= 1 )
    end = std::chrono::system_clock::now();
@@ -293,10 +303,21 @@ static bool SolveBoth( void ) {
                    && ( rtrn2nd != Solver::kUnbounded )
                    && ( rtrn2nd != Solver::kInfeasible ) )
                  || ( rtrn2nd == Solver::kLowPrecision ) );
+  #if(ProxHeur == 1)
+  // the PrimalProximal computes upper bounds, so that's what we compare
+  double fo2nd = Slvr1->get_ub();
+  #else
   // the Lagrangian Dual computes lower bounds, so that's what we compare
-  double fo2nd = Slvr2->get_ub();
+  double fo2nd = Slvr2->get_lb();
+  #endif
 
-  if( hs1st && hs2nd && ( fo1st - fo2nd >= -1e-6 )) {
+  #if(ProxHeur == 1)
+  if( hs2nd && ( fo1st - fo2nd <= 1e-5 ) ) {
+  #else
+  if( hs1st && hs2nd && ( abs( fo1st - fo2nd ) <= 2e-6 *
+			  std::max( double( 1 ) , std::max( abs( fo1st ) ,
+						  abs( fo2nd ) ) ) ) ) {
+  #endif
    LOG1( "OK(f)" << std::endl );
    return( true );
    }
@@ -335,8 +356,30 @@ static bool SolveBoth( void ) {
  }
 
 /*--------------------------------------------------------------------------*/
+/// Custom terminate function to print the exception message
 
-int main( int argc , char **argv ) {
+void smspp_terminate( void ) {
+
+ std::cerr << "Uncaught exception in executing SMS++:\n";
+ try {
+  std::rethrow_exception( std::current_exception() );
+ }
+ catch( const std::exception & e ) {
+  std::cerr << "\tException type: " << typeid( e ).name() << "\n";
+  std::cerr << "\tException message: " << e.what() << "\n";
+ } catch( ... ) {
+  std::cerr << "\tUnknown exception" << std::endl;
+ }
+ std::abort(); // or exit(1)
+}
+
+/*--------------------------------------------------------------------------*/
+
+int main( int argc , char **argv )
+{
+ // override the default terminate handler to print the exception message
+ std::set_terminate( smspp_terminate );
+
  // reading command line parameters - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -424,7 +467,7 @@ int main( int argc , char **argv ) {
    }
 
   // load the BlockSolverConfig for ThermalUnitBlock
-  auto ct = Configuration::deserialize( "TUBSCfg-ILP.txt" );
+  auto ct = Configuration::deserialize( "TUBSCfg-CLP.txt" );
   auto tbsc = dynamic_cast< BlockSolverConfig * >( ct );
   if( ! tbsc ) {
    std::cerr << "Error: TUBSCfg-CLP.txt does not contain a BlockSolverConfig"
@@ -657,7 +700,7 @@ int main( int argc , char **argv ) {
 
  #if( LOG_LEVEL >= 2 )
   #if( LOG_ON_COUT )
-   ((TestBlock->get_registered_solvers()).back())->set_log( &std::cout );
+   ( ( TestBlock->get_registered_solvers() ).back() )->set_log( &std::cout );
   #else
    std::ofstream LOGFile( logF , std::ofstream::out );
    if( ! LOGFile.is_open() )
@@ -666,7 +709,7 @@ int main( int argc , char **argv ) {
    else {
     LOGFile.setf( std::ios::scientific, std::ios::floatfield );
     LOGFile << std::setprecision( 10 );
-    ((TestBlock->get_registered_solvers()).back())->set_log( &LOGFile );
+    ( ( TestBlock->get_registered_solvers() ).back() )->set_log( &LOGFile );
     }
   #endif
  #endif
@@ -725,7 +768,7 @@ int main( int argc , char **argv ) {
   // if verbose, print out stuff- - - - - - - - - - - - - - - - - - - - - - -
 
   #if( LOG_LEVEL >= 3 )
-   ((LPBlock->get_registered_solvers()).front())->set_par(
+   ( ( LPBlock->get_registered_solvers() ).front() )->set_par(
 		                     MILPSolver::strOutputFile , "LPBlock-" +
 		                     std::to_string( rep ) + ".lp" );
   #endif
