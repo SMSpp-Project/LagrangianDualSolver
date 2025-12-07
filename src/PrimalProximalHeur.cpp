@@ -199,11 +199,12 @@ void PrimalProximalHeur::initialize( void )
 void PrimalProximalHeur::set_par( idx_type par , int value )
 {
  switch( par ) {
+  case( intMaxIter ): maxIter = value; break;
+  case( intMaxSol ):  f_MaxSol = value; break;
   case( intLogVerb ):
    logVerb = value & 3;
    LagrangianDualSolver::set_par( par , std::max( 0 , value >> 2 ) );
    break;
-  case( intMaxIter ): maxIter = value; break;
   case( intMaxIterLD ): LagrangianDualSolver::set_par( intMaxIter , value );
                         break;
   default: LagrangianDualSolver::set_par( par , value );
@@ -325,28 +326,60 @@ int PrimalProximalHeur::compute( bool changedvars )
    }
 
   if( f_Block->is_feasible() ) {
-   // if new solution is feasible, add to best_solutions 
+   // if new solution is feasible, add to v_best_sol 
    // queue and possibly update the best bound 
    if( f_log && ( logVerb >= 2 ) )
     *f_log << "IS_FEASIBLE_SOL" << std::endl;
 
-   if( f_max ) {
-    if( value_FUNCTION > best_bound )
-     best_bound = value_FUNCTION;
-    best_solutions.push( std::pair( f_Block->get_Solution() ,
-				    value_FUNCTION ) );
-    }
-   else {
-    if( value_FUNCTION < best_bound )
-     best_bound = value_FUNCTION;
-    best_solutions.push( std::pair( f_Block->get_Solution() ,
-				    value_FUNCTION ) );
-    }
+   // better than the best
+   bool better = f_max ? ( value_FUNCTION > best_bound ) :
+                         ( value_FUNCTION < best_bound );
+   if( better )
+    best_bound = value_FUNCTION;
 
-   // if best solutions queue size greater than intMaxSol,
-   // pop last solution (the worst one)
-   if( size(best_solutions) > get_int_par( intMaxSol ) )
-    best_solutions.pop();
+   // worse than the worst
+   bool worse = f_max ? ( value_FUNCTION < worst_bound ) :
+                        ( value_FUNCTION > worst_bound );
+
+   if( v_best_sol.size() < f_MaxSol ) {
+    // there is free space, just throw the new solution in
+    v_best_sol.push_back( std::pair( f_Block->get_Solution() ,
+					 value_FUNCTION ) );
+    std:: push_heap( v_best_sol.begin() , v_best_sol.end() );
+    if( worse )
+     worst_bound = value_FUNCTION;
+    }
+   else
+    if( ! worse ) {
+     // there is no space, so throw it in only if it's better than the worst
+     // find the position of the element with the worst value, and find the
+     // second-worst value to update worst_bound;
+     double second_worst = f_max ? Inf< double >() : - Inf< double >();
+     std::vector< sol_value >::iterator bad;
+     for( auto it = v_best_sol.begin() ; it != v_best_sol.end() ;
+	  ++it )
+      if( it->second == worst_bound )
+       bad = it;
+      else {
+       bool s_worse = f_max ? ( it->second < second_worst ) :
+                              ( it->second > second_worst );
+       if( s_worse )
+	second_worst = it->second;
+       }
+     // replace the worst element with the new one
+     *bad = std::pair( f_Block->get_Solution() , value_FUNCTION );
+     // re-make the heap, since we may have just invalidated it
+     std::make_heap( v_best_sol.begin() , v_best_sol.end() ,
+		     [ this ]( const sol_value & a , const sol_value & b ) {
+		      return( f_max ? ( a.second < b.second ) :
+			              ( a.second > b.second ) );
+		      } );
+     // the worst solution is now either the second worst of the new one
+     if( f_max )
+      worst_bound = std::min( second_worst , value_FUNCTION );
+     else
+      worst_bound = std::max( second_worst , value_FUNCTION );
+     }
    }
   else
    if( f_log && ( logVerb >= 2 ) )
@@ -539,44 +572,52 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
  for( auto mod : v_mod ){
   if( mod->get_Block() == f_Block ) {
     //LagrangianDualSolver::process_outstanding_Modification();
-  } else { 
-    for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-      if( mod->get_Block() == sbi && ! changed_penalties ) {
-        if( auto tmod = dynamic_cast< C05FunctionModLinRngd * >( mod.get() ) ) 
-        // modifications in the objective of sub-blocks: possible reloading
-        // of the static dictionaries for objective (linear and quadratic) terms  
-          reload = true;
-        else
-        // modifications in the constraints of the objective of the sub-block:
-        // possibly some of the (best) solutions become infeasible (check feasibility) 
-          check_feasibility = true;
+   }
+  else { 
+   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+    if( mod->get_Block() == sbi && ! changed_penalties ) {
+     if( auto tmod = dynamic_cast< C05FunctionModLinRngd * >( mod.get() ) ) 
+      // modifications in the objective of sub-blocks: possible reloading
+      // of the static dictionaries for objective (linear and quadratic) terms
+      reload = true;
+     else
+      // modifications in the constraints of the objective of the sub-block:
+      // possibly some of the (best) solutions become infeasible
+      // (check feasibility) 
+      check_feasibility = true;
       }
     }
+   }
   }
- }
 
  if( f_log && ( logVerb >= 2 ) )
   *f_log << "check_feasibility = " << check_feasibility << std::endl;
 
- if(reload){
+ if( reload ) {
   if( f_log && ( logVerb >= 2 ) )
     *f_log << "reload..." << std::endl;
   initialize();
   }
 
- std::priority_queue< sol_value > best_solutions_new;
+ if( check_feasibility ) {
+  // check feasibility of the saved solutions, remove those that have
+  // become unfeasible
+  std::vector< sol_value > v_best_sol_new;
+  for( auto & sol : v_best_sol ) {
+   sol.first->write( f_Block );
+   if( f_Block->is_feasible() )
+    v_best_sol_new.push_back( sol );
+   else
+    delete sol.first;
+   }
 
- if(check_feasibility)
-  while(!best_solutions.empty()){
-    auto sol = best_solutions.top();
-    sol.first->write( f_Block );
-    if( f_Block->is_feasible() ){
-      best_solutions_new.push( best_solutions.top()) ;
-      best_solutions.pop();
-    }
+  v_best_sol = v_best_sol_new;
+  std::make_heap( v_best_sol.begin() , v_best_sol.end() ,
+		  [ this ]( const sol_value & a , const sol_value & b ) {
+		   return( f_max ? ( a.second < b.second ) :
+			           ( a.second > b.second ) );
+		   } );
   }
-
- best_solutions = best_solutions_new;
 
  v_mod.clear();
 
