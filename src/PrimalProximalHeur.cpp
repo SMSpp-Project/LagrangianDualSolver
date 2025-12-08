@@ -82,6 +82,12 @@ SMSpp_insert_in_factory_cpp_0( PrimalProximalHeur );
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
+void PrimalProximalHeur::set_Block( Block * block )
+{
+  LagrangianDualSolver::set_Block( block );
+  initialize();
+}
+
 void PrimalProximalHeur::initialize( void )
 {
  // count and check the static ColVariable - - - - - - - - - - - - - - - - - 
@@ -227,7 +233,6 @@ void PrimalProximalHeur::set_par( idx_type par , double value )
 
 int PrimalProximalHeur::compute( bool changedvars )
 {
- initialize();
  
  Index iters = 0;
  bool is_the_same = false;
@@ -282,7 +287,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( f_log && ( logVerb >= 2 ) )
    *f_log << "COMPUTE SOLUTION" << std::endl;
 
-  auto res = InnerSolver->compute( changedvars );
+  res = InnerSolver->compute( changedvars );
   if( f_log && ( logVerb >= 2 ) )
    *f_log << "SOLUTION COMPUTED" << std::endl;
 
@@ -421,7 +426,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    }
   return( res );
   }
- else {
+  else {
   if( res == kInfeasible ){
    res = kUnbounded;
    if( f_log && ( logVerb >= 2 ) ){

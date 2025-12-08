@@ -169,6 +169,8 @@ public:
 
  void initialize( void );
 
+ void set_Block( Block * block ) override;
+
 /*--------------------------------------------------------------------------*/
  /// set the int parameters of PrimalProximalHeur
  /** Set the int parameters specific of PrimalProximalHeur, and call the
