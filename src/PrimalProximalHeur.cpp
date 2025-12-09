@@ -227,7 +227,6 @@ void PrimalProximalHeur::set_par( idx_type par , double value )
 
 int PrimalProximalHeur::compute( bool changedvars )
 {
- 
  Index iters = 0;
  bool is_the_same = false;
  int res;
@@ -235,6 +234,8 @@ int PrimalProximalHeur::compute( bool changedvars )
  double integer_viol_sum;
  double funct_old = 0.0;
  value_FUNCTION = Inf< double >();
+
+ lock();  // lock the mutex
 
  if( f_log && ( logVerb >= 2 ) )
   *f_log << "\nNumStatVar: " << NumStatVar << "\n";
@@ -249,8 +250,6 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << "\niteration = " << iters << "\n";
 
   changed_penalties = false;
-
-  lock();  // lock the mutex
 
   bool owned = f_Block->is_owned_by( f_id );
   if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
@@ -407,8 +406,6 @@ int PrimalProximalHeur::compute( bool changedvars )
    lbf->cleanup_inner_objective();
   }
 
- unlock();  // unlock the mutex
-
  // because the inner Solver is solving the dual of the original Block,
  // the unbounded an unfeasible return states have to be exchanged
  if( res == kUnbounded ) {
@@ -442,6 +439,8 @@ int PrimalProximalHeur::compute( bool changedvars )
    auto bound = f_max ? get_lb() : get_ub();
    *f_log << "Best Feasible solution: " << bound << std::endl;
    }
+
+ unlock();  // unlock the mutex
 
  return( res );
 
