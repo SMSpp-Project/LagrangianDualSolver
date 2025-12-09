@@ -80,20 +80,7 @@ public:
 /** @name Public Types
  *  @{ */
 
- // "import" basic types from Block
- /*!!
- using Index = Block::Index;
- using c_Index = Block::c_Index;
-
- using Range = Block::Range;
- using c_Range = Block::c_Range;
-
- using Subset = Block::Subset;
- using c_Subset = Block::c_Subset;
- !!*/
-
  using p_DQF = DQuadFunction *;
-
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the int algorithmic parameters
@@ -139,8 +126,6 @@ public:
   logVerb = get_dflt_int_par( intLogVerb );
   maxIter = get_dflt_int_par( intMaxIter );
   R = get_dflt_dbl_par( dbl_penaltyFactor );
-  best_bound = f_max ? - Inf< double >() : Inf< double >();
-  worst_bound = - best_bound;
   }
 
 /*--------------------------------------------------------------------------*/
@@ -149,8 +134,7 @@ public:
  virtual ~PrimalProximalHeur() {
   // not necessary, that of LagrangianDualSolver does it
   // set_Block( nullptr );
-  for( auto & el : v_best_sol )
-   delete el.first;
+  guts_of_destructor();
   }
 
 /** @} ---------------------------------------------------------------------*/
@@ -501,11 +485,15 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- void add_penalty_terms();
+ void add_penalty_terms( void );
 
 /*--------------------------------------------------------------------------*/
 
- void remove_penalty_terms();
+ void remove_penalty_terms( void );
+
+/*--------------------------------------------------------------------------*/
+
+ void guts_of_destructor( void );
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------ PRIVATE FIELDS  ---------------------------*/

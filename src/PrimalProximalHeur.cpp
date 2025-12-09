@@ -21,30 +21,13 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#include "BlockSolverConfig.h"
-
 #include "PrimalProximalHeur.h"
 
 #include "FRealObjective.h"
 
-#include <queue>
-
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-
-#ifndef NDEBUG
- #define CHECK_DS 0
- /* Bitwise-coded macro that activates costly checks that should never be done
-  * in production, but can be useful during debugging. Currently supported
-  * checks are:
-  *
-  * - bit 0 (+ 1): is_correct() is called on the Lagrangian Dual Block to
-  *   verify that all Variable and Constraint are properly linked. */
-#else
- #define CHECK_DS 0
- // never change this
-#endif
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
@@ -84,9 +67,17 @@ SMSpp_insert_in_factory_cpp_0( PrimalProximalHeur );
 
 void PrimalProximalHeur::set_Block( Block * block )
 {
-  LagrangianDualSolver::set_Block( block );
+ if( f_Block )           // was attached to a Block
+  guts_of_destructor();  // cleanup
+ LagrangianDualSolver::set_Block( block );  // call method of base class
+ if( f_Block ) {
   initialize();
-}
+  best_bound = f_max ? - Inf< double >() : Inf< double >();
+  worst_bound = - best_bound;
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
 
 void PrimalProximalHeur::initialize( void )
 {
@@ -198,7 +189,10 @@ void PrimalProximalHeur::initialize( void )
 		      "PrimalProximalHeur::setBlock: no static variable" ) );
 
  std::sort( var_to_idx.begin() , var_to_idx.end() );
- }
+
+
+
+ }  // end( PrimalProximalHeur::initialize )
 
 /*--------------------------------------------------------------------------*/
 
@@ -332,7 +326,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   if( f_Block->is_feasible() ) {
    // if new solution is feasible, add to v_best_sol 
-   // queue and possibly update the best bound 
+   // and possibly update the best bound 
    if( f_log && ( logVerb >= 2 ) )
     *f_log << "IS_FEASIBLE_SOL" << std::endl;
 
@@ -465,6 +459,75 @@ int PrimalProximalHeur::compute( bool changedvars )
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+void PrimalProximalHeur::process_outstanding_Modification( void )
+{
+ bool reload = false;
+ bool check_feasibility = false;
+
+ while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
+  ;  // try to acquire lock, spin on failure
+
+ for( auto mod : v_mod ){
+  if( mod->get_Block() == f_Block ) {
+    //LagrangianDualSolver::process_outstanding_Modification();
+   }
+  else { 
+   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+    if( mod->get_Block() == sbi && ! changed_penalties ) {
+     if( auto tmod = dynamic_cast< C05FunctionModLinRngd * >( mod.get() ) ) 
+      // modifications in the objective of sub-blocks: possible reloading
+      // of the static dictionaries for objective (linear and quadratic) terms
+      reload = true;
+     else
+      // modifications in the constraints of the objective of the sub-block:
+      // possibly some of the (best) solutions become infeasible
+      // (check feasibility) 
+      check_feasibility = true;
+      }
+    }
+   }
+  }
+
+ if( f_log && ( logVerb >= 2 ) )
+  *f_log << "check_feasibility = " << check_feasibility << std::endl;
+
+ if( reload ) {
+  if( f_log && ( logVerb >= 2 ) )
+    *f_log << "reload..." << std::endl;
+  initialize();
+  }
+
+ if( check_feasibility ) {
+  // check feasibility of the saved solutions, remove those that have
+  // become unfeasible
+  std::vector< sol_value > v_best_sol_new;
+  for( auto & sol : v_best_sol ) {
+   sol.first->write( f_Block );
+   if( f_Block->is_feasible() )
+    v_best_sol_new.push_back( sol );
+   else
+    delete sol.first;
+   }
+
+  v_best_sol = v_best_sol_new;
+  std::make_heap( v_best_sol.begin() , v_best_sol.end() ,
+		  [ this ]( const sol_value & a , const sol_value & b ) {
+		   return( f_max ? ( a.second < b.second ) :
+			           ( a.second > b.second ) );
+		   } );
+  }
+
+ v_mod.clear();
+
+ f_mod_lock.clear( std::memory_order_release );  // release lock
+
+ if( v_mod.empty() )  // no Modification coming directly from f_Block
+  return;             // all done
+  
+ }  // end( PrimalProximalHeur::process_outstanding_Modification )
+
+/*--------------------------------------------------------------------------*/
+
 void PrimalProximalHeur::add_penalty_terms( void )
 {
  // adding the penality terms to the (quadratic) objective functions of the 
@@ -566,72 +629,21 @@ void PrimalProximalHeur::remove_penalty_terms( void )
 
 /*--------------------------------------------------------------------------*/
 
-void PrimalProximalHeur::process_outstanding_Modification( void )
+void PrimalProximalHeur::guts_of_destructor( void )
 {
- bool reload = false;
- bool check_feasibility = false;
+ for( auto & el : v_best_sol )
+  delete el.first;
+ v_best_sol.clear();
+ idx_to_var_sbi2.clear();
+ idx_to_var_sbi1.clear();
+ Funct_sbi.clear();
+ idx_to_var2.clear();
+ idx_to_var1.clear();
+ var_to_idx.clear();
+ previous_sol.clear();
+ pos_id_sbi.clear();
 
- while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
-  ;  // try to acquire lock, spin on failure
-
- for( auto mod : v_mod ){
-  if( mod->get_Block() == f_Block ) {
-    //LagrangianDualSolver::process_outstanding_Modification();
-   }
-  else { 
-   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-    if( mod->get_Block() == sbi && ! changed_penalties ) {
-     if( auto tmod = dynamic_cast< C05FunctionModLinRngd * >( mod.get() ) ) 
-      // modifications in the objective of sub-blocks: possible reloading
-      // of the static dictionaries for objective (linear and quadratic) terms
-      reload = true;
-     else
-      // modifications in the constraints of the objective of the sub-block:
-      // possibly some of the (best) solutions become infeasible
-      // (check feasibility) 
-      check_feasibility = true;
-      }
-    }
-   }
-  }
-
- if( f_log && ( logVerb >= 2 ) )
-  *f_log << "check_feasibility = " << check_feasibility << std::endl;
-
- if( reload ) {
-  if( f_log && ( logVerb >= 2 ) )
-    *f_log << "reload..." << std::endl;
-  initialize();
-  }
-
- if( check_feasibility ) {
-  // check feasibility of the saved solutions, remove those that have
-  // become unfeasible
-  std::vector< sol_value > v_best_sol_new;
-  for( auto & sol : v_best_sol ) {
-   sol.first->write( f_Block );
-   if( f_Block->is_feasible() )
-    v_best_sol_new.push_back( sol );
-   else
-    delete sol.first;
-   }
-
-  v_best_sol = v_best_sol_new;
-  std::make_heap( v_best_sol.begin() , v_best_sol.end() ,
-		  [ this ]( const sol_value & a , const sol_value & b ) {
-		   return( f_max ? ( a.second < b.second ) :
-			           ( a.second > b.second ) );
-		   } );
-  }
-
- v_mod.clear();
-
- f_mod_lock.clear( std::memory_order_release );  // release lock
-
- if( v_mod.empty() )  // no Modification coming directly from f_Block
-  return;             // all done
-  
- }  // end( PrimalProximalHeur::process_outstanding_Modification )
+ }  // end( PrimalProximalHeur::guts_of_destructor )
 
 /*--------------------------------------------------------------------------*/
 /*------------------- End File PrimalProximalHeur.cpp ----------------------*/
