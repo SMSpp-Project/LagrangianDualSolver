@@ -250,8 +250,6 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   changed_penalties = false;
 
-  lock();  // lock the mutex
-
   bool owned = f_Block->is_owned_by( f_id );
   if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
    throw( std::runtime_error(
@@ -406,8 +404,6 @@ int PrimalProximalHeur::compute( bool changedvars )
   for( auto lbf : v_LBF )
    lbf->cleanup_inner_objective();
   }
-
- unlock();  // unlock the mutex
 
  // because the inner Solver is solving the dual of the original Block,
  // the unbounded an unfeasible return states have to be exchanged
