@@ -81,6 +81,7 @@ public:
  *  @{ */
 
  using p_DQF = DQuadFunction *;
+ using p_LF = LinearFunction *;
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the int algorithmic parameters
@@ -291,7 +292,21 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- OFValue get_funct_value( void ) { return( value_FUNCTION ); }
+ OFValue get_funct_value( void ) { 
+  double value_funct = 0.0;
+
+  if( !InnerSolver->has_var_solution() ){
+    return( f_max ? - Inf< double >() : Inf< double >());
+  } else {
+    int index = 0;
+    for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+      Funct_sbi[ index ]->compute( true );
+      value_funct += Funct_sbi[ index ]->get_value();
+      index++;
+    }
+  }
+  return( value_funct ); 
+ }
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE Solver ----------------*/
@@ -438,6 +453,7 @@ public:
 
  double R;
  double penalty = 0;      // penalty factor
+ double addterm;
 
  double value_FUNCTION;   // objective function value for the current solution
 
@@ -452,17 +468,12 @@ public:
 
  std::vector< int > pos_id_sbi;
  std::vector< double > previous_sol; 
-
- std::vector< var_col_int > var_to_idx;   ///< from static variable to index
- std::vector< double_var > idx_to_var1;   ///< from index to static variable
- std::vector< double_var > idx_to_var2;   ///< from index to static variable
+ 
  std::vector< p_DQF > Funct_sbi;
                         ///< vector of objective functions for sub-Block sbi
 
  std::vector<std::vector< double_var >> idx_to_var_sbi1;
- ///< from index to static variable (linear terms)
- std::vector<std::vector< double_var >> idx_to_var_sbi2;
- ///< from index to static variable (quadratic terms)
+ ///< from index to static variable (only linear terms)
 
  std::vector< sol_value > v_best_sol;  ///< best feasible solutions
  /**< v_best_sol is managed as a binary heap */
