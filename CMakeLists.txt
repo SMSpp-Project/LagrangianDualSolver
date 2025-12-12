@@ -18,7 +18,7 @@
 cmake_minimum_required(VERSION 3.16)
 cmake_policy(VERSION 3.15)
 project(LagrangianDualSolver
-        VERSION 0.1.3
+        VERSION 0.2.0
         DESCRIPTION "SMS++ LagrangianDualSolver module"
         HOMEPAGE_URL https://gitlab.com/smspp/lagrangiandualsolver
         LANGUAGES C CXX)
