@@ -13,7 +13,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed 
 
+## [0.2.0] - 2025-12-12
+
+### Added 
+
+- [huge] PrimalProximalHeur Lagrangian-based math-heuristic
+
+- put_State() and get_State() methods
+
+- Configuration for get\_[var/dual]\_solution() of the InnerSolver can now be set
+
+### Changed 
+
+- [big] managing of intPushCostToOwner parameter of LagBFunction
+
+- adapted to new un\_any\_count thing
+
+### Fixed 
+
+- added missing parameter initialization
+
+- flawed handling of inner Configuration
+
+- missing actual setting of int\_InnerS\_W*Cfg in set\_par()
+
+- right solver called in get\_dual\_solution()
+
+- avoided static vectors prone to static initialization fiasco 
+
+- a bunch of stupid bugs
+
 ## [0.1.3] - 2024-02-28
+
+### Changed 
+
+- adapted to new CMake / makefile organisation
 
 ### Fixed 
 
@@ -48,7 +82,9 @@ Initial release
 
 - Initial release.
 
-[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.2...develop
+[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.2.0...develop
+[0.2.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.3...0.2.0
+[0.1.3]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.2...0.1.3
 [0.1.2]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.1...0.1.2
 [0.1.1]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.0...0.1.1
 [0.1.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/tags/0.1.0

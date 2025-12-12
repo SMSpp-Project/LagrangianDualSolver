@@ -22,8 +22,6 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-//#include "AbstractBlock.h"
-
 #include "BlockSolverConfig.h"
 
 #include "LagrangianDualSolver.h"
@@ -40,7 +38,7 @@
 
 #ifndef NDEBUG
  #define CHECK_DS 0
- /* Bitwise-coded macro that activate costly checks that should never be done
+ /* Bitwise-coded macro that activates costly checks that should never be done
   * in production, but can be useful during debugging. Currently supported
   * checks are:
   *
@@ -139,113 +137,6 @@ static constexpr Index InINF = SMSpp_di_unipi_it::Inf< Index >();
 SMSpp_insert_in_factory_cpp_0( LagrangianDualSolver );
 
 /*--------------------------------------------------------------------------*/
-// define and initialize here the vector of int parameters names
-
-const std::vector< std::string > LagrangianDualSolver::int_pars_str = {
- "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_LDSlv_CloneCfg"
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the vector of double parameters names
-
-// const std::vector< std::string > LagrangianDualSolver::dbl_pars_str = { };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the vector of string parameters names
-
-const std::vector< std::string > LagrangianDualSolver::str_pars_str = {
- "str_LDSlv_ISName" , "str_LagBF_BCfg" , "str_LagBF_BSCfg" ,
- "str_LDBlck_BCfg" , "str_LDBlck_BSCfg"
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the vector of vector-of-int parameters names
-
-const std::vector< std::string > LagrangianDualSolver::vint_pars_str = {
- "vint_LDSl_WBCfg"  , "vint_LDSl_W2BCfg" ,
- "vint_LDSl_WBSCfg" , "vint_LDSl_W2BSCfg"
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the vector of vector-of-string parameters names
-
-// const std::vector< std::string > LagrangianDualSolver::vstr_pars_str = {
-//  "vstr_LDSl_Cfg"
-//  };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for int parameters names
-
-const std::map< std::string , LagrangianDualSolver::idx_type >
- LagrangianDualSolver::int_pars_map = {
- { "int_LDSlv_iBCopy"   , LagrangianDualSolver::int_LDSlv_iBCopy } ,
- { "int_LDSlv_NNMult"   , LagrangianDualSolver::int_LDSlv_NNMult } ,
- { "int_LDSlv_CloneCfg" , LagrangianDualSolver::int_LDSlv_CloneCfg }
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for double parameters names
-
-// const std::map< std::string , LagrangianDualSolver::idx_type >
-// LagrangianDualSolver::dbl_pars_map = { };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for string parameters names
-
-const std::map< std::string , LagrangianDualSolver::idx_type >
- LagrangianDualSolver::str_pars_map = {
- { "str_LDSlv_ISName" , LagrangianDualSolver::str_LDSlv_ISName } ,
- { "str_LagBF_BCfg"   , LagrangianDualSolver::str_LagBF_BCfg } ,
- { "str_LagBF_BSCfg"  , LagrangianDualSolver::str_LagBF_BSCfg } ,
- { "str_LDBlck_BCfg"  , LagrangianDualSolver::str_LDBlck_BCfg } ,
- { "str_LDBlck_BSCfg" , LagrangianDualSolver::str_LDBlck_BSCfg }
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for vector-of-int parameters names
-
-const std::map< std::string , LagrangianDualSolver::idx_type >
- LagrangianDualSolver::vint_pars_map = {
- { "vint_LDSl_WBCfg"   , LagrangianDualSolver::vint_LDSl_WBCfg } ,
- { "vint_LDSl_W2BCfg"  , LagrangianDualSolver::vint_LDSl_W2BCfg } ,
- { "vint_LDSl_WBSCfg"  , LagrangianDualSolver::vint_LDSl_WBSCfg } ,
- { "vint_LDSl_W2BSCfg" , LagrangianDualSolver::vint_LDSl_W2BSCfg }
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the map for vector-of-string parameters names
-
-// const std::map< std::string , LagrangianDualSolver::idx_type >
-//  LagrangianDualSolver::vstr_pars_map = {
-//  { "vstr_LDSl_Cfg"  , LagrangianDualSolver::vstr_LDSl_Cfg }
-//  };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the default int parameters
-
-const std::vector< int > LagrangianDualSolver::dflt_int_par = {
- 0 ,  // int_LDSlv_iBCopy
- 1 ,  // int_LDSlv_NNMult
- 0    // int_LDSlv_CloneCfg
- };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the default double parameters
-
-// const std::vector< double > LagrangianDualSolver::dflt_dbl_par = { };
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-// define and initialize here the default string parameters
-
-const std::vector< std::string > LagrangianDualSolver::dflt_str_par = {
- "FakeCDASolver" ,  // str_LDSlv_ISName
- "" ,               // str_LagBF_BCfg
- "" ,               // str_LagBF_BSCfg
- "" ,               // str_LDBlck_BCfg
- ""                 // str_LDBlck_BSCfg
- };
-
-/*--------------------------------------------------------------------------*/
 /*-------------------- METHODS OF LagrangianDualSolver ---------------------*/
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
@@ -255,7 +146,7 @@ void LagrangianDualSolver::set_Block( Block * block )
 {
  if( f_Block ) {  // changing from a previous Block- - - - - - - - - - - - - -
                   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  cleanup_LagrDual();
+  cleanup_LagrDual( true );
   }
 
  Solver::set_Block( block );  // attach to the new Block
@@ -296,7 +187,6 @@ void LagrangianDualSolver::set_Block( Block * block )
    delete c;
    throw( std::invalid_argument(
 		  "LagrangianDualSolver: LagBF_BCfg not a BlockConfig" ) );
-
    }
   }
 
@@ -377,8 +267,11 @@ void LagrangianDualSolver::set_Block( Block * block )
   sbi->set_objective( osbi );
 
   LagrDual->add_nested_Block( sbi );  // add the sub-Block
-  }
 
+  }  // end( for( all the sub-Block )
+
+ set_PushCostToOwner();  // ensure PushCostToOwner is properly set
+ 
  // sort the sub-Block dictionary by Block address
  std::sort( blck_to_idx.begin() , blck_to_idx.end() );
 
@@ -431,7 +324,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    throw( std::invalid_argument(
 	  "LagrangianDualSolver: Block sense differs form sub-Block one" ) );
   }
- 
+
  // count and check the FRowConstraint in the Block - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -450,39 +343,62 @@ void LagrangianDualSolver::set_Block( Block * block )
  {
   Index pos = 0;
   for( const auto & el : f_Block->get_static_constraints() ) {
-   // Singles
+
+   // Single
    if( un_any_thing_0( FRowConstraint , el ,
-		       {
-			scon_to_idx[ pos ] =
-			 con_int_int( & var , NumVar , 1 );
-			idx_to_scon[ pos++ ] = int_const( NumVar++ , & var );
-		        } ) )
+       {
+        scon_to_idx[ pos ] = con_int_int( & var , NumVar , 1 );
+        idx_to_scon[ pos++ ] = int_const( NumVar++ , & var );
+       } ) )
     continue;
-   // Vectors
+
+   // Vector
    if( un_any_thing_1( FRowConstraint , el ,
-		       {
-			scon_to_idx[ pos ] =
-			 con_int_int( var.data() , NumVar , var.size() );
-			idx_to_scon[ pos++ ] =
-			 int_const( NumVar , var.data() );
-			NumVar += var.size();
-		        } ) )
+       {
+        scon_to_idx[ pos ] = con_int_int( var.data() , NumVar , var.size() );
+        idx_to_scon[ pos++ ] = int_const( NumVar , var.data() );
+        NumVar += var.size();
+       } ) )
     continue;
-   // Multiarrays
+
+   // Vector of vector
+   if( un_any_thing_1( std::vector< FRowConstraint > , el ,
+       {
+        Index local_size = 0;
+        for( auto & subvec : var )
+          local_size += subvec.size();
+        scon_to_idx[ pos ] = con_int_int( var.front().data() , NumVar , local_size );
+        idx_to_scon[ pos++ ] = int_const( NumVar , var.front().data() );
+        NumVar += local_size;
+       } ) )
+    continue;
+
+   // Multiarray
    if( un_any_thing_K( FRowConstraint , el ,
-		       {
-			scon_to_idx[ pos ] =
-			 con_int_int( var.data() , NumVar ,
-				      var.num_elements() );
-			idx_to_scon[ pos++ ] =
-			 int_const( NumVar , var.data() );
-			NumVar += var.num_elements();
-		        } ) )
+       {
+        scon_to_idx[ pos ] = con_int_int( var.data() , NumVar , var.num_elements() );
+        idx_to_scon[ pos++ ] = int_const( NumVar , var.data() );
+        NumVar += var.num_elements();
+       } ) )
     continue;
+
+   // Multiarray of vector
+   if( un_any_thing_K( std::vector< FRowConstraint > , el ,
+       {
+        Index local_size = 0;
+        auto it = var.data();
+        for( Index i = var.num_elements(); i-- ; ++it )
+          local_size += it->size();
+        scon_to_idx[ pos ] = con_int_int( var.data()->data() , NumVar , local_size );
+        idx_to_scon[ pos++ ] = int_const( NumVar , var.data()->data() );
+        NumVar += local_size;
+       } ) )
+    continue;
+
    throw( std::invalid_argument(
-       "LagrangianDualSolver: static constraint not a FRowConstraint" ) );
-   }
+    "LagrangianDualSolver: static constraint not a FRowConstraint" ) );
   }
+ }
 
  static_cons = NumVar;
 
@@ -493,28 +409,12 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  // count and check the dynamic FRowConstraint- - - - - - - - - - - - - - - -
  for( const auto & el : f_Block->get_dynamic_constraints() ) {
-  // Singles lists
-  if( un_any_thing_0( std::list< FRowConstraint > , el ,
-		      { NumVar += var.size(); } ) )
-   continue;
-  // Vectors of lists
-  if( un_any_thing_1( std::list< FRowConstraint > , el ,
-                      {
-		       for( auto & lel: var )
-			NumVar += lel.size();
-		       } ) )
-    continue;
-  // Multiarrays of lists
-  if( un_any_thing_K( std::list< FRowConstraint > , el ,
-		      {
-		       auto it = var.data();
-		       for( auto i = var.num_elements() ; i-- ; ++it )
-			NumVar += it->size();
-		       } ) )
-   continue;
-  throw( std::invalid_argument(
-         "LagrangianDualSolver: dynamic constraint not a FRowConstraint" ) );
-  }
+  auto count = un_any_thing_count_dynamic( FRowConstraint , el );
+  if( count == Inf< std::size_t >() )
+   throw( std::invalid_argument(
+     "LagrangianDualSolver: dynamic constraint not a FRowConstraint" ) );
+  NumVar += count;
+ }
 
  // create the static and dynamic Lagrangian variables- - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -558,7 +458,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || con.is_relaxed() ) {
     // this constraint is eiter "infinitely loose" or relaxed: its rhs is
     // 0 and the Lagrangian term is empty
-    *(objit++) = std::make_pair( & *(Lit++) , 0 );
+    *( objit++ ) = std::make_pair( &*( Lit++ ) , 0 );
     ++LTit;
     return;
     }
@@ -566,10 +466,10 @@ void LagrangianDualSolver::set_Block( Block * block )
    auto coef = constr2val( con , *Lit );
 
    // write the coefficient in the objective
-   *(objit++) = std::make_pair( & *(Lit++) , coef );
+   *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
    // split the linear constraint among the sub-Block
-   split_constraint( con , *(LTit++) );
+   split_constraint( con , *( LTit++ ) );
    };
 
   // finally apply the lambda to all static constraints
@@ -598,8 +498,8 @@ void LagrangianDualSolver::set_Block( Block * block )
    Lit->set_value( con.get_dual() );
 
    // first write the dictionaries
-   *(dc2iit++) = std::make_pair( & con , i++ );
-   *(i2dcit++) = & con;
+   *( dc2iit++ ) = std::make_pair( &con , i++ );
+   *( i2dcit++ ) = &con;
 
    // then check the LHS/RHS
    auto lhs = con.get_lhs();
@@ -608,7 +508,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || con.is_relaxed() ) {
     // this constraint is eiter "infinitely loose" or relaxed: its rhs is
     // 0 and the Lagrangian term is empty
-    *(objit++) = std::make_pair( & *(Lit++) , 0 );
+    *( objit++ ) = std::make_pair( &*( Lit++ ) , 0 );
     ++LTit;
     return;
     }
@@ -616,10 +516,10 @@ void LagrangianDualSolver::set_Block( Block * block )
    auto coef = constr2val( con , *Lit );
 
    // write the coefficient in the objective
-   *(objit++) = std::make_pair( & *(Lit++) , coef );
+   *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
    // split the linear constraint among the sub-Block
-   split_constraint( con , *(LTit++) );
+   split_constraint( con , *( LTit++ ) );
    };
 
   // finally apply the lambda to all dynamic constraints
@@ -654,7 +554,7 @@ void LagrangianDualSolver::set_Block( Block * block )
 
   auto Lit = Ld->begin();
   for( ; i < NumVar ; ++i ) {
-   dp[ i ].first = & (*Lit++);
+   dp[ i ].first = &( *Lit++ );
    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
    }
 
@@ -692,7 +592,7 @@ void LagrangianDualSolver::set_Block( Block * block )
   if( ! f_DBSCfg ) {
    delete c;
    throw( std::invalid_argument(
-	   "LagrangianDualSolver: LagBF_BCfg not a BlockSolverConfig" ) );
+	   "LagrangianDualSolver: LagBF_BSCfg not a BlockSolverConfig" ) );
    }
   }
 
@@ -762,7 +662,7 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  // register the inner Solver to the Lagrangian Dual Block - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // note that the inner Solver could in principle cause some other
+ // note that the inner Solver could in principal cause some other
  // Block[Solver]Config-uration to the inner Block of the LagBFunction via
  // their ComputeConfig; since there are plenty of other ways to obtain the
  // same result, this should not happen at least for BlockConfig if the
@@ -776,7 +676,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  // the UpdateSolver do not mess up with the first Solver registered to the
  // inner Block of the LagBFunction, that is the "crucial" one
  //
- // this used to be a problem when when the original sub-Block was used, as
+ // this used to be a problem when the original sub-Block was used, as
  // otherwise no UpdateSolver is attached to it but the LagBFunction uses a
  // copy and therefore the UpdateSolver is not registered there
  //
@@ -844,6 +744,16 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
   case( int_LDSlv_CloneCfg ):
    CloneCfg = bool( value );
    break;
+  case( int_InnerS_WVarSCfg ):
+   WVarSCfg = value;
+   break;
+  case( int_InnerS_WDualSCfg ):
+   WDualSCfg = value;
+   break;
+  case( intPushCostToOwner ):
+   PushCostToOwner = bool( value );
+   set_PushCostToOwner();
+   break;   
   default:
    InnerSolver->set_par(  int_par_lds( par ) , value );
   }
@@ -911,6 +821,11 @@ void LagrangianDualSolver::set_par( idx_type par ,
   case( vint_LDSl_W2BSCfg ):
    W2BSCfg = value;
    break;
+  case( vintWhichPushCost ):
+   WhichPushCost = value;
+   std::sort( WhichPushCost.begin() , WhichPushCost.end() );
+   set_PushCostToOwner();
+   break;
   default:
    InnerSolver->set_par( vint_par_lds( par ) , std::move( value ) );
   }
@@ -937,7 +852,7 @@ void LagrangianDualSolver::set_par( idx_type par ,
 
 /*--------------------------------------------------------------------------*/
 
-void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
+void LagrangianDualSolver::set_ComputeConfig( const ComputeConfig * scfg )
 {
  if( ! scfg ) {  // factory reset
   delete f_BCfg;
@@ -971,8 +886,7 @@ void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
     throw( std::invalid_argument(
        "LagrangianDualSolver::set_ComputeConfig: invalid extra_Config.fist"
 				 ) );
-   scpp->f_value.first = nullptr; // set it to nullptr since it has been
-                                  // "extracted"
+   f_BSCfg = f_BSCfg->clone();  // keep a copy
    }
 
   if( scpp->f_value.second ) {
@@ -982,25 +896,20 @@ void LagrangianDualSolver::set_ComputeConfig( ComputeConfig * scfg )
     throw( std::invalid_argument(
        "LagrangianDualSolver::set_ComputeConfig: invalid extra_Config.second"
 				 ) );
-   scpp->f_value.second = nullptr; // set it to nullptr since it has been
-                                   // "extracted"
+   f_BCfg = f_BCfg->clone();  // keep a copy
    }
   return;
   }
 
  if( auto BSC = dynamic_cast< p_BSC >( scfg->f_extra_Configuration ) ) {
   clear_LD_BlockSolverConfig();
-  f_BSCfg = BSC;
-  scfg->f_extra_Configuration = nullptr; // set it to nullptr since it has
-                                         // been "extracted"
+  f_BSCfg = BSC->clone();  // keep a copy
   return;
   }
   
  if( auto BC = dynamic_cast< p_BC >( scfg->f_extra_Configuration ) ) {
   clear_LD_BlockConfig();
-  f_BCfg = BC;
-  scfg->f_extra_Configuration = nullptr; // set it to nullptr since it has
-                                         // been "extracted"
+  f_BCfg = BC->clone();  // keep a copy
   return;
   }
 
@@ -1077,9 +986,15 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
 
- // first ensure that the optimal convex multipliers are written as the
- // important_linearization_coefficients() of the LagBFunction
- InnerSolver->get_dual_solution();
+ // pick up the proper Configuration for get_dual_solution(), if any
+ Configuration * dcfg = nullptr;
+ if( ( WDualSCfg >= 0 ) && ( WDualSCfg < int( v_Cfg.size() ) ) )
+  dcfg = v_Cfg[ WDualSCfg ];
+ 
+ // call get_dual_solution() to ensure that the optimal convex multipliers
+ // are written as the important_linearization_coefficients() of the
+ // LagBFunction
+ InnerSolver->get_dual_solution( dcfg );
 
  // define a lambda that does the solution (computation and) retrieval
  // for a specific sub-Block
@@ -1149,6 +1064,13 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
 
+ // pick up the proper Configuration for get_var_solution(), if any
+ Configuration * cfg = nullptr;
+ if( ( WVarSCfg >= 0 ) && ( WVarSCfg < int( v_Cfg.size() ) ) )
+  cfg = v_Cfg[ WVarSCfg ];
+
+ InnerSolver->get_var_solution( cfg );  // call get_var_solution()
+
  // define a Lambda which does the configuration - - - - - - - - - - - - - -
  // Notice that this lambda cannot be static in its current form, since it
  // captures the "this" pointer. If "lcfg" were static, the "this" pointer
@@ -1161,8 +1083,10 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   if( LSBb->get_registered_solvers().empty() )
    return;
 
-  if( auto SBSb = dynamic_cast< CDASolver * >(
-				LSBb->get_registered_solvers().front() ) ) {
+  // ask it to the Solver that was used to compute() the inner Block
+  auto rsp = LSBb->get_registered_solvers().begin();
+  std::advance( rsp , v_LBF[ b ]->get_int_par( LagBFunction::intInnrSlvr ) );
+  if( auto SBSb = dynamic_cast< CDASolver * >( *rsp ) ) {
    SBSb->get_dual_solution( cfg );
    if( iBCopy )  // the sub-Block is a copy
     f_Block->get_nested_Block( b )->map_back_solution( LSBb , nullptr , cfg );
@@ -1256,7 +1180,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   // get the static part
   for( const auto & el : f_Block->get_static_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-     auto val = (Lsit++)->get_value();
+     auto val = ( Lsit++ )->get_value();
      if( to_be_reversed( con ) )
       val = - val;
      con.set_dual( val );
@@ -1264,7 +1188,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   // get the dynamic part
   for( const auto & el : f_Block->get_dynamic_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-     auto val = (Ldit++)->get_value();
+     auto val = ( Ldit++ )->get_value();
      if( to_be_reversed( con ) )
       val = - val;
      con.set_dual( val );
@@ -1274,78 +1198,18 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   // get the static part
   for( const auto & el : f_Block->get_static_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-                               con.set_dual( (Lsit++)->get_value() );
+                               con.set_dual( ( Lsit++ )->get_value() );
                                } , un_any_type< FRowConstraint >() );
   // get the dynamic part
   for( const auto & el : f_Block->get_dynamic_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-                               con.set_dual( (Ldit++)->get_value() );
+                               con.set_dual( ( Ldit++ )->get_value() );
                                } , un_any_type< FRowConstraint >() );
   }
  }  // end( LagrangianDualSolver::get_dual_solution )
 
 /*--------------------------------------------------------------------------*/
-
-int LagrangianDualSolver::get_int_par( idx_type par ) const
-{
- switch( par ) {
-  case( int_LDSlv_iBCopy ):   return( iBCopy );
-  case( int_LDSlv_NNMult ):   return( NNMult );
-  case( int_LDSlv_CloneCfg ): return( CloneCfg );
-  }
-
- return( InnerSolver->get_int_par( int_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-double LagrangianDualSolver::get_dbl_par( idx_type par ) const
-{
- return( InnerSolver->get_dbl_par( dbl_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-const std::string & LagrangianDualSolver::get_str_par( idx_type par ) const
-{
- switch( par ) {
-  case( str_LDSlv_ISName ): return( ISName );
-  case( str_LagBF_BCfg ):   return( LagBF_BCfg );
-  case( str_LagBF_BSCfg ):  return( LagBF_BSCfg );
-  case( str_LDBlck_BCfg ):  return( LDBlck_BCfg );
-  case( str_LDBlck_BSCfg ): return( LDBlck_BSCfg );
-  }
-
- return( InnerSolver->get_str_par( str_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-const std::vector< int > & LagrangianDualSolver::get_vint_par( idx_type par )
- const {
- switch( par ) {
-  case( vint_LDSl_WBCfg ):   return( WBCfg );
-  case( vint_LDSl_W2BCfg ):  return( W2BCfg );
-  case( vint_LDSl_WBSCfg ):  return( WBSCfg );
-  case( vint_LDSl_W2BSCfg ): return( W2BSCfg );
-  }
-
- return( InnerSolver->get_vint_par( vint_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-const std::vector< std::string > & LagrangianDualSolver::get_vstr_par(
-					              idx_type par ) const {
- if( par == vstr_LDSl_Cfg )
-  return( FCfg );
-
- return( InnerSolver->get_vstr_par( vstr_par_lds( par ) ) );
- }
-
-/*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
-/*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 void LagrangianDualSolver::clear_LD_BlockSolverConfig( bool keepcfg )
@@ -1400,134 +1264,105 @@ void LagrangianDualSolver::clear_LD_BlockConfig( bool keepcfg )
 
 /*--------------------------------------------------------------------------*/
 
-void LagrangianDualSolver::clear_inner_BlockSolverConfig( bool keepcfg )
+void LagrangianDualSolver::clear_inner_BlockSolverConfig( void )
 {
+ if( ! LagrDual )
+  return;
+
  if( ( ! f_DBSCfg ) && ( v_Cfg.empty() || WBSCfg.empty() ) )
   return;
 
- if( LagrDual ) {
-  auto DBSC = f_DBSCfg;
-  if( DBSC ) {
-   if( keepcfg )
-    DBSC = f_DBSCfg->clone();
-   DBSC->clear();
+ Index iW2BSCfg = 0;  // index in W2BSCfg
+ for( Index i = 0 ; i < f_nsb ; ++i ) {
+  // the default individual BlockSolverConfig
+  BlockSolverConfig * BSCi = f_DBSCfg;
+
+  if( ! WBSCfg.empty() ) {  // individual BlockSolverConfig are provided
+   Index h;                 // the index in WBSCfg
+
+   if( W2BSCfg.empty() )    // in dense format
+    h = i;
+   else                     // in sparse format
+    if( ( iW2BSCfg < W2BSCfg.size() ) &&
+	( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
+     h = iW2BSCfg++;
+    else
+     h = WBSCfg.size();
+ 
+   if( ( h < WBSCfg.size() ) &&
+       ( WBSCfg[ h ] >= 0 ) && ( WBSCfg[ h ] < int( v_Cfg.size() ) ) )
+    if( auto c = dynamic_cast< BlockSolverConfig * >( v_Cfg[ WBSCfg[ h ] ] ) )
+     BSCi = c;
    }
 
-  Index iW2BSCfg = 0;  // index in W2BSCfg
-  for( Index i = 0 ; i < f_nsb ; ++i ) {
-   BlockSolverConfig * BSCi = nullptr;
+  if( BSCi ) {  // if an individual BlockSolverConfig is specified
+   BSCi = BSCi->clone();                          // clone it
+   BSCi->clear();                                 // clear it
+   BSCi->apply( v_LBF[ i ]->get_inner_block() );  // apply it
+   delete BSCi;                                   // delete it
+   }
 
-   if( ! WBSCfg.empty() ) {  // individual BlockSolverConfig provided
-    Index h;                 // the index in WBSCfg
-
-    if( W2BSCfg.empty() )    // in dense format
-     h = i;
-    else                     // in sparse format
-     if( ( iW2BSCfg < W2BSCfg.size() ) &&
-	 ( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
-      h = iW2BSCfg++;
-     else
-      h = WBSCfg.size();
- 
-    if( ( h < WBSCfg.size() ) &&
-	( WBSCfg[ h ] >= 0 ) && ( WBSCfg[ h ] < int( v_Cfg.size() ) ) )
-     if( auto c = dynamic_cast< BlockSolverConfig * >( v_Cfg[ WBSCfg[ h ] ] ) )
-      BSCi = c;
-    }
-
-   if( BSCi ) {
-    if( keepcfg )
-     BSCi = BSCi->clone();
-    BSCi->clear();
+  if( ! WBSCfg.empty() ) {
+   if( W2BSCfg.empty() ) {
+    if( i >= WBSCfg.size() )
+     break;
     }
    else
-    BSCi = DBSC;
-
-   if( BSCi )
-    BSCi->apply( v_LBF[ i ]->get_inner_block() );
-
-   if( ! WBSCfg.empty() ) {
-    if( W2BSCfg.empty() ) {
-     if( i >= WBSCfg.size() )
-      break;
-     }
-    else
-     if( iW2BSCfg >= W2BSCfg.size() )
-      break;
-    }
+    if( iW2BSCfg >= W2BSCfg.size() )
+     break;
    }
   }
-
- if( ! keepcfg ) {
-  delete f_DBSCfg;
-  f_DBSCfg = nullptr;
-  }
- }
+ }  // end( LagrangianDualSolver::clear_inner_BlockSolverConfig )
 
 /*--------------------------------------------------------------------------*/
 
-void LagrangianDualSolver::clear_inner_BlockConfig( bool keepcfg )
+void LagrangianDualSolver::clear_inner_BlockConfig( void )
 {
+ if( ! LagrDual )
+  return;
+
  if( ( ! f_DBCfg ) && ( v_Cfg.empty() || WBCfg.empty() ) )
   return;
 
- if( LagrDual ) {
-  auto DBC = f_DBCfg;
-  if( DBC ) {
-   if( keepcfg )
-    DBC = f_DBCfg->clone();
-   DBC->clear();
+ Index iW2BCfg = 0;  // index in W2BCfg
+ for( Index i = 0 ; i < f_nsb ; ++i ) {
+  BlockConfig * BCi = f_DBCfg;  // the default individual BlockConfig
+
+  if( ! WBCfg.empty() ) {  // individual BlockConfig are provided
+   Index h;                // the index in WBCfg
+
+   if( W2BCfg.empty() )    // in dense format
+    h = i;
+   else                     // in sparse format
+    if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == int( i ) ) )
+     h = iW2BCfg++;
+    else
+     h = WBCfg.size();
+ 
+   if( ( h < WBCfg.size() ) &&
+       ( WBCfg[ h ] >= 0 ) && ( WBCfg[ h ] < int( v_Cfg.size() ) ) )
+    if( auto c = dynamic_cast< BlockConfig * >( v_Cfg[ WBCfg[ h ] ] ) )
+     BCi = c;
    }
 
-  Index iW2BCfg = 0;  // index in W2BCfg
-  for( Index i = 0 ; i < f_nsb ; ++i ) {
-   BlockConfig * BCi = nullptr;
+  if( BCi ) {  // if an individual BlockSolverConfig is specified
+   BCi = BCi->clone();                           // clone it
+   BCi->clear();                                 // clear it
+   BCi->apply( v_LBF[ i ]->get_inner_block() );  // apply it
+   delete BCi;                                   // delete it
+   }
 
-   if( ! WBCfg.empty() ) {  // individual BlockConfig provided
-    Index h;                // the index in WBCfg
-
-    if( W2BCfg.empty() )    // in dense format
-     h = i;
-    else                     // in sparse format
-     if( ( iW2BCfg < W2BCfg.size() ) && ( W2BCfg[ iW2BCfg ] == int( i ) ) )
-      h = iW2BCfg++;
-     else
-      h = WBCfg.size();
- 
-    if( ( h < WBCfg.size() ) &&
-	( WBCfg[ h ] >= 0 ) && ( WBCfg[ h ] < int( v_Cfg.size() ) ) )
-     if( auto c = dynamic_cast< BlockConfig * >( v_Cfg[ WBCfg[ h ] ] ) )
-      BCi = c;
-    }
-
-   if( BCi ) {
-    if( keepcfg )
-     BCi = BCi->clone();
-    BCi->clear();
+  if( ! WBCfg.empty() ) {
+   if( W2BCfg.empty() ) {
+    if( i >= WBCfg.size() )
+     break;
     }
    else
-    BCi = DBC;
-
-   if( BCi )
-    BCi->apply( v_LBF[ i ]->get_inner_block() );
-
-   if( ! WBCfg.empty() ) {
-    if( W2BCfg.empty() ) {
-     if( i >= WBCfg.size() )
-      break;
-     }
-    else
-     if( iW2BCfg >= W2BCfg.size() )
-      break;
-    }
+    if( iW2BCfg >= W2BCfg.size() )
+     break;
    }
   }
-
- if( ! keepcfg ) {
-  delete f_DBCfg;
-  f_DBCfg = nullptr;
-  }
- }
+ }  // end( LagrangianDualSolver::clear_inner_BlockConfig )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1772,10 +1607,49 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
  }  // end( LagrangianDualSolver::split_constraint )
 
 /*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::set_PushCostToOwner( void )
+{
+ if( ! LagrDual )  // the LagrangianDualBlock has not been defined yet
+  return;          // nothing to do
+
+ auto sbit = ( LagrDual->get_nested_Blocks() ).begin();
+
+ if( WhichPushCost.empty() )
+  for( Index h = 0 ; h < f_nsb ; ++h ) {
+   auto Oi = static_cast< FRealObjective * >( ( *( sbit++ ) )->get_objective() );
+   auto LBFi = static_cast< LagBFunction * >( Oi->get_function() );
+   LBFi->set_par( LagBFunction::intPushCostToOwner ,
+		  PushCostToOwner ? int( 1 ) : int( 0 ) );
+   }
+ else {
+  // note that WhichPushCost has been ordered into set_par()
+  if( ( WhichPushCost.front() < 0 ) ||
+      ( WhichPushCost.back() >= int( f_nsb ) ) )
+   throw( std::invalid_argument(
+			  "Invalid component index in wintWhichPushCost" ) );
+
+  auto WPCit = WhichPushCost.begin();
+  for( Index h = 0 ; h < f_nsb ; ++h , ++sbit ) {
+   auto Oi = static_cast< FRealObjective * >( ( *( sbit++ ) )->get_objective() );
+   auto LBFi = static_cast< LagBFunction * >( Oi->get_function() );
+   if( *WPCit == int( h ) ) {
+    LBFi->set_par( LagBFunction::intPushCostToOwner ,
+		   PushCostToOwner ? int( 1 ) : int( 0 ) );
+    ++WPCit;
+    }
+   else
+   LBFi->set_par( LagBFunction::intPushCostToOwner ,
+		   PushCostToOwner ? int( 0 ) : int( 1 ) );
+   }
+  }
+ }  // end( LagrangianDualSolver::set_PushCostToOwner )
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void LagrangianDualSolver::cleanup_LagrDual( void )
+void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
 {
  if( ! LagrDual )  // nothing to be cleaned up
   return;          // all done
@@ -1791,10 +1665,10 @@ void LagrangianDualSolver::cleanup_LagrDual( void )
   v_US.clear();
   }
 
- clear_LD_BlockSolverConfig( true );
- clear_inner_BlockSolverConfig( true );
- clear_LD_BlockConfig( true );
- clear_inner_BlockConfig( true );
+ clear_LD_BlockSolverConfig( keepcfg );
+ clear_inner_BlockSolverConfig();
+ clear_LD_BlockConfig( keepcfg );
+ clear_inner_BlockConfig();
 
  // if necessary put back the sub_Block
  if( ! iBCopy ) {
@@ -1834,12 +1708,13 @@ void LagrangianDualSolver::guts_of_destructor( void )
  unregister_inner_Solver();
  delete InnerSolver;
  InnerSolver = nullptr;
- clear_LD_BlockSolverConfig();
- clear_inner_BlockSolverConfig();
- clear_LD_BlockConfig();
- clear_inner_BlockConfig();
  cleanup_LagrDual();
-		 
+
+ delete f_DBSCfg;
+ delete f_DBCfg;
+ for( auto Ci : v_Cfg )
+  delete Ci;
+
  }  // end( LagrangianDualSolver:guts_of_destructor )
 
 /*--------------------------------------------------------------------------*/
@@ -1971,13 +1846,13 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
   auto Arit = ++Awit;
   for( Index cnt = 1 ; cnt < AddDltd.size() ; ++Arit )
    if( AddDltd.find( *Awit ) == AddDltd.end() )
-    *(Awit++) = *Arit;
+    *( Awit++ ) = *Arit;
    else
     ++cnt;
 
   // finish copying the last part after the last added-then-deleted constraint
   while( Arit != Addd.end() )
-   *(Awit++) = *(Arit++);
+   *( Awit++ ) = *( Arit++ );
 
   // consistency check
   assert( decltype( Addd )::size_type( std::distance( Addd.begin() , Awit ) )
@@ -2348,7 +2223,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    Subset Dltdn( Dltds.size() );  // set of indices of deleted constraint
    auto Dnit = Dltdn.begin();
    for( auto el : Dltds )
-    *(Dnit++) = index_of_constraint( el );
+    *( Dnit++ ) = index_of_constraint( el );
 
    std::sort( Dltdn.begin() , Dltdn.end() );
 
@@ -2478,7 +2353,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || el->is_relaxed() ) {
     // this constraint is eiter "infinitely loose" or relaxed: its rhs is
     // 0 and the Lagrangian term is empty
-    *(objit++) = std::make_pair( & *(Lit++) , 0 );
+    *( objit++ ) = std::make_pair( &*( Lit++ ) , 0 );
     ++LTit;
     return;
     }
@@ -2486,10 +2361,10 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    auto coef = constr2val( *el , *Lit );
 
    // write the coefficient in the objective
-   *(objit++) = std::make_pair( & *(Lit++) , coef );
+   *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
    // split the linear constraint among the sub-Block
-   split_constraint( *el , *(LTit++) );
+   split_constraint( *el , *( LTit++ ) );
    }
 
   // re-sort the dynamic constraints-->Lagrangian-variables dictionary
@@ -2509,7 +2384,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    Lit = NLDLit;
    v_dual_pair dp( NAddd );  // construct the dual pairs
    for( Index i = 0 ; i < NAddd ; ++i ) {
-    dp[ i ].first = & (*Lit++);
+    dp[ i ].first = &( *Lit++ );
     dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
     }
 

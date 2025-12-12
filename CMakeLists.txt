@@ -11,18 +11,14 @@
 #                                                                             #
 #        $ cmake --build <build-path> --target install                        #
 #                                                                             #
-#    Note: this file tries to respect the principles of Modern CMake,         #
-#          keep it in mind when editing it.                                   #
-#                                                                             #
-#                              Niccolo' Iardella                              #
 #                                Donato Meoli                                 #
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-cmake_minimum_required(VERSION 3.19)
-cmake_policy(VERSION 3.12)
+cmake_minimum_required(VERSION 3.16)
+cmake_policy(VERSION 3.15)
 project(LagrangianDualSolver
-        VERSION 0.1.1
+        VERSION 0.2.0
         DESCRIPTION "SMS++ LagrangianDualSolver module"
         HOMEPAGE_URL https://gitlab.com/smspp/lagrangiandualsolver
         LANGUAGES C CXX)
@@ -71,7 +67,7 @@ target_compile_features(${modName} PUBLIC cxx_std_17)
 # INTERFACE can be used for sources that should not be added to this library
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
-target_sources(${modName} PRIVATE LagrangianDualSolver.cpp)
+target_sources(${modName} PRIVATE src/LagrangianDualSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -85,7 +81,7 @@ target_sources(${modName} PRIVATE LagrangianDualSolver.cpp)
 # installed in the system will look into the INSTALL_INTERFACE path.
 target_include_directories(
         ${modName} PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include/${modNamespace}>)
 
 # When linking other targets to the library with target_link_libraries(),
@@ -101,7 +97,7 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
 if (BUILD_TESTING)
-#    add_subdirectory(test)
+    # Just consuming BUILD_TESTING to avoid warnings
 endif ()
 
 # ----- Install instructions ------------------------------------------------ #
@@ -114,12 +110,13 @@ include(GNUInstallDirs)
 # Install the library
 install(TARGETS ${modName}
         EXPORT ${modName}Targets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
 
 # Install the headers
 install(FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/LagrangianDualSolver.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/LagrangianDualSolver.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
 
 # Install the auto-generated configuration header (see above).
@@ -175,7 +172,7 @@ endif ()
 # Using this with the umbrella project is too messy.
 if (NOT hasParent)
     set(CPACK_PACKAGE_VENDOR "SMS++ Team")
-    set(CPACK_PACKAGE_CONTACT "Niccolo' Iardella")
+    set(CPACK_PACKAGE_CONTACT "Donato Meoli")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_LIST_DIR}/LICENSE")
     set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_LIST_DIR}/README.md")

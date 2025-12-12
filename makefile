@@ -31,11 +31,13 @@
 
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-LgDSLVOBJ = $(LgDSLVSDR)/LagrangianDualSolver.o 
+LgDSLVOBJ = $(LgDSLVSDR)/obj/LagrangianDualSolver.o \
+	$(LgDSLVSDR)/obj/PrimalProximalHeur.o
 
-LgDSLVINC = -I$(LgDSLVSDR)
+LgDSLVINC = -I$(LgDSLVSDR)/include
 
-LgDSLVH   = $(LgDSLVSDR)/LagrangianDualSolver.h 
+LgDSLVH   = $(LgDSLVSDR)/include/LagrangianDualSolver.h \
+	$(LgDSLVSDR)/include/PrimalProximalHeur.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -44,8 +46,15 @@ clean::
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(LgDSLVSDR)/LagrangianDualSolver.o: $(LgDSLVSDR)/LagrangianDualSolver.cpp \
-	$(LgDSLVH) $(SMS++OBJ)
-	$(CC) -c $*.cpp -o $@ $(LgDSLVINC) $(SMS++INC) $(SW)
+$(LgDSLVSDR)/obj/LagrangianDualSolver.o: \
+	$(LgDSLVSDR)/src/LagrangianDualSolver.cpp \
+	$(LgDSLVSDR)/include/LagrangianDualSolver.h $(SMS++OBJ)
+	$(CC) -c $(LgDSLVSDR)/src/LagrangianDualSolver.cpp -o $@ \
+	$(LgDSLVINC) $(SMS++INC) $(SW)
+
+$(LgDSLVSDR)/obj/PrimalProximalHeur.o: \
+	$(LgDSLVSDR)/src/PrimalProximalHeur.cpp $(LgDSLVH) $(SMS++OBJ)
+	$(CC) -c $(LgDSLVSDR)/src/PrimalProximalHeur.cpp -o $@ \
+	$(LgDSLVINC) $(SMS++INC) $(SW)
 
 ########################## End of makefile ###################################

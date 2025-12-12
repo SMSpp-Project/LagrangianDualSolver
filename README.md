@@ -55,11 +55,20 @@ A different issue is that (B) may represent a convex program which is
 problem may not have finite optimum (and not be unbounded), or the dual
 problem may be infeasible even if the primal does have an optimal solution.
 We assume that these cases either do not occur or are dealt with by the
-user of LagrangianDualSolver.
+user of `LagrangianDualSolver`.
+
+Also provided in this repo is the `PrimalProximalHeur` [CDA]Solver, that
+derives from `LagrangianDualSolver` and uses/extends it to implement the
+Lagrangian-based Primal Proximal heuristic proposed in
+
+A. Daniilidis, C. Lemar&eacute;chal "On a primal-proximal heuristic in
+discrete optimization" *Mathematical Programming* 104, 105-128, 2005
+
 
 ## Getting started
 
-These instructions will let you build `LagrangianDualSolver`.
+These instructions will let you build `LagrangianDualSolver` and
+`PrimalProximalHeur`.
 
 
 ### Requirements
@@ -79,7 +88,7 @@ Configure and build the library with:
 mkdir build
 cd build
 cmake ..
-make
+cmake --build .
 ```
 
 The library has the same configuration options of
@@ -88,7 +97,7 @@ The library has the same configuration options of
 Optionally, install the library in the system with:
 
 ```sh
-sudo make install
+cmake --install .
 ```
 
 ### Usage with CMake
@@ -151,6 +160,10 @@ conduct, and the process for submitting merge requests to us.
 - **Enrico Gorgone**  
   Dipartimento di Matematica ed Informatica  
   Università di Cagliari
+
+- **Luca Mencarelli**  
+  Dipartimento di Informatica  
+  Università di Pisa
 
 ### Contributors
 
