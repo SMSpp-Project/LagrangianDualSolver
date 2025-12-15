@@ -96,7 +96,7 @@ void PrimalProximalHeur::initialize( void )
  
  Index index = 0;
  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-   Funct_sbi[index] = static_cast< p_DQF >(static_cast< p_FRO >( sbi->get_objective())->get_function());
+   Funct_sbi[index] = static_cast< Function * >(static_cast< p_FRO >( sbi->get_objective())->get_function());
    pos_id = 0;
    double addval1;
    for( const auto & el : sbi->get_static_variables() ) {
@@ -264,7 +264,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    }
 
   if( f_log && ( logVerb >= 2 ) )
-   *f_log << "COMPUTE SOLUTION" << std::endl;
+   *f_log << "COMPUTED SOLUTION" << std::endl;
 
   LagrangianDualSolver::set_event_handler(
      ThinComputeInterface::eEverykIteration ,

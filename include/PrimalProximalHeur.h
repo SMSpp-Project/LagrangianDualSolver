@@ -469,7 +469,7 @@ public:
  std::vector< int > pos_id_sbi;
  std::vector< double > previous_sol; 
  
- std::vector< p_DQF > Funct_sbi;
+ std::vector< Function * > Funct_sbi;
                         ///< vector of objective functions for sub-Block sbi
 
  std::vector<std::vector< double_var >> idx_to_var_sbi1;
