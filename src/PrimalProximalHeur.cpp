@@ -136,10 +136,10 @@ void PrimalProximalHeur::initialize( void )
               )->get_function());
           if( ! fobj_sbi->is_linear() ){
             addval1 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_linear_coefficient(indexz);
-            std::cout << "quad: " << addval1 << std::endl; 
+            //std::cout << "quad: " << addval1 << std::endl; 
           } else {
             addval1 = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_coefficient(indexz);
-            std::cout << "lin: " << addval1 << std::endl; 
+            //std::cout << "lin: " << addval1 << std::endl; 
           }
           idx_to_var_sbi1[index].push_back(double_var( addval1 , var.data()+j ));
         } else {
@@ -269,7 +269,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   LagrangianDualSolver::set_event_handler(
      ThinComputeInterface::eEverykIteration ,
      [ this , sol] () { 
-        if( InnerSolver->new_var_solution() && f_Block->is_feasible() ) {
+        if( f_Block->is_feasible() ) {
           value_FUNCTION = f_max ? InnerSolver->get_lb() - addterm :
             InnerSolver->get_ub() - addterm;
           // if new solution is feasible, add to v_best_sol 
@@ -336,7 +336,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   res = InnerSolver->compute( changedvars );
   if( f_log && ( logVerb >= 2 ) )
-   *f_log << "SOLUTION COMPUTED" << std::endl;
+   *f_log << "SOLUTION COMPUTE" << std::endl;
 
   if( iters >= 0 ) {
    Index kvar = 0;
@@ -375,7 +375,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    value_FUNCTION = f_max ? InnerSolver->get_lb() - addterm :
     InnerSolver->get_ub() - addterm;
 
-   //value_FUNCTION = get_funct_value();
+   value_FUNCTION = get_funct_value();
  
    if( f_log && ( logVerb >= 2 ) )    
     if(value_FUNCTION != get_funct_value())
@@ -409,8 +409,8 @@ int PrimalProximalHeur::compute( bool changedvars )
   is_the_same = penalty < 1e-6 ? true : false;
   }
 
-  if( InnerSolver->new_var_solution() && f_Block->is_feasible() 
-      && iters > 1 ) {
+  //  if( InnerSolver->new_var_solution() && f_Block->is_feasible() && iter >=1 )
+  if( f_Block->is_feasible() ) {
    // if new solution is feasible, add to v_best_sol 
    // and possibly update the best bound 
    if( f_log && ( logVerb >= 2 ) )
