@@ -127,10 +127,10 @@ void PrimalProximalHeur::initialize( void )
 		  {
 			for (Index j = 0 ; j < var.size() ; ++j){
         if( (var.data()+j)->is_integer() && (var.data()+j)->get_lb() == 0.0 && (var.data()+j)->get_ub() == 1.0 ){
-          if(static_cast< Function* >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
-            get_num_active_var() > static_cast< Function* >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
+          if(static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
+            get_num_active_var() > static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
             )->get_function())->is_active(var.data()+j)){
-          auto indexz = static_cast< Function* >( static_cast< p_FRO >( sbi->get_objective()
+          auto indexz = static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective()
               )->get_function())->is_active(var.data()+j);
           auto fobj_sbi = static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective()
               )->get_function());
@@ -154,12 +154,12 @@ void PrimalProximalHeur::initialize( void )
 		  {
       for (Index j = 0 ; j < var.num_elements() ; ++j){
 			  if( (var.data()+j)->is_integer() && (var.data()+j)->get_lb() == 0.0 && (var.data()+j)->get_ub() == 1.0 ){
-          if(static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
+          if(static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
             get_num_active_var() > static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
             )->get_function())->is_active(var.data()+j)){ 
-          auto indexz = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()
+          auto indexz = static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective()
           )->get_function())->is_active(var.data()+j);
-          if( ! static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->is_linear() ){
+          if( ! static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective())->get_function())->is_linear() ){
             addval1 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_linear_coefficient(indexz);
           } else {
             addval1 = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_coefficient(indexz);
@@ -264,7 +264,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    }
 
   if( f_log && ( logVerb >= 2 ) )
-   *f_log << "COMPUTED SOLUTION" << std::endl;
+   *f_log << "COMPUTE SOLUTION" << std::endl;
 
   LagrangianDualSolver::set_event_handler(
      ThinComputeInterface::eEverykIteration ,
@@ -336,7 +336,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   res = InnerSolver->compute( changedvars );
   if( f_log && ( logVerb >= 2 ) )
-   *f_log << "SOLUTION COMPUTE" << std::endl;
+   *f_log << "SOLUTION COMPUTED" << std::endl;
 
   if( iters >= 0 ) {
    Index kvar = 0;
@@ -372,14 +372,14 @@ int PrimalProximalHeur::compute( bool changedvars )
     }
   }
 
-   value_FUNCTION = f_max ? InnerSolver->get_lb() - addterm :
+   auto value_bound = f_max ? InnerSolver->get_lb() - addterm :
     InnerSolver->get_ub() - addterm;
 
    value_FUNCTION = get_funct_value();
  
    if( f_log && ( logVerb >= 2 ) )    
     if(value_FUNCTION != get_funct_value())
-      *f_log << "ERROR: " << value_FUNCTION - get_funct_value() << std::endl;
+      *f_log << "ERROR: " << value_bound - get_funct_value() << std::endl;
 
   if( f_log && ( logVerb >= 2 ) ) {
    *f_log << "ITERS: " << iters << std::endl;
@@ -387,7 +387,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << "InnerSolver UB: " << InnerSolver->get_ub() << std::endl;
    *f_log << "penalty: " << penalty << std::endl;
    *f_log << "addterm: " << addterm << std::endl;
-   *f_log << "SOL1: " << value_FUNCTION << std::endl;
+   *f_log << "SOL1: " << value_bound << std::endl;
    *f_log << "SOL2: " << get_funct_value() << std::endl;
    auto bound = f_max ? get_lb() : get_ub();
    *f_log << "Best Value: " << bound << std::endl;
