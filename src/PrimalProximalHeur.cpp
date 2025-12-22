@@ -270,12 +270,11 @@ int PrimalProximalHeur::compute( bool changedvars )
      ThinComputeInterface::eEverykIteration ,
      [ this , sol] () { 
         if( f_Block->is_feasible() ) {
-          value_FUNCTION = f_max ? InnerSolver->get_lb() - addterm :
-            InnerSolver->get_ub() - addterm;
+          value_FUNCTION = get_funct_value() ;
           // if new solution is feasible, add to v_best_sol 
           // and possibly update the best bound 
           if( f_log && ( logVerb >= 2 ) )
-            *f_log << "IS_FEASIBLE_SOL" << std::endl;
+            *f_log << "IS_FEASIBLE_SOL: " << get_funct_value() << std::endl;
 
           // better than the best
           bool better = f_max ? ( value_FUNCTION > best_bound ) :
