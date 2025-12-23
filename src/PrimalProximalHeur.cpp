@@ -274,7 +274,7 @@ int PrimalProximalHeur::compute( bool changedvars )
           for( const auto & sbi : f_Block->get_nested_Blocks() ) {
             for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
               auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
-              if( si * ( 1 - si ) > 1e-6 ){
+              if( si * ( 1 - si ) > 1e-3 ){
                 *f_log << "IS_NOT_INTEGER_SOL" << std::endl;
                 return( ThinComputeInterface::eContinue );
               }
@@ -424,11 +424,13 @@ int PrimalProximalHeur::compute( bool changedvars )
   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
     for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
       auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
-      if( si * ( 1 - si ) > 1e-6 ){
+      if( si * ( 1 - si ) > 1e-3 ){
         is_integer = false;
         *f_log << "IS_NOT_INTEGER_SOL" << std::endl;
         break;
       }
+      if( ! is_integer )
+        break;
     }
     index++;
    }
