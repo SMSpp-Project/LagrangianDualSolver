@@ -270,6 +270,17 @@ int PrimalProximalHeur::compute( bool changedvars )
      ThinComputeInterface::eEverykIteration ,
      [ this , sol] () { 
         if( f_Block->is_feasible() ) {
+          Index index = 0;
+          for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+            for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
+              auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+              if( si * ( 1 - si ) > 1e-6 ){
+                *f_log << "IS_NOT_INTEGER_SOL" << std::endl;
+                return( ThinComputeInterface::eContinue );
+              }
+            }
+            index++;
+          }
           value_FUNCTION = get_funct_value() ;
           // if new solution is feasible, add to v_best_sol 
           // and possibly update the best bound 
@@ -342,8 +353,8 @@ int PrimalProximalHeur::compute( bool changedvars )
    Index index = 0;
 
    for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-    for( Index ivar = 0 ; ivar < pos_id_sbi[index] ; ++ivar ){
-     sol[ kvar ] = idx_to_var_sbi1[index][ ivar ].second->get_value();
+    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
+     sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
      kvar++;
     }
     index++;
@@ -408,8 +419,22 @@ int PrimalProximalHeur::compute( bool changedvars )
   is_the_same = penalty < 1e-6 ? true : false;
   }
 
+  Index index = 0;
+  bool is_integer = true;
+  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
+      auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+      if( si * ( 1 - si ) > 1e-6 ){
+        is_integer = false;
+        *f_log << "IS_NOT_INTEGER_SOL" << std::endl;
+        break;
+      }
+    }
+    index++;
+   }
+
   //  if( InnerSolver->new_var_solution() && f_Block->is_feasible() && iter >=1 )
-  if( f_Block->is_feasible() ) {
+  if( f_Block->is_feasible() && is_integer ) {
    // if new solution is feasible, add to v_best_sol 
    // and possibly update the best bound 
    if( f_log && ( logVerb >= 2 ) )
