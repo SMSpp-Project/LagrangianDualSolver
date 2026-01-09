@@ -266,9 +266,10 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( f_log && ( logVerb >= 2 ) )
    *f_log << "COMPUTE SOLUTION" << std::endl;
 
-  LagrangianDualSolver::set_event_handler(
+  if( iters >= 1 ) { 
+   LagrangianDualSolver::set_event_handler(
      ThinComputeInterface::eEverykIteration ,
-     [ this , sol] () { 
+     [ this ] () { 
         if( f_Block->is_feasible() ) {
           Index index = 0;
           for( const auto & sbi : f_Block->get_nested_Blocks() ) {
@@ -282,10 +283,11 @@ int PrimalProximalHeur::compute( bool changedvars )
             index++;
           }
           value_FUNCTION = get_funct_value() ;
+          add_penalty_terms();
           // if new solution is feasible, add to v_best_sol 
           // and possibly update the best bound 
           if( f_log && ( logVerb >= 2 ) )
-            *f_log << "IS_FEASIBLE_SOL: " << get_funct_value() << std::endl;
+            *f_log << "IS_FEASIBLE_SOL: " << value_FUNCTION << std::endl;
 
           // better than the best
           bool better = f_max ? ( value_FUNCTION > best_bound ) :
@@ -343,6 +345,7 @@ int PrimalProximalHeur::compute( bool changedvars )
         return( ThinComputeInterface::eContinue );
       }  // end of lambda
 		);
+  }
 
   res = InnerSolver->compute( changedvars );
   if( f_log && ( logVerb >= 2 ) )
@@ -373,7 +376,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   penalty = 0.0;
   addterm = 0.0;
 
-  if(iters >= 1 ){
+  if(iters >= 0 ){
     for( int ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
       auto si = sol[ ivar ];
       auto psi = previous_sol[ ivar ];
@@ -388,8 +391,9 @@ int PrimalProximalHeur::compute( bool changedvars )
    value_FUNCTION = get_funct_value();
  
    if( f_log && ( logVerb >= 2 ) )    
-    if(value_FUNCTION != get_funct_value())
-      *f_log << "ERROR: " << value_bound - get_funct_value() << std::endl;
+    if( std::abs( value_bound - value_FUNCTION ) / 
+      std::max( std::abs( value_bound ) , std::abs( value_FUNCTION ) ) >= 1e-3 )
+      *f_log << "ERROR: " << value_bound - value_FUNCTION << std::endl;
 
   if( f_log && ( logVerb >= 2 ) ) {
    *f_log << "ITERS: " << iters << std::endl;
@@ -398,7 +402,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << "penalty: " << penalty << std::endl;
    *f_log << "addterm: " << addterm << std::endl;
    *f_log << "SOL1: " << value_bound << std::endl;
-   *f_log << "SOL2: " << get_funct_value() << std::endl;
+   *f_log << "SOL2: " << value_FUNCTION << std::endl;
    auto bound = f_max ? get_lb() : get_ub();
    *f_log << "Best Value: " << bound << std::endl;
   } 
@@ -435,7 +439,7 @@ int PrimalProximalHeur::compute( bool changedvars )
     index++;
    }
 
-  //  if( InnerSolver->new_var_solution() && f_Block->is_feasible() && iter >=1 )
+  //  if( InnerSolver->new_var_solution() && f_Block->is_feasible() && iter >= 1 )
   if( f_Block->is_feasible() && is_integer ) {
    // if new solution is feasible, add to v_best_sol 
    // and possibly update the best bound 

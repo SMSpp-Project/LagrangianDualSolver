@@ -294,6 +294,7 @@ public:
 
  OFValue get_funct_value( void ) { 
   double value_funct = 0.0;
+  remove_penalty_terms();
 
   if( !InnerSolver->has_var_solution() ){
     return( f_max ? - Inf< double >() : Inf< double >());
