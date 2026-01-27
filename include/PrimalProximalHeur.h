@@ -34,6 +34,8 @@
 
 #include "LagrangianDualSolver.h"
 
+#include "Solution.h"
+
 #include <queue>
 
 /*--------------------------------------------------------------------------*/
@@ -66,8 +68,9 @@ namespace SMSpp_di_unipi_it
  * variables) so that it does a two-level change of the objective function
  * coefficients. */
 
-class PrimalProximalHeur :  public LagrangianDualSolver
+class PrimalProximalHeur :  public LagrangianDualSolver 
 {
+  
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -301,8 +304,11 @@ public:
   } else {
     int index = 0;
     for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-      Funct_sbi[ index ]->compute( true );
-      value_funct += Funct_sbi[ index ]->get_value();
+      auto Funct_sbi_idx = static_cast< Function * >( static_cast< FRealObjective * >( sbi->get_objective() )->get_function() );
+      Funct_sbi_idx->compute( true );
+      auto v = Funct_sbi_idx->get_value();
+      ///! if( !isnan(v) )
+        value_funct += v;
       index++;
     }
   }
@@ -475,6 +481,8 @@ public:
 
  std::vector<std::vector< double_var >> idx_to_var_sbi1;
  ///< from index to static variable (only linear terms)
+ std::vector<std::vector< double_var >> idx_to_var_sbi2;
+ ///< from index to static variable (only quadratic terms)
 
  std::vector< sol_value > v_best_sol;  ///< best feasible solutions
  /**< v_best_sol is managed as a binary heap */

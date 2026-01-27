@@ -18,6 +18,10 @@
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
 /*--------------------------------------------------------------------------*/
+
+#define BIN_VARS 1
+
+/*--------------------------------------------------------------------------*/
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -92,6 +96,7 @@ void PrimalProximalHeur::initialize( void )
 
  pos_id_sbi.resize( f_Block->get_number_nested_Blocks() );
  idx_to_var_sbi1.resize( f_Block->get_number_nested_Blocks() );
+ idx_to_var_sbi2.resize( f_Block->get_number_nested_Blocks() );
  Funct_sbi.resize( f_Block->get_number_nested_Blocks());
  
  Index index = 0;
@@ -99,11 +104,14 @@ void PrimalProximalHeur::initialize( void )
    Funct_sbi[index] = static_cast< Function * >(static_cast< p_FRO >( sbi->get_objective())->get_function());
    pos_id = 0;
    double addval1;
+   double addval2;
    for( const auto & el : sbi->get_static_variables() ) {
    // Singles
    if( un_any_thing_0( ColVariable , el ,
 		  {
+      #ifdef BIN_VARS 
       if( var.is_integer() && var.get_lb() == 0.0 && var.get_ub() == 1.0 ){
+      #endif
         if(static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
             get_num_active_var() > static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
             )->get_function())->is_active(&var) ){ 
@@ -111,22 +119,30 @@ void PrimalProximalHeur::initialize( void )
           auto fobj_sbi = static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective())->get_function());
           if( ! fobj_sbi->is_linear() ){
             addval1 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_linear_coefficient(indexz);
+            addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
           } else {
             addval1 = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_coefficient(indexz);
           }
           idx_to_var_sbi1[index].push_back(double_var( addval1 , &var ));
+          idx_to_var_sbi2[index].push_back(double_var( addval2 , &var ));
         } else {
           idx_to_var_sbi1[index].push_back(double_var( 0.0 , &var ));
+          idx_to_var_sbi2[index].push_back(double_var( 0.0 , &var ));
         }
         pos_id++;
 			  NumStatVar++;
-        } } ) )
+        #ifdef BIN_VARS 
+        } 
+        #endif
+        } ) )
      continue;
    // Vectors
    if( un_any_thing_1( ColVariable , el ,
 		  {
 			for (Index j = 0 ; j < var.size() ; ++j){
+        #ifdef BIN_VARS 
         if( (var.data()+j)->is_integer() && (var.data()+j)->get_lb() == 0.0 && (var.data()+j)->get_ub() == 1.0 ){
+        #endif
           if(static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
             get_num_active_var() > static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
             )->get_function())->is_active(var.data()+j)){
@@ -136,24 +152,32 @@ void PrimalProximalHeur::initialize( void )
               )->get_function());
           if( ! fobj_sbi->is_linear() ){
             addval1 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_linear_coefficient(indexz);
+            addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
             //std::cout << "quad: " << addval1 << std::endl; 
           } else {
             addval1 = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_coefficient(indexz);
             //std::cout << "lin: " << addval1 << std::endl; 
           }
           idx_to_var_sbi1[index].push_back(double_var( addval1 , var.data()+j ));
+          idx_to_var_sbi2[index].push_back(double_var( addval2 , var.data()+j ));
         } else {
           idx_to_var_sbi1[index].push_back(double_var( 0.0 , var.data()+j ));
+          idx_to_var_sbi2[index].push_back(double_var( 0.0 , var.data()+j ));
 			  }
         pos_id++;
         NumStatVar++;
-        } } } ) )
+        #ifdef BIN_VARS 
+        } 
+        #endif
+        } } ) )
     continue;
    // Multiarrays
    if( un_any_thing_K( ColVariable , el ,
 		  {
       for (Index j = 0 ; j < var.num_elements() ; ++j){
+        #ifdef BIN_VARS 
 			  if( (var.data()+j)->is_integer() && (var.data()+j)->get_lb() == 0.0 && (var.data()+j)->get_ub() == 1.0 ){
+        #endif
           if(static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
             get_num_active_var() > static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
             )->get_function())->is_active(var.data()+j)){ 
@@ -161,16 +185,22 @@ void PrimalProximalHeur::initialize( void )
           )->get_function())->is_active(var.data()+j);
           if( ! static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective())->get_function())->is_linear() ){
             addval1 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_linear_coefficient(indexz);
+            addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
           } else {
             addval1 = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_coefficient(indexz);
           }
           idx_to_var_sbi1[index].push_back(double_var( addval1 , var.data()+j ));
+          idx_to_var_sbi2[index].push_back(double_var( addval2 , var.data()+j ));
         } else {
           idx_to_var_sbi1[index].push_back(double_var( 0.0 , var.data()+j ));
+          idx_to_var_sbi2[index].push_back(double_var( 0.0 , var.data()+j ));
 			  }
 			  pos_id++;
         NumStatVar++;
-			  } } } ) )
+			  #ifdef BIN_VARS 
+        } 
+        #endif
+        } } ) )
      continue;
    //throw( std::invalid_argument(
    //             "PrimalProximalHeur: static variable not a static binary ColVariable" ) );
@@ -247,15 +277,16 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   if( f_log && ( logVerb >= 2 ) )
    *f_log << "\niteration = " << iters << "\n";
-
+/*
   if( iters == 0 )
    for( Index kvar = 0 ; kvar < NumStatVar ; ++kvar )
     sol[ kvar ] = rand() % 2;
-
-  previous_sol.insert( previous_sol.begin() , & sol[ 0 ] ,
+*/
+  if( iters >= 1 )
+    previous_sol.insert( previous_sol.begin() , & sol[ 0 ] ,
 		       & sol[ NumStatVar ] );
 
-  if( iters >= 0 ) {
+  if( iters >= 1 ) {
    if( f_log && ( logVerb >= 2 ) )
     *f_log << "\nADDING PENALTY TERMS\n\n";
 
@@ -341,7 +372,7 @@ int PrimalProximalHeur::compute( bool changedvars )
           }
           else
           if( f_log && ( logVerb >= 2 ) )
-            *f_log << "IS_INFEASIBLE_SOL" << std::endl;
+            *f_log << "IS_INFEASIBLE_SOL: " << value_FUNCTION << std::endl;
         return( ThinComputeInterface::eContinue );
       }  // end of lambda
 		);
@@ -358,11 +389,19 @@ int PrimalProximalHeur::compute( bool changedvars )
    for( const auto & sbi : f_Block->get_nested_Blocks() ) {
     for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
      sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+     //std::cout << "sol[ " << kvar << " ] = " << sol[ kvar ] << std::endl;
      kvar++;
     }
     index++;
     }
    }
+
+/*
+  if( f_log && ( logVerb >= 2 ) ){
+   auto solu = f_Block->get_Solution();
+   solu->print( *f_log );
+  }
+*/
 
   if( iters >= 0 ) {
    if( f_log && ( logVerb >= 2 ) )
@@ -376,7 +415,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   penalty = 0.0;
   addterm = 0.0;
 
-  if(iters >= 0 ){
+  if(iters >= 1 ){
     for( int ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
       auto si = sol[ ivar ];
       auto psi = previous_sol[ ivar ];
@@ -385,8 +424,8 @@ int PrimalProximalHeur::compute( bool changedvars )
     }
   }
 
-   auto value_bound = f_max ? InnerSolver->get_lb() - addterm :
-    InnerSolver->get_ub() - addterm;
+   auto value_bound = f_max ? InnerSolver->get_ub() - addterm :
+    InnerSolver->get_lb() - addterm;
 
    value_FUNCTION = get_funct_value();
  
@@ -420,7 +459,7 @@ int PrimalProximalHeur::compute( bool changedvars )
      }
   */
 
-  is_the_same = penalty < 1e-6 ? true : false;
+  is_the_same = penalty < 1e-3 ? true : false;
   }
 
   Index index = 0;
@@ -430,7 +469,7 @@ int PrimalProximalHeur::compute( bool changedvars )
       auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
       if( si * ( 1 - si ) > 1e-3 ){
         is_integer = false;
-        *f_log << "IS_NOT_INTEGER_SOL" << std::endl;
+        *f_log << "IS_NOT_INTEGER_SOL: " << si << std::endl;
         break;
       }
       if( ! is_integer )
@@ -439,8 +478,8 @@ int PrimalProximalHeur::compute( bool changedvars )
     index++;
    }
 
-  //  if( InnerSolver->new_var_solution() && f_Block->is_feasible() && iter >= 1 )
-  if( f_Block->is_feasible() && is_integer ) {
+   /// if( f_Block->is_feasible() && iters >= 1 ) {
+   if( f_Block->is_feasible() && is_integer ) {
    // if new solution is feasible, add to v_best_sol 
    // and possibly update the best bound 
    if( f_log && ( logVerb >= 2 ) )
@@ -613,7 +652,7 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
   std::vector< sol_value > v_best_sol_new;
 
   for( auto & sol : v_best_sol ) {
-    std::cout << v_best_sol.size() << std::endl;
+   //std::cout << v_best_sol.size() << std::endl;
    sol.first->write( f_Block );
    if( f_Block->is_feasible() )
     v_best_sol_new.push_back( sol );
@@ -659,15 +698,26 @@ void PrimalProximalHeur::add_penalty_terms( void )
     for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
     auto indexz = fobji->is_active( idx_to_var_sbi1[ index ][ ivar ].second );
     auto addval1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    auto addval2 = idx_to_var_sbi2[ index ][ ivar ].first;
     auto fobji1 = static_cast< p_DQF >( static_cast< p_FRO >(
 				  sbi->get_objective() )->get_function() );
-    if( fobji1->get_num_active_var() > indexz )
+    if( fobji1->get_num_active_var() > indexz ){
+      #ifdef BIN_VARS 
         fobji1->modify_linear_coefficient( indexz , addval1 + R * 
             ( 1.0 - 2.0 * previous_sol[ pos ] ) , mp );
-    else
+      #else
+        fobji1->modify_term( indexz , addval1 - R * 2.0 * previous_sol[ pos ] , 
+            addval2 + R , mp );
+      #endif
+    } else
       if( R > 0.0 )
-        fobji1->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
-            R * ( 1.0 - 2.0 * previous_sol[ pos ] ) , 0.0 , mp );     
+        #ifdef BIN_VARS 
+          fobji1->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+            R * ( 1.0 - 2.0 * previous_sol[ pos ] ) , 0.0 , mp );   
+        #else
+          fobji1->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+            - R * 2.0 * previous_sol[ pos ] , R , mp );   
+        #endif
     pos++;
     }
   } else {
@@ -711,10 +761,12 @@ void PrimalProximalHeur::remove_penalty_terms( void )
     for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
     auto indexz = fobji->is_active( idx_to_var_sbi1[ index ][ ivar ].second );
     auto addval1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    auto addval2 = idx_to_var_sbi2[ index ][ ivar ].first;
     auto fobji1 = static_cast< p_DQF >( static_cast< p_FRO >(
 				  sbi->get_objective() )->get_function() );
-    if( fobji1->get_num_active_var() > indexz )
-        fobji1->modify_linear_coefficient( indexz , addval1 , mp ); 
+    if( fobji1->get_num_active_var() > indexz ){
+        fobji1->modify_term( indexz , addval1 , addval2 , mp ); 
+    }
     pos++;
     }
   } else {
