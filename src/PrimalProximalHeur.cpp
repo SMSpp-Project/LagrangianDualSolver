@@ -153,10 +153,8 @@ void PrimalProximalHeur::initialize( void )
           if( ! fobj_sbi->is_linear() ){
             addval1 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_linear_coefficient(indexz);
             addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
-            //std::cout << "quad: " << addval1 << std::endl; 
           } else {
             addval1 = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_coefficient(indexz);
-            //std::cout << "lin: " << addval1 << std::endl; 
           }
           idx_to_var_sbi1[index].push_back(double_var( addval1 , var.data()+j ));
           idx_to_var_sbi2[index].push_back(double_var( addval2 , var.data()+j ));
@@ -220,14 +218,12 @@ void PrimalProximalHeur::initialize( void )
 void PrimalProximalHeur::set_par( idx_type par , int value )
 {
  switch( par ) {
-  case( intMaxIter ): maxIter = value; break;
+  case( intMaxIterPPH ): maxIter = value; break;
   case( intMaxSol ):  f_MaxSol = value; break;
   case( intLogVerb ):
    logVerb = value & 3;
    LagrangianDualSolver::set_par( par , std::max( 0 , value >> 2 ) );
    break;
-  case( intMaxIterLD ): LagrangianDualSolver::set_par( intMaxIter , value );
-                        break;
   default: LagrangianDualSolver::set_par( par , value );
   }
  }
@@ -577,6 +573,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  if( is_the_same )
   if( f_log && ( logVerb >= 2 ) ) {
    *f_log << "R = " << R << std::endl;
+   *f_log << "maxIterPPH = " << maxIter << std::endl;
    *f_log << "IS_THE_SAME = TRUE\n"; 
    *f_log << "NUMBER ITERS: " << iters-1 << "\n";
    *f_log << "LB: " << InnerSolver->get_lb() << "\n";
@@ -765,7 +762,11 @@ void PrimalProximalHeur::remove_penalty_terms( void )
     auto fobji1 = static_cast< p_DQF >( static_cast< p_FRO >(
 				  sbi->get_objective() )->get_function() );
     if( fobji1->get_num_active_var() > indexz ){
+        #ifdef BIN_VARS 
+        fobji1->modify_linear_coefficient( indexz , addval1 , mp );
+        #else
         fobji1->modify_term( indexz , addval1 , addval2 , mp ); 
+        #endif
     }
     pos++;
     }
