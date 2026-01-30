@@ -94,7 +94,7 @@ public:
   * list can be easily further extended by derived classes. */
 
  enum int_par_type_PPH {
-  intMaxIterPPH = intLastLDSlvPar ,  ///< maximum number of PPH iterations
+  intMaxIterPPH = intLastLDSlvPar + 10,  ///< maximum number of PPH iterations
 
   intLastPPHPar    ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -297,11 +297,14 @@ public:
 
  OFValue get_funct_value( void ) { 
   double value_funct = 0.0;
-  remove_penalty_terms();
+  //remove_penalty_terms();
 
   if( !InnerSolver->has_var_solution() ){
     return( f_max ? - Inf< double >() : Inf< double >());
   } else {
+    value_funct = f_max ? InnerSolver->get_ub() - addterm :
+    InnerSolver->get_lb() - addterm;
+/*
     for( const auto & sbi : f_Block->get_nested_Blocks() ) {
       auto Funct_sbi_idx = static_cast< Function * >( 
         static_cast< FRealObjective * >( sbi->get_objective() )->get_function() );
@@ -310,6 +313,7 @@ public:
       ///! if( !isnan(v) )
         value_funct += v;
     }
+*/
   }
   return( value_funct ); 
  }

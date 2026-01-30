@@ -458,24 +458,31 @@ int PrimalProximalHeur::compute( bool changedvars )
   is_the_same = penalty < 1e-3 ? true : false;
   }
 
-  Index index = 0;
-  bool is_integer = true;
-  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
-      auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
-      if( si * ( 1 - si ) > 1e-3 ){
-        is_integer = false;
-        *f_log << "IS_NOT_INTEGER_SOL: " << si << std::endl;
-        break;
+  #ifdef BIN_VARS
+    Index index = 0;
+    bool is_integer = true;
+    for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+      for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
+        auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+        if( si * ( 1 - si ) > 1e-3 ){
+          is_integer = false;
+          *f_log << "IS_NOT_INTEGER_SOL: " << si << std::endl;
+          break;
+        }
+        if( ! is_integer )
+          break;
       }
-      if( ! is_integer )
-        break;
+      index++;
     }
-    index++;
-   }
+ #endif
 
    /// if( f_Block->is_feasible() && iters >= 1 ) {
-   if( f_Block->is_feasible() && is_integer ) {
+   #ifdef BIN_VARS
+    if( f_Block->is_feasible() && is_integer )
+   #else
+    if( f_Block->is_feasible() )
+   #endif
+   {
    // if new solution is feasible, add to v_best_sol 
    // and possibly update the best bound 
    if( f_log && ( logVerb >= 2 ) )
@@ -767,9 +774,9 @@ void PrimalProximalHeur::remove_penalty_terms( void )
         #else
         fobji1->modify_term( indexz , addval1 , addval2 , mp ); 
         #endif
-    }
     pos++;
     }
+   }
   } else {
    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
     auto indexz = fobji->is_active( idx_to_var_sbi1[ index ][ ivar ].second );
