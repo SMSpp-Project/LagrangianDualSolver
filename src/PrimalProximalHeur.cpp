@@ -246,6 +246,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 {
  Index iters = 0;
  bool is_the_same = false;
+ bool is_integer = false;
  int res;
 
  best_bound = f_max ? -Inf<double>() : Inf<double>();
@@ -302,7 +303,7 @@ int PrimalProximalHeur::compute( bool changedvars )
           for( const auto & sbi : f_Block->get_nested_Blocks() ) {
             for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
               auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
-              if( si * ( 1 - si ) > 1e-3 ){
+              if( si * ( 1 - si ) > 1e-6 ){
                 *f_log << "IS_NOT_INTEGER_SOL" << std::endl;
                 return( ThinComputeInterface::eContinue );
               }
@@ -460,27 +461,29 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   #ifdef BIN_VARS
     Index index = 0;
-    bool is_integer = true;
+    is_integer = true;
     for( const auto & sbi : f_Block->get_nested_Blocks() ) {
       for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
         auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
-        if( si * ( 1 - si ) > 1e-3 ){
+        if( si * ( 1 - si ) > 1e-6 ){
           is_integer = false;
           *f_log << "IS_NOT_INTEGER_SOL: " << si << std::endl;
           break;
         }
-        if( ! is_integer )
-          break;
       }
+      if( ! is_integer )
+        break;
       index++;
     }
+
+    if( is_integer )
+      *f_log << "IS_INTEGER_SOL" << std::endl;
  #endif
 
-   /// if( f_Block->is_feasible() && iters >= 1 ) {
    #ifdef BIN_VARS
-    if( f_Block->is_feasible() && is_integer )
+    if( f_Block->is_feasible() && is_integer && iters >= 1 )
    #else
-    if( f_Block->is_feasible() )
+    if( f_Block->is_feasible() && iters >= 1 )
    #endif
    {
    // if new solution is feasible, add to v_best_sol 
@@ -585,7 +588,12 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << "NUMBER ITERS: " << iters-1 << "\n";
    *f_log << "LB: " << InnerSolver->get_lb() << "\n";
    *f_log << "UB: " << InnerSolver->get_ub() << "\n";
-   auto bound = f_max ? get_lb() : get_ub();
+   double bound;
+   if( ! is_integer )
+    bound = f_max ? get_lb() : get_ub();
+   else
+    bound = f_max ? std::max( get_lb() , value_FUNCTION ) : 
+      std::min( get_ub() , value_FUNCTION );
    *f_log << "Best Feasible solution: " << bound << std::endl;
    }
 
