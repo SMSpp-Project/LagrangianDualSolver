@@ -467,7 +467,8 @@ int PrimalProximalHeur::compute( bool changedvars )
         auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
         if( si * ( 1 - si ) > 1e-6 ){
           is_integer = false;
-          *f_log << "IS_NOT_INTEGER_SOL: " << si << std::endl;
+          if( f_log && ( logVerb >= 2 ) )   
+            *f_log << "IS_NOT_INTEGER_SOL: " << si << std::endl;
           break;
         }
       }
@@ -477,7 +478,8 @@ int PrimalProximalHeur::compute( bool changedvars )
     }
 
     if( is_integer )
-      *f_log << "IS_INTEGER_SOL" << std::endl;
+      if( f_log && ( logVerb >= 2 ) )   
+        *f_log << "IS_INTEGER_SOL" << std::endl;
  #endif
 
    #ifdef BIN_VARS
