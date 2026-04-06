@@ -187,7 +187,6 @@ void LagrangianDualSolver::set_Block( Block * block )
    delete c;
    throw( std::invalid_argument(
 		  "LagrangianDualSolver: LagBF_BCfg not a BlockConfig" ) );
-
    }
   }
 
@@ -663,7 +662,7 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  // register the inner Solver to the Lagrangian Dual Block - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // note that the inner Solver could in principle cause some other
+ // note that the inner Solver could in principal cause some other
  // Block[Solver]Config-uration to the inner Block of the LagBFunction via
  // their ComputeConfig; since there are plenty of other ways to obtain the
  // same result, this should not happen at least for BlockConfig if the
@@ -677,7 +676,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  // the UpdateSolver do not mess up with the first Solver registered to the
  // inner Block of the LagBFunction, that is the "crucial" one
  //
- // this used to be a problem when when the original sub-Block was used, as
+ // this used to be a problem when the original sub-Block was used, as
  // otherwise no UpdateSolver is attached to it but the LagBFunction uses a
  // copy and therefore the UpdateSolver is not registered there
  //
