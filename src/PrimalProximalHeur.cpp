@@ -31,6 +31,8 @@
 
 #include "ColVariable.h"
 
+#include "GRBMILPSolver.h"
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -92,16 +94,35 @@ void PrimalProximalHeur::initialize( void )
  // meanwhile construct the static dictionaries for the linear and quadratic
  // terms of the (quadratic) objective functions of the sub-blocks
 
+ if( f_log && ( logVerb >= 2 ) ) {
+   *f_log << "maxIter = " << maxIter << std::endl;
+   *f_log << "R = " << R << std::endl;
+   *f_log << logVerb << std::endl;
+ }
+
+ auto quad = new DQuadFunction();
+   
  NumStatVar = 0;
 
  pos_id_sbi.resize( f_Block->get_number_nested_Blocks() );
  idx_to_var_sbi1.resize( f_Block->get_number_nested_Blocks() );
  idx_to_var_sbi2.resize( f_Block->get_number_nested_Blocks() );
- Funct_sbi.resize( f_Block->get_number_nested_Blocks());
+ Funct_sbi.resize( f_Block->get_number_nested_Blocks() );
+ Funct_sbi_quad.resize( f_Block->get_number_nested_Blocks() );
+ is_linear.resize( f_Block->get_number_nested_Blocks() );
  
  Index index = 0;
  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-   Funct_sbi[index] = static_cast< Function * >(static_cast< p_FRO >( sbi->get_objective())->get_function());
+   auto f_obj = static_cast< Function * >( static_cast< p_FRO >( sbi->get_objective())->get_function());
+     if( typeid(*f_obj).name() != typeid(*quad).name() ){
+      is_linear[ index ] = true;
+      LinearFunction * f_obj_lin = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function());
+      Funct_sbi[ index ] = * f_obj_lin;
+     } else {
+      is_linear[ index ] = false;
+      auto f_obj_quad = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function());
+      Funct_sbi_quad[ index ] = * f_obj_quad;
+     }
    pos_id = 0;
    double addval1;
    double addval2;
@@ -122,7 +143,10 @@ void PrimalProximalHeur::initialize( void )
             addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
           } else {
             addval1 = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_coefficient(indexz);
-          }
+	          addval2 = 0.0;
+	        }
+          if( std::abs( addval1 ) < 1e-6 )
+            addval1 = 0.0;
           idx_to_var_sbi1[index].push_back(double_var( addval1 , &var ));
           idx_to_var_sbi2[index].push_back(double_var( addval2 , &var ));
         } else {
@@ -155,7 +179,10 @@ void PrimalProximalHeur::initialize( void )
             addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
           } else {
             addval1 = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_coefficient(indexz);
-          }
+	          addval2 = 0.0;
+	        }
+          if( std::abs( addval1 )  < 1e-6 )
+            addval1 = 0.0;
           idx_to_var_sbi1[index].push_back(double_var( addval1 , var.data()+j ));
           idx_to_var_sbi2[index].push_back(double_var( addval2 , var.data()+j ));
         } else {
@@ -186,7 +213,10 @@ void PrimalProximalHeur::initialize( void )
             addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
           } else {
             addval1 = static_cast< p_LF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_coefficient(indexz);
+	          addval2 = 0.0;
           }
+          if( std::abs( addval1 ) < 1e-6 )
+            addval1 = 0.0;
           idx_to_var_sbi1[index].push_back(double_var( addval1 , var.data()+j ));
           idx_to_var_sbi2[index].push_back(double_var( addval2 , var.data()+j ));
         } else {
@@ -268,22 +298,50 @@ int PrimalProximalHeur::compute( bool changedvars )
  if( ! owned )
   f_Block->unlock( f_id );
 
- while( ( ! is_the_same ) && ( iters < maxIter ) ) {
+  if( f_log && ( logVerb >= 2 ) )
+   *f_log << "COMPUTE MILP RELAX" << std::endl;
+
+  auto Slv = new GRBMILPSolver();
+  Slv->set_par( Slv->int_par_str2idx( "intRelaxIntVars" ) , 1 );                                                                                                                                                                  
+  Slv->set_Block( f_Block );
+  auto res_slv = Slv->compute( changedvars );
+  Slv->get_dual_solution();
+  //Slv->get_var_solution();
+
+ if( f_log && ( logVerb >= 2 ) )
+   *f_log << "GET DUAL VARS" << std::endl;
+
+ while( true ) {
   // main loop- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  Index index_event = 0;
   if( f_log && ( logVerb >= 2 ) )
    *f_log << "\niteration = " << iters << "\n";
-/*
+
   if( iters == 0 )
    for( Index kvar = 0 ; kvar < NumStatVar ; ++kvar )
     sol[ kvar ] = rand() % 2;
+/*
+  if( iters == 0 ){
+          Index index = 0;
+	        Index kvar = 0;
+          for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+            for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
+	             sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+              auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+              kvar++;
+            }
+            index++;
+          }
+        }
 */
-  if( iters >= 1 )
+
+  if( iters >= 0 )
     previous_sol.insert( previous_sol.begin() , & sol[ 0 ] ,
 		       & sol[ NumStatVar ] );
 
-  if( iters >= 1 ) {
+  if( iters >= 0 ) {
    if( f_log && ( logVerb >= 2 ) )
     *f_log << "\nADDING PENALTY TERMS\n\n";
 
@@ -294,28 +352,67 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( f_log && ( logVerb >= 2 ) )
    *f_log << "COMPUTE SOLUTION" << std::endl;
 
-  if( iters >= 1 ) { 
+  if( iters >= 0 ) { 
    LagrangianDualSolver::set_event_handler(
      ThinComputeInterface::eEverykIteration ,
-     [ this ] () { 
-        if( f_Block->is_feasible() ) {
+     [ this , &sol, &index_event, &iters ] () { 
+        if( index_event == InnerSolver->get_elapsed_iterations() - 1 ){
+          index_event++;
+          value_FUNCTION = get_funct_value();
+          add_penalty_terms();
+          Index index = 0;
+	        Index kvar = 0;
+          for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+            for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
+	             sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+              auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+              kvar++;
+            }
+            index++;
+          }
+ 	  addterm = 0.0;
+          penalty = 0.0;
+	  for( int ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
+	    auto si = sol[ ivar ];
+	    auto psi = previous_sol[ ivar ];
+	    penalty += R * ( psi - si ) * ( psi - si );
+	    addterm += R * si * ( 1.0 - 2.0 * psi );
+	  }
+
+	  for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
+	    auto si = sol[ ivar ];
+	    if( si * ( 1 - si ) > 1e-6 ){
+	      if( f_log && ( logVerb >= 2 ) )
+		*f_log << "\nIS_NOT_INTEGER_SOL" << std::endl;
+	      return( ThinComputeInterface::eContinue );
+	    }
+	  }
+
+	  if( f_log && ( logVerb >= 2 ) )
+            *f_log << "\nIS_INTEGER_SOL" << std::endl;
+  
+	  if( f_log && ( logVerb >= 2 ) )
+	    *f_log << "\nLB = " << InnerSolver->get_lb() - addterm << std::endl;
+       
+          if( f_Block->is_feasible() ) {
           Index index = 0;
           for( const auto & sbi : f_Block->get_nested_Blocks() ) {
             for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
               auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
               if( si * ( 1 - si ) > 1e-6 ){
-                *f_log << "IS_NOT_INTEGER_SOL" << std::endl;
+                if( f_log && ( logVerb >= 2 ) )
+                  *f_log << "\nIS_NOT_INTEGER_SOL" << std::endl;
                 return( ThinComputeInterface::eContinue );
               }
             }
             index++;
           }
-          value_FUNCTION = get_funct_value() ;
-          add_penalty_terms();
+	  if( f_log && ( logVerb >= 2 ) )
+	    *f_log << "\nIS_INTEGER_SOL" << std::endl;
           // if new solution is feasible, add to v_best_sol 
           // and possibly update the best bound 
           if( f_log && ( logVerb >= 2 ) )
-            *f_log << "IS_FEASIBLE_SOL: " << value_FUNCTION << std::endl;
+            *f_log << "\nIS_FEASIBLE_SOL: " << value_FUNCTION << std::endl;
 
           // better than the best
           bool better = f_max ? ( value_FUNCTION > best_bound ) :
@@ -334,7 +431,7 @@ int PrimalProximalHeur::compute( bool changedvars )
             std:: push_heap( v_best_sol.begin() , v_best_sol.end() );
             if( worse )
             worst_bound = value_FUNCTION;
-            }
+              }
           else
             if( ! worse ) {
             // there is no space, so throw it in only if it's better than the worst
@@ -369,10 +466,13 @@ int PrimalProximalHeur::compute( bool changedvars )
           }
           else
           if( f_log && ( logVerb >= 2 ) )
-            *f_log << "IS_INFEASIBLE_SOL: " << value_FUNCTION << std::endl;
+            *f_log << "\nIS_INFEASIBLE_SOL: " << value_FUNCTION << std::endl;
         return( ThinComputeInterface::eContinue );
-      }  // end of lambda
-		);
+      } else {
+	  return( ThinComputeInterface::eContinue );
+      }
+    }  // end of lambda
+   );
   }
 
   res = InnerSolver->compute( changedvars );
@@ -408,7 +508,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    //!changed_penalties = true;
    //!process_outstanding_Modification();
    }
-
+  
   penalty = 0.0;
   addterm = 0.0;
 
@@ -423,9 +523,9 @@ int PrimalProximalHeur::compute( bool changedvars )
 
    auto value_bound = f_max ? InnerSolver->get_ub() - addterm :
     InnerSolver->get_lb() - addterm;
-
+    
    value_FUNCTION = get_funct_value();
- 
+
    if( f_log && ( logVerb >= 2 ) )    
     if( std::abs( value_bound - value_FUNCTION ) / 
       std::max( std::abs( value_bound ) , std::abs( value_FUNCTION ) ) >= 1e-3 )
@@ -549,6 +649,9 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   iters++;
 
+  if(( is_the_same ) || ( iters >= maxIter ) )
+    break;
+
   }  // end( main loop )- - - - - - - - - - - - - - - - - - - - - - - - - - -
      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -582,7 +685,18 @@ int PrimalProximalHeur::compute( bool changedvars )
    }
   }
 
- if( is_the_same )
+ double bound;
+
+ if( is_the_same ){
+  if( ! is_integer )
+    bound = f_max ? get_lb() : get_ub();
+   else{
+    bound = f_max ? std::max( get_lb() , value_FUNCTION ) : 
+      std::min( get_ub() , value_FUNCTION );
+    v_best_sol.push_back( std::pair( f_Block->get_Solution() ,
+					 value_FUNCTION ) );
+   }
+  best_bound = bound;
   if( f_log && ( logVerb >= 2 ) ) {
    *f_log << "R = " << R << std::endl;
    *f_log << "maxIterPPH = " << maxIter << std::endl;
@@ -590,14 +704,9 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << "NUMBER ITERS: " << iters-1 << "\n";
    *f_log << "LB: " << InnerSolver->get_lb() << "\n";
    *f_log << "UB: " << InnerSolver->get_ub() << "\n";
-   double bound;
-   if( ! is_integer )
-    bound = f_max ? get_lb() : get_ub();
-   else
-    bound = f_max ? std::max( get_lb() , value_FUNCTION ) : 
-      std::min( get_ub() , value_FUNCTION );
    *f_log << "Best Feasible solution: " << bound << std::endl;
    }
+  }
 
  changed_penalties = false;
 
@@ -708,7 +817,7 @@ void PrimalProximalHeur::add_penalty_terms( void )
   auto fobji = static_cast< Function * >( static_cast< p_FRO >(
 				  sbi->get_objective() )->get_function() );
 
-  if( ! fobji->is_linear() ) {       
+  if( ! is_linear[ index ] ) {       
     for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
     auto indexz = fobji->is_active( idx_to_var_sbi1[ index ][ ivar ].second );
     auto addval1 = idx_to_var_sbi1[ index ][ ivar ].first;
@@ -723,7 +832,7 @@ void PrimalProximalHeur::add_penalty_terms( void )
         fobji1->modify_term( indexz , addval1 - R * 2.0 * previous_sol[ pos ] , 
             addval2 + R , mp );
       #endif
-    } else
+    } else 
       if( R > 0.0 )
         #ifdef BIN_VARS 
           fobji1->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
@@ -734,7 +843,8 @@ void PrimalProximalHeur::add_penalty_terms( void )
         #endif
     pos++;
     }
-  } else {
+
+   } else {
    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
     auto indexz = fobji->is_active( idx_to_var_sbi1[ index ][ ivar ].second );
     auto addval1 = idx_to_var_sbi1[ index ][ ivar ].first;
@@ -771,7 +881,7 @@ void PrimalProximalHeur::remove_penalty_terms( void )
   auto fobji = static_cast< Function * >( static_cast< p_FRO >(
 				  sbi->get_objective() )->get_function() );
 
-  if( ! fobji->is_linear() ) {       
+ if( ! is_linear[ index ] ) {       
     for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
     auto indexz = fobji->is_active( idx_to_var_sbi1[ index ][ ivar ].second );
     auto addval1 = idx_to_var_sbi1[ index ][ ivar ].first;
@@ -797,7 +907,6 @@ void PrimalProximalHeur::remove_penalty_terms( void )
       fobji1->modify_coefficient( indexz , addval1 , mp );
     }
   }
-
   sbi->close_channel(chnl);
   index += 1;
   }
@@ -812,6 +921,7 @@ void PrimalProximalHeur::guts_of_destructor( void )
  v_best_sol.clear();
  idx_to_var_sbi1.clear();
  Funct_sbi.clear();
+ Funct_sbi_quad.clear();
  previous_sol.clear();
  pos_id_sbi.clear();
 

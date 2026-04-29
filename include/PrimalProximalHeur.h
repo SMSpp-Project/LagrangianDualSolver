@@ -36,6 +36,8 @@
 
 #include "Solution.h"
 
+#include "ColVariable.h"
+
 #include <queue>
 
 /*--------------------------------------------------------------------------*/
@@ -94,7 +96,7 @@ public:
   * list can be easily further extended by derived classes. */
 
  enum int_par_type_PPH {
-  intMaxIterPPH = intLastLDSlvPar + 10,  ///< maximum number of PPH iterations
+  intMaxIterPPH = intLastLDSlvPar + 12,  ///< maximum number of PPH iterations   
 
   intLastPPHPar    ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -290,7 +292,9 @@ public:
    throw( std::logic_error( "PrimalProximalHeur::get_var_solution() called "
 			    "with no available solution" ) );
 
-  return( v_best_sol.front().first->write( f_Block ) );
+  //return( v_best_sol.front().first->write( f_Block ) );   
+  auto solution = f_Block->get_Solution( nullptr , false ) ;
+  return( solution->write( f_Block ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -298,23 +302,25 @@ public:
  OFValue get_funct_value( void ) { 
   double value_funct = 0.0;
   //remove_penalty_terms();
-
+  Index idx = 0;
+  InnerSolver->get_var_solution();
+  
   if( !InnerSolver->has_var_solution() ){
     return( f_max ? - Inf< double >() : Inf< double >());
   } else {
-    value_funct = f_max ? InnerSolver->get_ub() - addterm :
-    InnerSolver->get_lb() - addterm;
-/*
     for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-      auto Funct_sbi_idx = static_cast< Function * >( 
-        static_cast< FRealObjective * >( sbi->get_objective() )->get_function() );
-      Funct_sbi_idx->compute( true );
-      auto v = Funct_sbi_idx->get_value();
-      ///! if( !isnan(v) )
-        value_funct += v;
+          if( is_linear[ idx ] ){
+            Funct_sbi[ idx ].compute( true );
+            value_funct += Funct_sbi[ idx ].get_value();
+          } else {
+            //std::cout << typeid(*sbi).name() << std::endl;
+            Funct_sbi_quad[ idx ].compute( true );
+            value_funct += Funct_sbi_quad[ idx ].get_value();
+          }
+      idx++; 
     }
-*/
   }
+  //add_penalty_terms();
   return( value_funct ); 
  }
 
@@ -348,7 +354,11 @@ public:
   if( par == intMaxIterPPH )
    return( Inf< int >() );
   else
-   return( LagrangianDualSolver::get_dflt_int_par( par ) );
+    if( par == intLogVerb ){
+       return( 2 );
+    }
+     else 
+       return( LagrangianDualSolver::get_dflt_int_par( par ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -364,10 +374,10 @@ public:
  
  [[nodiscard]] int get_int_par( idx_type par ) const override {
   switch( par ) {
-   case( intMaxSol ):  return( f_MaxSol );
+  case( intMaxSol ):  return( f_MaxSol );
    case( intLogVerb ):
-    return( logVerb + ( LagrangianDualSolver::get_int_par( par ) << 2 ) );
-   case( intMaxIterPPH ): return( maxIter );
+     return(  logVerb  + ( LagrangianDualSolver::get_int_par( par ) << 4 ) );
+  case( intMaxIterPPH ): return( maxIter );
    }
   return( LagrangianDualSolver::get_int_par( par ) );
   }
@@ -477,7 +487,9 @@ public:
  std::vector< int > pos_id_sbi;
  std::vector< double > previous_sol; 
  
- std::vector< Function * > Funct_sbi;
+ std::vector< LinearFunction > Funct_sbi;
+ std::vector< DQuadFunction > Funct_sbi_quad;
+ std::vector< bool > is_linear;
                         ///< vector of objective functions for sub-Block sbi
 
  std::vector<std::vector< double_var >> idx_to_var_sbi1;
