@@ -376,6 +376,27 @@ public:
 
  intPushCostToOwner ,  ///< where the Objective is changed in sub-Block
 
+ intSparseLagPairs ,
+ ///< build sparse v_dual_pair for the LagBFunctions
+ /**< If nonzero (default 1), in set_Block() each LagBFunction[ h ] is
+  * given only the subset of dual pairs whose Lagrangian term
+  * LagTerms[ i ][ h ] is non-empty, instead of NumVar dense pairs with
+  * empty LinearFunctions for the missing entries. On problems with very
+  * sparse coupling (e.g. AC OPF over many time steps) this dramatically
+  * reduces setup time, peak memory, and master iteration cost. The
+  * downstream Solver (typically BundleSolver) tolerates v_c05f[ h ]
+  * exposing a strict subset of the union of active Variables; BundleSolver
+  * auto-detects the situation, builds v_local2global[ h ] maps, and uses
+  * the MPSolver::SetItemBse sparse-name format. On problems where the
+  * Lagrangian coupling is already (essentially) dense, BundleSolver
+  * detects that all per-component maps are the identity and falls back
+  * to the legacy dense fast paths — sparse mode has no measurable cost
+  * on dense workloads.
+  *
+  * Set to 0 to force the legacy "every LagBFunction sees all multipliers
+  * as dense active vars" construction (useful for reproducing pre-Phase-A
+  * behavior or for debugging). */
+
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of int algorithmic parameters. */
@@ -505,6 +526,7 @@ public:
   WVarSCfg        = get_dflt_int_par( int_InnerS_WVarSCfg );
   WDualSCfg       = get_dflt_int_par( int_InnerS_WDualSCfg );
   PushCostToOwner = get_dflt_int_par( intPushCostToOwner );
+  SparseLagPairs  = get_dflt_int_par( intSparseLagPairs );
   ISName          = get_dflt_str_par( str_LDSlv_ISName );
   // all the other string parameters are empty by default, which corresponds
   // to f_BCfg == f_BSCfg == f_DBCfg == f_DBSCfg == nullptr
@@ -1468,6 +1490,8 @@ public:
    -1 , // int_InnerS_WVarSCfg
    -1 , // int_InnerS_WDualSCfg
     1 , // intPushCostToOwner
+    1 , // intSparseLagPairs (default on; sparse path is bit-equivalent
+        //                   to dense and unlocks DoEasy=1 in LDS)
    };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastLDSlvPar ) )
@@ -1541,6 +1565,7 @@ public:
    case( int_InnerS_WVarSCfg ):  return( WVarSCfg );
    case( int_InnerS_WDualSCfg ): return( WDualSCfg );
    case( intPushCostToOwner ):   return( PushCostToOwner );
+   case( intSparseLagPairs ):    return( SparseLagPairs );
    }
 
   return( InnerSolver->get_int_par( int_par_lds( par ) ) );
@@ -1609,7 +1634,8 @@ public:
    { "int_LDSlv_CloneCfg"   , int_LDSlv_CloneCfg } ,
    { "int_InnerS_WVarSCfg"  , int_InnerS_WVarSCfg } ,
    { "int_InnerS_WDualSCfg" , int_InnerS_WDualSCfg } ,
-   { "intPushCostToOwner"   , intPushCostToOwner }
+   { "intPushCostToOwner"   , intPushCostToOwner } ,
+   { "intSparseLagPairs"    , intSparseLagPairs }
    };
 
   const auto it = int_pars_map.find( name );
@@ -1685,9 +1711,10 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 6 > int_pars_str = {
+  static const std::array< std::string , 7 > int_pars_str = {
    "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_LDSlv_CloneCfg" ,
-   "int_InnerS_WVarSCfg" , "int_InnerS_WDualSCfg" , "intPushCostToOwner" };
+   "int_InnerS_WVarSCfg" , "int_InnerS_WDualSCfg" , "intPushCostToOwner" ,
+   "intSparseLagPairs" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
@@ -2017,7 +2044,10 @@ FRowConstraint * constraint_with_index( Index i ) {
  int WDualSCfg;       ///< the Configuration for IS->get_dual_solution()
 
  bool PushCostToOwner;  ///< how to set the same-named LagBFunction parameter
- 
+
+ bool SparseLagPairs;
+ ///< true if dual pairs with empty Lagrangian term are skipped in set_Block
+
  std::string ISName;  ///< classname of the inner Solver
 
  std::string LagBF_BCfg;

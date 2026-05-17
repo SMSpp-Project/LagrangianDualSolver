@@ -30,6 +30,8 @@
 
 #include "FRowConstraint.h"
 
+#include "LinearFunction.h"
+
 #include "RBlockConfig.h"
 
 /*--------------------------------------------------------------------------*/
@@ -543,19 +545,53 @@ void LagrangianDualSolver::set_Block( Block * block )
  // pass the Lagrangian terms to the corresponding LagBFunction - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ // SparseLagPairs == 1: skip dual pairs whose Lagrangian term is empty.
+ // Since the loop walks the global Lambda index i in strictly increasing
+ // order (first static_cons static, then dynamic), the resulting dp's
+ // are appended in increasing global-i order, which is the invariant
+ // BundleSolver's sparse path relies on (v_local2global[ h ] must be
+ // strictly monotonic for MPSolver::SetItemBse).
+
  for( Index h = 0 ; h < f_nsb ; ++h ) {
-  v_dual_pair dp( NumVar );  // construct the dual pairs
+  v_dual_pair dp;
+  if( SparseLagPairs ) {
+   // pre-count to reserve; cheap O(NumVar) scan
+   Index nnz = 0;
+   for( Index i = 0 ; i < NumVar ; ++i )
+    if( ! LagTerms[ i ][ h ].empty() )
+     ++nnz;
+   dp.reserve( nnz );
 
-  Index i = 0;
-  for( ; i < static_cons ; ++i ) {
-   dp[ i ].first = & (*Ls)[ i ];
-   dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+   Index i = 0;
+   for( ; i < static_cons ; ++i ) {
+    if( LagTerms[ i ][ h ].empty() )
+     continue;
+    dp.emplace_back( & (*Ls)[ i ] ,
+                     new LinearFunction( std::move( LagTerms[ i ][ h ] ) ) );
+    }
+
+   auto Lit = Ld->begin();
+   for( ; i < NumVar ; ++i , ++Lit ) {
+    if( LagTerms[ i ][ h ].empty() )
+     continue;
+    dp.emplace_back( &( *Lit ) ,
+                     new LinearFunction( std::move( LagTerms[ i ][ h ] ) ) );
+    }
    }
+  else {
+   dp.resize( NumVar );
 
-  auto Lit = Ld->begin();
-  for( ; i < NumVar ; ++i ) {
-   dp[ i ].first = &( *Lit++ );
-   dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+   Index i = 0;
+   for( ; i < static_cons ; ++i ) {
+    dp[ i ].first = & (*Ls)[ i ];
+    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+    }
+
+   auto Lit = Ld->begin();
+   for( ; i < NumVar ; ++i ) {
+    dp[ i ].first = &( *Lit++ );
+    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+    }
    }
 
   // Since this LagBFunction is already part of an Objective (and, therefore,
@@ -753,7 +789,13 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
   case( intPushCostToOwner ):
    PushCostToOwner = bool( value );
    set_PushCostToOwner();
-   break;   
+   break;
+  case( intSparseLagPairs ):
+   if( LagrDual )
+    throw( std::logic_error( "changing SparseLagPairs with registered "
+                              "Block" ) );
+   SparseLagPairs = bool( value );
+   break;
   default:
    InnerSolver->set_par(  int_par_lds( par ) , value );
   }
@@ -2379,13 +2421,36 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 					     )->get_function()
 		       )->add_variables( std::move( objcf ) , mp );
 
-  // add the variables in the LagBFunctions
+  // add the variables in the LagBFunctions. With SparseLagPairs == 1 we
+  // skip dual pairs whose Lagrangian term is empty, mirroring the static
+  // sparse path in set_Block(). The new dual pairs cover a freshly-added
+  // range of dynamic Lambda multipliers (indices [ i .. NumVar )) and are
+  // appended in increasing global-index order, preserving the strict-
+  // monotonicity invariant BundleSolver requires for SetItemBse.
+  // NOTE: BundleSolver auto-detects sparseness once in set_Block; if a
+  // sparse LagBFunction gains a new dual pair via this path during
+  // compute(), BundleSolver currently won't refresh v_local2global[ h ].
+  // For the test suites that exercise this branch incrementally, sparse
+  // mode is not yet supported end-to-end (Phase B).
+
   for( Index h = 0 ; h < f_nsb ; ++h ) {
    Lit = NLDLit;
-   v_dual_pair dp( NAddd );  // construct the dual pairs
-   for( Index i = 0 ; i < NAddd ; ++i ) {
-    dp[ i ].first = &( *Lit++ );
-    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+   v_dual_pair dp;
+   if( SparseLagPairs ) {
+    dp.reserve( NAddd );
+    for( Index i = 0 ; i < NAddd ; ++i , ++Lit ) {
+     if( LagTerms[ i ][ h ].empty() )
+      continue;
+     dp.emplace_back( &( *Lit ) ,
+                      new LinearFunction( std::move( LagTerms[ i ][ h ] ) ) );
+     }
+    }
+   else {
+    dp.resize( NAddd );
+    for( Index i = 0 ; i < NAddd ; ++i ) {
+     dp[ i ].first = &( *Lit++ );
+     dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+     }
     }
 
    v_LBF[ h ]->add_dual_pairs( std::move( dp ) );
