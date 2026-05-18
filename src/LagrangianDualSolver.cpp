@@ -1042,9 +1042,18 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
  // for a specific sub-Block
  auto getsoli = [ this ] ( Index i ) -> void {
   Index szi = v_LBF[ i ]->get_int_par( C05Function::intGPMaxSz );
-  if( ! szi )
-   throw( std::invalid_argument(
-           "LagrangianDualSolver::get_var_solution: no Solution stored" ) );
+  if( ! szi ) {
+   // Easy component (intGPMaxSz == 0 is BundleSolver's convention for
+   // "no global pool needed because the component is inlined in the
+   // master"): BundleSolver::get_dual_solution() above (line 1039) has
+   // already fished the primal optimal solution out of the master and
+   // written it to v_LBF[ i ]'s inner Block. Only the map_back_solution
+   // step remains, if the sub-Block was R3Block-copied.
+   if( iBCopy )
+    f_Block->get_nested_Block( i )->map_back_solution(
+                                  v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
+   return;
+   }
   auto & lc = v_LBF[ i ]->get_important_linearization_coefficients();
   if( lc.empty() )
    throw( std::invalid_argument(
