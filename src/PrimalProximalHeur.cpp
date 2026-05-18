@@ -378,6 +378,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  warmstart->set_Block( f_Block );
  warmstart->compute( changedvars );
  warmstart->get_dual_solution();
+ warmstart->get_var_solution();
 
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -393,12 +394,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << std::endl << "PrimalProximalHeur::compute: iteration "
           << iters << std::endl;
 
-  // at iteration 0 seed the "previous solution" with a random 0/1 vector
-  if( iters == 0 )
-   for( Index kvar = 0 ; kvar < NumStatVar ; ++kvar )
-    sol[ kvar ] = rand() % 2;
-/*
-  if( iters == 0 ){
+  if( iters >= 0 ){
           Index index = 0;
 	        Index kvar = 0;
           for( const auto & sbi : f_Block->get_nested_Blocks() ) {
@@ -410,7 +406,6 @@ int PrimalProximalHeur::compute( bool changedvars )
             index++;
           }
         }
-*/
 
   previous_sol.insert( previous_sol.begin() , sol.begin() , sol.end() );
 
