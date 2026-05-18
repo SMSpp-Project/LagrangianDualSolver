@@ -302,11 +302,12 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << "COMPUTE MILP RELAX" << std::endl;
 
   auto Slv = new GRBMILPSolver();
-  Slv->set_par( Slv->int_par_str2idx( "intRelaxIntVars" ) , 1 );                                                                                                                                                                  
+  Slv->set_par( Slv->int_par_str2idx( "intRelaxIntVars" ) , 1 );     
+  //Slv->set_par( Slv->int_par_str2idx( "Threads" ) , 8 );                                                                                                                                                                  
   Slv->set_Block( f_Block );
   auto res_slv = Slv->compute( changedvars );
   Slv->get_dual_solution();
-  //Slv->get_var_solution();
+  Slv->get_var_solution();
 
  if( f_log && ( logVerb >= 2 ) )
    *f_log << "GET DUAL VARS" << std::endl;
@@ -318,24 +319,23 @@ int PrimalProximalHeur::compute( bool changedvars )
   Index index_event = 0;
   if( f_log && ( logVerb >= 2 ) )
    *f_log << "\niteration = " << iters << "\n";
-
+/*
   if( iters == 0 )
    for( Index kvar = 0 ; kvar < NumStatVar ; ++kvar )
     sol[ kvar ] = rand() % 2;
-/*
-  if( iters == 0 ){
+*/
+  if( iters >= 0 ){
           Index index = 0;
 	        Index kvar = 0;
           for( const auto & sbi : f_Block->get_nested_Blocks() ) {
             for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
-	             sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+	            sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
               auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
               kvar++;
             }
             index++;
           }
         }
-*/
 
   if( iters >= 0 )
     previous_sol.insert( previous_sol.begin() , & sol[ 0 ] ,
