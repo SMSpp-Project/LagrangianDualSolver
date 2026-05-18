@@ -28,6 +28,28 @@
  * term is left quadratic. */
 
 /*--------------------------------------------------------------------------*/
+/*------------------------------- MACROS -----------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+#ifndef NDEBUG
+ #define PrimalProximalHeur_LOG 0
+ /* If non-zero, enables the verbose trace messages emitted by
+  * PrimalProximalHeur to f_log under runtime logVerb control. Default
+  * 0 keeps the trace silent; set to 1 manually during development to
+  * follow the heuristic step by step. Same pattern as CHECK_SOLUTIONS
+  * in LagBFunction.cpp. */
+#else
+ #define PrimalProximalHeur_LOG 0
+ // never change this
+#endif
+
+#if PrimalProximalHeur_LOG
+ #define LOG_VERB( lvl ) if( f_log && ( logVerb >= ( lvl ) ) )
+#else
+ #define LOG_VERB( lvl ) if constexpr ( false )
+#endif
+
+/*--------------------------------------------------------------------------*/
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -95,7 +117,7 @@ void PrimalProximalHeur::initialize( void )
  // each sub-Block. The dictionaries are later read by add_penalty_terms()
  // and remove_penalty_terms() to apply / strip the proximal term.
 
- if( f_log && ( logVerb >= 2 ) )
+ LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::initialize: maxIter = " << maxIter
          << ", R = " << R << ", logVerb = " << logVerb << std::endl;
 
@@ -201,7 +223,7 @@ void PrimalProximalHeur::initialize( void )
   ++index;
   }
 
- if( NumStatVar == 0 && f_log && ( logVerb >= 1 ) )
+ if( NumStatVar == 0 ) LOG_VERB( 1 )
   *f_log << "PrimalProximalHeur::initialize: no static binary Variable, "
             "compute() will delegate to LagrangianDualSolver" << std::endl;
 
@@ -320,7 +342,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( f_log && ( logVerb >= 2 ) )
+ LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: NumStatVar = " << NumStatVar
          << std::endl;
 
@@ -347,7 +369,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  // and should be turned into a config-driven pick when the warm-start
  // infrastructure becomes parametric.
 
- if( f_log && ( logVerb >= 2 ) )
+ LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: solving MILP relaxation"
          << std::endl;
 
@@ -367,7 +389,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  while( true ) {
 
-  if( f_log && ( logVerb >= 2 ) )
+  LOG_VERB( 2 )
    *f_log << std::endl << "PrimalProximalHeur::compute: iteration "
           << iters << std::endl;
 
@@ -394,7 +416,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   // apply the proximal term to the inner objective(s)- - - - - - - - - - - -
 
-  if( f_log && ( logVerb >= 2 ) )
+  LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: adding penalty terms"
           << std::endl;
 
@@ -437,21 +459,21 @@ int PrimalProximalHeur::compute( bool changedvars )
       }
 
      if( ! is_integer_solution() ) {
-      if( f_log && ( logVerb >= 2 ) )
+      LOG_VERB( 2 )
        *f_log << "  (event) IS_NOT_INTEGER_SOL" << std::endl;
       return( ThinComputeInterface::eContinue );
       }
-     if( f_log && ( logVerb >= 2 ) )
+     LOG_VERB( 2 )
       *f_log << "  (event) IS_INTEGER_SOL, LB = "
              << ( InnerSolver->get_lb() - addterm ) << std::endl;
 
      if( f_Block->is_feasible() ) {
-      if( f_log && ( logVerb >= 2 ) )
+      LOG_VERB( 2 )
        *f_log << "  (event) IS_FEASIBLE_SOL: " << value_FUNCTION
               << std::endl;
       record_feasible( value_FUNCTION );
       }
-     else if( f_log && ( logVerb >= 2 ) )
+     else LOG_VERB( 2 )
       *f_log << "  (event) IS_INFEASIBLE_SOL: " << value_FUNCTION
              << std::endl;
 
@@ -460,13 +482,13 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   // delegate to the inner Solver - - - - - - - - - - - - - - - - - - - - - -
 
-  if( f_log && ( logVerb >= 2 ) )
+  LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: solving Lagrangian Dual"
           << std::endl;
 
   res = InnerSolver->compute( changedvars );
 
-  if( f_log && ( logVerb >= 2 ) )
+  LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: Lagrangian Dual solved"
           << std::endl;
 
@@ -483,7 +505,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   // strip the proximal term from the inner objective(s)- - - - - - - - - - -
 
-  if( f_log && ( logVerb >= 2 ) )
+  LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: removing penalty terms"
           << std::endl;
 
@@ -507,7 +529,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   value_FUNCTION = get_funct_value();
 
-  if( f_log && ( logVerb >= 2 ) ) {
+  LOG_VERB( 2 ) {
    if( std::abs( value_bound - value_FUNCTION ) /
        std::max( std::abs( value_bound ) , std::abs( value_FUNCTION ) )
        >= 1e-3 )
@@ -531,7 +553,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   #ifdef BIN_VARS
    is_integer = is_integer_solution();
-   if( f_log && ( logVerb >= 2 ) )
+   LOG_VERB( 2 )
     *f_log << ( is_integer ? "  IS_INTEGER_SOL" : "  IS_NOT_INTEGER_SOL" )
            << std::endl;
   #endif
@@ -544,11 +566,11 @@ int PrimalProximalHeur::compute( bool changedvars )
    const bool can_record = f_Block->is_feasible() && ( iters >= 1 );
   #endif
   if( can_record ) {
-   if( f_log && ( logVerb >= 2 ) )
+   LOG_VERB( 2 )
     *f_log << "  IS_FEASIBLE_SOL" << std::endl;
    record_feasible( value_FUNCTION );
    }
-  else if( f_log && ( logVerb >= 2 ) )
+  else LOG_VERB( 2 )
    *f_log << "  IS_INFEASIBLE_SOL" << std::endl;
 
   ++iters;
@@ -569,7 +591,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  // unbounded and infeasible return codes back to the original sense
  if( res == kUnbounded ) {
   res = kInfeasible;
-  if( f_log && ( logVerb >= 2 ) )
+  LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: INFEASIBLE, iters = "
           << ( iters - 1 ) << std::endl;
   unlock();
@@ -577,7 +599,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   }
  if( res == kInfeasible ) {
   res = kUnbounded;
-  if( f_log && ( logVerb >= 2 ) )
+  LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: UNBOUNDED, iters = "
           << ( iters - 1 ) << std::endl;
   unlock();
@@ -596,7 +618,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    v_best_sol.emplace_back( f_Block->get_Solution() , value_FUNCTION );
    }
   best_bound = bound;
-  if( f_log && ( logVerb >= 2 ) )
+  LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: converged after " << ( iters - 1 )
           << " iterations, LB = " << InnerSolver->get_lb()
           << ", UB = " << InnerSolver->get_ub()
@@ -647,7 +669,7 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
    }
   }
 
- if( f_log && ( logVerb >= 2 ) )
+ LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::process_outstanding_Modification: "
          << "reload = " << reload
          << ", check_feasibility = " << check_feasibility << std::endl;
