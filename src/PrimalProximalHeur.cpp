@@ -55,8 +55,6 @@ using namespace SMSpp_di_unipi_it;
 /*--------------------------------------------------------------------------*/
 
 using p_FRO = FRealObjective *;
-using p_LF  = LinearFunction *;
-using p_DQF = DQuadFunction *;
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
