@@ -493,7 +493,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    }
 
   // stopping criterion: previous and current solution coincide (within
-  // 1e-3 in penalty terms, equivalent to identical to within sqrt( 1e-3 / R ))
+  // 1e-3 in penalty terms, equivalent too identical to within sqrt( 1e-3 / R ))
   if( iters >= 1 )
    is_the_same = ( penalty < 1e-3 );
 
