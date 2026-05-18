@@ -130,22 +130,27 @@ void PrimalProximalHeur::initialize( void )
 
   // helper: register a single binary ColVariable into the sub-Block's
   // dictionaries — read the coefficients off the inner objective Function,
-  // zero-clamp tiny linear coefficients to keep the proximal term clean
+  // zero-clamp tiny linear coefficients to keep the proximal term clean.
+  // Variables not currently present in the inner objective are skipped:
+  // injecting them in add_penalty_terms() via add_variable() would issue
+  // a FunctionModVarsAddd that some leaf Blocks (e.g. ThermalUnitBlock)
+  // cannot handle (their obj has a fixed physical layout). The proximal
+  // penalty is therefore not applied to those Variables.
   auto register_binvar = [ & ]( ColVariable * pv ) {
+   const auto i_in_obj = fobj->is_active( pv );
+   if( i_in_obj >= fobj->get_num_active_var() )
+    return;  // not in inner obj: skip to avoid unsupported add_variable
    double c1 = 0;
    double c2 = 0;
-   const auto i_in_obj = fobj->is_active( pv );
-   if( i_in_obj < fobj->get_num_active_var() ) {
-    if( ! fobj->is_linear() ) {
-     auto qf = static_cast< p_DQF >( fobj );
-     c1 = qf->get_linear_coefficient( i_in_obj );
-     c2 = qf->get_quadratic_coefficient( i_in_obj );
-     }
-    else
-     c1 = static_cast< p_LF >( fobj )->get_coefficient( i_in_obj );
-    if( std::abs( c1 ) < 1e-6 )
-     c1 = 0;
+   if( ! fobj->is_linear() ) {
+    auto qf = static_cast< p_DQF >( fobj );
+    c1 = qf->get_linear_coefficient( i_in_obj );
+    c2 = qf->get_quadratic_coefficient( i_in_obj );
     }
+   else
+    c1 = static_cast< p_LF >( fobj )->get_coefficient( i_in_obj );
+   if( std::abs( c1 ) < 1e-6 )
+    c1 = 0;
    idx_to_var_sbi1[ index ].emplace_back( c1 , pv );
    idx_to_var_sbi2[ index ].emplace_back( c2 , pv );
    ++pos_id;
@@ -196,9 +201,9 @@ void PrimalProximalHeur::initialize( void )
   ++index;
   }
 
- if( NumStatVar == 0 )
-  throw( std::invalid_argument(
-   "PrimalProximalHeur::initialize: no static binary Variable" ) );
+ if( NumStatVar == 0 && f_log && ( logVerb >= 1 ) )
+  *f_log << "PrimalProximalHeur::initialize: no static binary Variable, "
+            "compute() will delegate to LagrangianDualSolver" << std::endl;
 
  }  // end( PrimalProximalHeur::initialize )
 
@@ -235,6 +240,11 @@ void PrimalProximalHeur::set_par( idx_type par , double value )
 
 int PrimalProximalHeur::compute( bool changedvars )
 {
+ // no static binary Variable to apply the proximal penalty to: PPH has
+ // nothing to add over the inner Lagrangian Dual, fall back to it
+ if( NumStatVar == 0 )
+  return( LagrangianDualSolver::compute( changedvars ) );
+
  lock();  // lock the Solver mutex
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
