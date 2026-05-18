@@ -37,6 +37,13 @@
 
 #include "FRealObjective.h"
 
+#include "GRBMILPSolver.h"
+// NOTE: hard dependency on the Gurobi MILPSolver. PrimalProximalHeur
+// uses it to warm-start the heuristic by solving the LP relaxation of
+// f_Block before the proximal iterations begin. To be cleaned up in
+// favour of a config-driven Solver pick (see set_par()) when the
+// warm-start infrastructure becomes parametric.
+
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -324,6 +331,23 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  if( ! owned )
   f_Block->unlock( f_id );
+
+ // warm-start: solve the LP relaxation of f_Block with an auxiliary
+ // GRBMILPSolver so that the dual variables (and hence the initial Lambda
+ // multipliers of the inner Lagrangian Dual) start from a meaningful
+ // point. The Solver is created inline; this is a temporary scaffolding
+ // and should be turned into a config-driven pick when the warm-start
+ // infrastructure becomes parametric.
+
+ if( f_log && ( logVerb >= 2 ) )
+  *f_log << "PrimalProximalHeur::compute: solving MILP relaxation"
+         << std::endl;
+
+ auto warmstart = new GRBMILPSolver();
+ warmstart->set_par( warmstart->int_par_str2idx( "intRelaxIntVars" ) , 1 );
+ warmstart->set_Block( f_Block );
+ warmstart->compute( changedvars );
+ warmstart->get_dual_solution();
 
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

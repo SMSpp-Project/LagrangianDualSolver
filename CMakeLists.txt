@@ -49,6 +49,10 @@ include(BuildType)
 # look for the system-installed libraries.
 if (NOT hasParent)
     find_package(SMS++ REQUIRED)
+    # MILPSolver is needed by PrimalProximalHeur to warm-start the
+    # heuristic by solving the LP relaxation of f_Block; see the
+    # GRBMILPSolver include of src/PrimalProximalHeur.cpp.
+    find_package(MILPSolver REQUIRED)
 endif ()
 
 # ----- Configuration header ------------------------------------------------ #
@@ -95,7 +99,9 @@ target_include_directories(
 # PUBLIC means they will be linked also to the targets that depend on this
 # library, INTERFACE means they will be linked only to the targets that depend
 # on this library.
-target_link_libraries(${modName} PUBLIC ${modNamespace}::SMS++)
+target_link_libraries(${modName} PUBLIC
+        ${modNamespace}::SMS++
+        ${modNamespace}::MILPSolver)
 
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
