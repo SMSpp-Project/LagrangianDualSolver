@@ -547,10 +547,10 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  // SparseLagPairs == 1: skip dual pairs whose Lagrangian term is empty.
  // Since the loop walks the global Lambda index i in strictly increasing
- // order (first static_cons static, then dynamic), the resulting dp's
- // are appended in increasing global-i order, which is the invariant
- // BundleSolver's sparse path relies on (v_local2global[ h ] must be
- // strictly monotonic for MPSolver::SetItemBse).
+ // order (first static_cons static, then dynamic), the resulting dp's are
+ // appended in increasing global-i order; inner Solvers that need to map
+ // each LagBFunction's local "active" set into a global Lambda space can
+ // therefore expect that local-to-global lookup tables are monotonic.
 
  for( Index h = 0 ; h < f_nsb ; ++h ) {
   v_dual_pair dp;
@@ -1043,12 +1043,14 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
  auto getsoli = [ this ] ( Index i ) -> void {
   Index szi = v_LBF[ i ]->get_int_par( C05Function::intGPMaxSz );
   if( ! szi ) {
-   // Easy component (intGPMaxSz == 0 is BundleSolver's convention for
-   // "no global pool needed because the component is inlined in the
-   // master"): BundleSolver::get_dual_solution() above (line 1039) has
-   // already fished the primal optimal solution out of the master and
-   // written it to v_LBF[ i ]'s inner Block. Only the map_back_solution
-   // step remains, if the sub-Block was R3Block-copied.
+   // intGPMaxSz == 0 is the conventional flag set by the inner Solver
+   // when it does not need a global pool of linearizations for this
+   // LagBFunction (typically because it represents it inline rather
+   // than by cutting planes). In that case the inner Solver has
+   // already taken care of writing the primal optimal solution into
+   // v_LBF[ i ]'s inner Block via the InnerSolver->get_dual_solution()
+   // call above, and only the map_back_solution step remains, if the
+   // sub-Block was R3Block-copied.
    if( iBCopy )
     f_Block->get_nested_Block( i )->map_back_solution(
                                   v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
@@ -2434,13 +2436,9 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
   // skip dual pairs whose Lagrangian term is empty, mirroring the static
   // sparse path in set_Block(). The new dual pairs cover a freshly-added
   // range of dynamic Lambda multipliers (indices [ i .. NumVar )) and are
-  // appended in increasing global-index order, preserving the strict-
-  // monotonicity invariant BundleSolver requires for SetItemBse.
-  // NOTE: BundleSolver auto-detects sparseness once in set_Block; if a
-  // sparse LagBFunction gains a new dual pair via this path during
-  // compute(), BundleSolver currently won't refresh v_local2global[ h ].
-  // For the test suites that exercise this branch incrementally, sparse
-  // mode is not yet supported end-to-end (Phase B).
+  // appended in increasing global-index order, so the monotonicity of
+  // any local-to-global mapping the inner Solver may keep around for
+  // each LagBFunction is preserved across this incremental add.
 
   for( Index h = 0 ; h < f_nsb ; ++h ) {
    Lit = NLDLit;

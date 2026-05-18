@@ -383,19 +383,21 @@ public:
   * LagTerms[ i ][ h ] is non-empty, instead of NumVar dense pairs with
   * empty LinearFunctions for the missing entries. On problems with very
   * sparse coupling (e.g. AC OPF over many time steps) this dramatically
-  * reduces setup time, peak memory, and master iteration cost. The
-  * downstream Solver (typically BundleSolver) tolerates v_c05f[ h ]
-  * exposing a strict subset of the union of active Variables; BundleSolver
-  * auto-detects the situation, builds v_local2global[ h ] maps, and uses
-  * the MPSolver::SetItemBse sparse-name format. On problems where the
-  * Lagrangian coupling is already (essentially) dense, BundleSolver
-  * detects that all per-component maps are the identity and falls back
-  * to the legacy dense fast paths — sparse mode has no measurable cost
-  * on dense workloads.
+  * reduces setup time, peak memory, and the work the inner Solver has to
+  * do per iteration. As a consequence the LagBFunctions may expose
+  * different sets of "active" Variables: it is then the responsibility
+  * of the inner Solver to handle that — say, by considering each
+  * "active" Variable of each LagBFunction as a subset of some "global
+  * variable space", which is the union of all of them. The inner Solver
+  * may auto-detect the sparse case and switch to a sparse code path, or
+  * fall back to the dense one if every LagBFunction happens to expose
+  * the full union: in the latter case the sparse setting has no
+  * measurable cost.
   *
   * Set to 0 to force the legacy "every LagBFunction sees all multipliers
-  * as dense active vars" construction (useful for reproducing pre-Phase-A
-  * behavior or for debugging). */
+  * as dense active vars" construction (useful for an inner Solver that
+  * cannot handle heterogeneous active sets, or for reproducing the
+  * pre-Phase-A behavior for debugging). */
 
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
