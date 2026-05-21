@@ -510,7 +510,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   penalty = 0;
   addterm = 0;
-  if( iters >= 1 )
+  if( iters >= 0 )
    for( Index ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
     const auto si  = sol[ ivar ];
     const auto psi = previous_sol[ ivar ];
@@ -543,7 +543,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   // stopping criterion: previous and current solution coincide (within
   // 1e-3 in penalty terms, equivalent too identical to within sqrt( 1e-3 / R ))
-  if( iters >= 1 )
+  if( iters >= 0 )
    is_the_same = ( penalty < 1e-3 );
 
   #ifdef BIN_VARS
