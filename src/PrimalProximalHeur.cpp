@@ -380,35 +380,35 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  auto warmstart_cfg = Configuration::deserialize( warmstart_cfg_file );
  auto warmstart_bsc = dynamic_cast< BlockSolverConfig * >( warmstart_cfg );
- if( ! warmstart_bsc ) {
+ if( ! warmstart_bsc || warmstart_bsc->get_SolverNames().empty() ) {
   delete warmstart_cfg;
   throw( std::runtime_error(
    "PrimalProximalHeur::compute: " + warmstart_cfg_file +
-   " is not a BlockSolverConfig" ) );
+   " is not a valid BlockSolverConfig" ) );
   }
 
- warmstart_bsc->apply( f_Block );
- const auto & registered = f_Block->get_registered_solvers();
- if( registered.empty() ) {
-  delete warmstart_bsc;
-  throw( std::runtime_error(
-   "PrimalProximalHeur::compute: WarmStartCfg produced no Solver"
-                            ) );
-  }
- auto warmstart = dynamic_cast< CDASolver * >( registered.back() );
+ // instantiate the warm-start Solver via the factory, picking name and
+ // (optional) ComputeConfig from WarmStartCfg.txt. The Solver is NOT
+ // registered on f_Block so it cannot interfere with PrimalProximalHeur
+ // itself (which is already attached to f_Block).
+ auto warmstart =
+  dynamic_cast< CDASolver * >(
+   Solver::new_Solver( warmstart_bsc->get_SolverName( 0 ) ) );
  if( ! warmstart ) {
-  f_Block->unregister_Solver( registered.back() , true );
   delete warmstart_bsc;
   throw( std::runtime_error(
    "PrimalProximalHeur::compute: warm-start Solver is not a CDASolver"
                             ) );
   }
+ if( warmstart_bsc->num_ComputeConfig() > 0 )
+  if( auto cc = warmstart_bsc->get_SolverConfig( 0 ) )
+   warmstart->set_ComputeConfig( cc );
+ warmstart->set_Block( f_Block );
  warmstart->compute( changedvars );
  warmstart->get_dual_solution();
  warmstart->get_var_solution();
 
- // detach (and delete) the warm-start Solver from f_Block
- f_Block->unregister_Solver( warmstart , true );
+ delete warmstart;
  delete warmstart_bsc;
 
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
