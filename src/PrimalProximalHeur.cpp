@@ -61,6 +61,8 @@
 
 #include "BlockSolverConfig.h"
 
+#include <filesystem>
+
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -368,13 +370,21 @@ int PrimalProximalHeur::compute( bool changedvars )
   *f_log << "PrimalProximalHeur::compute: solving MILP relaxation"
          << std::endl;
 
- auto warmstart_cfg = Configuration::deserialize( "WarmStartCfg.txt" );
+ // resolve WarmStartCfg.txt next to this source file. __FILE__ is baked
+ // in at compile time and points to LagrangianDualSolver/src/<this>.cpp,
+ // so the sibling LagrangianDualSolver/WarmStartCfg.txt is reachable
+ // regardless of the process working directory.
+ const std::string warmstart_cfg_file =
+  ( std::filesystem::path( __FILE__ ).parent_path().parent_path() /
+    "WarmStartCfg.txt" ).string();
+
+ auto warmstart_cfg = Configuration::deserialize( warmstart_cfg_file );
  auto warmstart_bsc = dynamic_cast< BlockSolverConfig * >( warmstart_cfg );
  if( ! warmstart_bsc ) {
   delete warmstart_cfg;
   throw( std::runtime_error(
-   "PrimalProximalHeur::compute: WarmStartCfg.txt is not a BlockSolverConfig"
-                            ) );
+   "PrimalProximalHeur::compute: " + warmstart_cfg_file +
+   " is not a BlockSolverConfig" ) );
   }
 
  warmstart_bsc->apply( f_Block );
