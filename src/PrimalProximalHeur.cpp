@@ -59,12 +59,7 @@
 
 #include "FRealObjective.h"
 
-#include "GRBMILPSolver.h"
-// NOTE: hard dependency on the Gurobi MILPSolver. PrimalProximalHeur
-// uses it to warm-start the heuristic by solving the LP relaxation of
-// f_Block before the proximal iterations begin. To be cleaned up in
-// favour of a config-driven Solver pick (see set_par()) when the
-// warm-start infrastructure becomes parametric.
+#include "BlockSolverConfig.h"
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
@@ -363,22 +358,48 @@ int PrimalProximalHeur::compute( bool changedvars )
   f_Block->unlock( f_id );
 
  // warm-start: solve the LP relaxation of f_Block with an auxiliary
- // GRBMILPSolver so that the dual variables (and hence the initial Lambda
- // multipliers of the inner Lagrangian Dual) start from a meaningful
- // point. The Solver is created inline; this is a temporary scaffolding
- // and should be turned into a config-driven pick when the warm-start
- // infrastructure becomes parametric.
+ // :MILPSolver picked from WarmStartCfg.txt via the Configuration factory,
+ // so that the dual variables (and hence the initial Lambda multipliers
+ // of the inner Lagrangian Dual) start from a meaningful point. The
+ // concrete Solver (CPLEX / Gurobi / SCIP / HiGHS) is selected by the
+ // config file, not hard-wired in code.
 
  LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: solving MILP relaxation"
          << std::endl;
 
- auto warmstart = new GRBMILPSolver();
- warmstart->set_par( warmstart->int_par_str2idx( "intRelaxIntVars" ) , 1 );
- warmstart->set_Block( f_Block );
+ auto warmstart_cfg = Configuration::deserialize( "WarmStartCfg.txt" );
+ auto warmstart_bsc = dynamic_cast< BlockSolverConfig * >( warmstart_cfg );
+ if( ! warmstart_bsc ) {
+  delete warmstart_cfg;
+  throw( std::runtime_error(
+   "PrimalProximalHeur::compute: WarmStartCfg.txt is not a BlockSolverConfig"
+                            ) );
+  }
+
+ warmstart_bsc->apply( f_Block );
+ const auto & registered = f_Block->get_registered_solvers();
+ if( registered.empty() ) {
+  delete warmstart_bsc;
+  throw( std::runtime_error(
+   "PrimalProximalHeur::compute: WarmStartCfg produced no Solver"
+                            ) );
+  }
+ auto warmstart = dynamic_cast< CDASolver * >( registered.back() );
+ if( ! warmstart ) {
+  f_Block->unregister_Solver( registered.back() , true );
+  delete warmstart_bsc;
+  throw( std::runtime_error(
+   "PrimalProximalHeur::compute: warm-start Solver is not a CDASolver"
+                            ) );
+  }
  warmstart->compute( changedvars );
  warmstart->get_dual_solution();
  warmstart->get_var_solution();
+
+ // detach (and delete) the warm-start Solver from f_Block
+ f_Block->unregister_Solver( warmstart , true );
+ delete warmstart_bsc;
 
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
