@@ -1866,6 +1866,11 @@ public:
    return;
 
   InnerSolver->set_id( this );
+  // forward the exclusion list verbatim: any sub-Block this Solver was
+  // told to skip is, by construction, a sub-Block of LagrDual or of one
+  // of its descendants, so the inner Solver needs to skip it as well
+  if( ! get_excluded_blocks().empty() )
+   InnerSolver->set_excluded_blocks( & get_excluded_blocks() );
   LagrDual->register_Solver( InnerSolver );
   }
 
