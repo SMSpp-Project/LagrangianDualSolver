@@ -626,15 +626,24 @@ void LagrangianDualSolver::set_Block( Block * block )
   auto c = Configuration::deserialize( LagBF_BSCfg );
   f_DBSCfg = dynamic_cast< BlockSolverConfig * >( c );
   if( ! f_DBSCfg ) {
-   delete c;
-   throw( std::invalid_argument(
-	   "LagrangianDualSolver: LagBF_BSCfg not a BlockSolverConfig" ) );
+   // also accept a "meta" BlockSolverConfig (a map from Block classname() to
+   // the BlockSolverConfig to use for it), dispatched per inner Block by
+   // classname() in default_BSCfg_for(): this lets a single str_LagBF_BSCfg
+   // configure inner Blocks of different types at once
+   f_DBSCfg_map = dynamic_cast< SimpleConfiguration<
+                   std::map< std::string , Configuration * > > * >( c );
+   if( ! f_DBSCfg_map ) {
+    delete c;
+    throw( std::invalid_argument(
+	    "LagrangianDualSolver: LagBF_BSCfg not a [meta]BlockSolverConfig" ) );
+    }
    }
   }
 
  Index iW2BSCfg = 0;  // index in W2BSCfg
  for( Index i = 0 ; i < f_nsb ; ++i ) {
-  auto BSCi = f_DBSCfg;
+  Block * csbi = v_LBF[ i ]->get_inner_block();
+  auto BSCi = default_BSCfg_for( csbi );
 
   if( ! WBSCfg.empty() ) {  // individual BlockSolverConfig provided
    Index h;                 // the index in WBSCfg
@@ -646,7 +655,7 @@ void LagrangianDualSolver::set_Block( Block * block )
      h = iW2BSCfg++;
     else
      h = WBSCfg.size();
- 
+
    if( ( h < WBSCfg.size() ) &&
        ( WBSCfg[ h ] >= 0 ) && ( WBSCfg[ h ] < int( v_Cfg.size() ) ) )
     if( auto c = dynamic_cast< BlockSolverConfig * >( v_Cfg[ WBSCfg[ h ] ] ) )
@@ -654,7 +663,6 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
 
   if( BSCi ) {
-   Block * csbi = v_LBF[ i ]->get_inner_block();
    if( CloneCfg ) {
     auto cBSCi = BSCi->clone();
     cBSCi->apply( csbi );
@@ -1317,18 +1325,42 @@ void LagrangianDualSolver::clear_LD_BlockConfig( bool keepcfg )
 
 /*--------------------------------------------------------------------------*/
 
+BlockSolverConfig * LagrangianDualSolver::default_BSCfg_for( Block * inner )
+ const
+{
+ if( f_DBSCfg_map ) {
+  // exact classname() match wins; otherwise fall back to the reserved "*"
+  // catch-all entry (the BlockSolverConfig for "every other" inner Block), if
+  // any. This lets a single (meta) str_LagBF_BSCfg express "this Solver for the
+  // ThermalUnitBlock, that Solver for all the others", and compose the same way
+  // across nesting levels.
+  auto it = f_DBSCfg_map->f_value.find( inner->classname() );
+  if( it == f_DBSCfg_map->f_value.end() )
+   it = f_DBSCfg_map->f_value.find( "*" );
+  if( it != f_DBSCfg_map->f_value.end() )
+   return( dynamic_cast< BlockSolverConfig * >( it->second ) );
+  return( nullptr );
+  }
+ return( f_DBSCfg );
+
+ }  // end( LagrangianDualSolver::default_BSCfg_for )
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualSolver::clear_inner_BlockSolverConfig( void )
 {
  if( ! LagrDual )
   return;
 
- if( ( ! f_DBSCfg ) && ( v_Cfg.empty() || WBSCfg.empty() ) )
+ if( ( ! f_DBSCfg ) && ( ! f_DBSCfg_map ) &&
+     ( v_Cfg.empty() || WBSCfg.empty() ) )
   return;
 
  Index iW2BSCfg = 0;  // index in W2BSCfg
  for( Index i = 0 ; i < f_nsb ; ++i ) {
-  // the default individual BlockSolverConfig
-  BlockSolverConfig * BSCi = f_DBSCfg;
+  // the default individual BlockSolverConfig (per inner-Block classname() if a
+  // meta config was given)
+  BlockSolverConfig * BSCi = default_BSCfg_for( v_LBF[ i ]->get_inner_block() );
 
   if( ! WBSCfg.empty() ) {  // individual BlockSolverConfig are provided
    Index h;                 // the index in WBSCfg
@@ -1764,6 +1796,7 @@ void LagrangianDualSolver::guts_of_destructor( void )
  cleanup_LagrDual();
 
  delete f_DBSCfg;
+ delete f_DBSCfg_map;  // mutually exclusive with f_DBSCfg (one is nullptr)
  delete f_DBCfg;
  for( auto Ci : v_Cfg )
   delete Ci;

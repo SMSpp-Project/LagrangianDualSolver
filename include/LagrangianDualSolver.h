@@ -520,7 +520,7 @@ public:
  LagrangianDualSolver( void ) : CDASolver() , NumVar( 0 ) , f_nsb( 0 ) ,
   f_max( false ) , LagrDual( nullptr ) , f_BCfg( nullptr ) ,
   f_BSCfg( nullptr ) ,  f_DBCfg( nullptr ) , f_DBSCfg( nullptr ) ,
-  static_cons( 0 ) {
+  f_DBSCfg_map( nullptr ) , static_cons( 0 ) {
   // ensure all parameters are properly given their default value
   iBCopy          = get_dflt_int_par( int_LDSlv_iBCopy );
   NNMult          = get_dflt_int_par( int_LDSlv_NNMult );
@@ -2096,6 +2096,23 @@ FRowConstraint * constraint_with_index( Index i ) {
  BlockConfig * f_DBCfg;      ///< the default individual BlockConfig
 
  BlockSolverConfig * f_DBSCfg;   ///< the default individual BlockSolverConfig
+
+ /// "meta" form of the default individual BlockSolverConfig
+ /** If str_LagBF_BSCfg points to a meta BlockSolverConfig (a
+  * SimpleConfiguration< std::map< std::string , Configuration * > > mapping a
+  * Block classname() to the BlockSolverConfig for it), it is stored here
+  * instead of f_DBSCfg and dispatched per inner Block by classname(). This
+  * allows a single str_LagBF_BSCfg to configure inner Blocks of different
+  * types (e.g. ThermalUnitBlock and HydroSystemUnitBlock) at once. Exactly one
+  * of f_DBSCfg / f_DBSCfg_map is non-null (or both null). */
+ SimpleConfiguration< std::map< std::string , Configuration * > > * f_DBSCfg_map;
+
+ /// the default individual BlockSolverConfig for inner Block \p inner
+ /** Returns the BlockSolverConfig to use as the "default" for the inner Block
+  * \p inner: the per-classname() entry of f_DBSCfg_map if a meta config was
+  * given, else f_DBSCfg; nullptr if none applies. Defined out-of-line since it
+  * dynamic_cast<>s to the (here incomplete) BlockSolverConfig. */
+ BlockSolverConfig * default_BSCfg_for( Block * inner ) const;
 
  std::vector< Configuration * > v_Cfg;  ///< the "Configuration cache"
 
