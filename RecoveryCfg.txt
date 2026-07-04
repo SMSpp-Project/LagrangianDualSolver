@@ -1,0 +1,82 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - RecoveryCfg.txt- - - - - - - - - - - - - - -
+#
+# BlockSolverConfig used by PrimalProximalHeur to instantiate the primal
+# recovery Solver via the factory. With the binary variables driven by the
+# proximal term fixed at their (integer) values, the Solver solves the
+# restricted problem on f_Block, enforcing the coupling constraints that a
+# Lagrangian point in general violates: its optimum is a genuinely feasible
+# completion of the integer point, hence a valid bound.
+#
+#   Donato Meoli
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig     # exact type of the Configuration object
+
+1  # the BlockSolverConfig is a "differential" one
+
+1 # number of (the names of) Solver in this BlockSolverConfig
+
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+#CPXMILPSolver        # name of Solver
+GRBMILPSolver         # name of Solver
+#SCIPMILPSolver       # name of Solver
+#HiGHSMILPSolver      # name of Solver
+
+1 # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# ComputeConfig of the :MILPSolver used for the primal recovery
+
+ComputeConfig         # exact type of the ComputeConfig object
+
+1  # f_diff == 0 ==> all non-provided parameters are set to the default value
+   # f_diff == 1 ==> all non-provided parameters are not changed
+
+1 # number of integer parameters
+
+# now all the integer parameters
+intRelaxIntVars 0 # the restricted problem is solved keeping integrality:
+                  # with the proximal binaries fixed only few dependent
+                  # integer variables remain, presolve disposes of them
+
+1 # number of double parameters
+
+# now all the double parameters
+dblMaxTime 60     # max running time (seconds): the restricted problem is
+                  # tiny, a timeout only guards degenerate cases
+
+0 # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0 # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0 # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0 # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+* # [none]
+
+# end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - END RecoveryCfg.txt- - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

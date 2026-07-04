@@ -140,9 +140,10 @@ class PrimalProximalHeur : public LagrangianDualSolver
  /// constructor: ensure every field is initialized
 
  PrimalProximalHeur( void ) : LagrangianDualSolver() {
-  logVerb = get_dflt_int_par( intLogVerb );
-  maxIter = get_dflt_int_par( intMaxIterPPH );
-  R       = get_dflt_dbl_par( dbl_penaltyFactor );
+  logVerb  = get_dflt_int_par( intLogVerb );
+  maxIter  = get_dflt_int_par( intMaxIterPPH );
+  f_MaxSol = get_dflt_int_par( intMaxSol );
+  R        = get_dflt_dbl_par( dbl_penaltyFactor );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -241,14 +242,25 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /** @name Accessing the found solutions (if any)
  *  @{ */
 
+ /// lower bound: the best feasible value (max) or the dual bound (min)
+ /** For a minimization problem the bound of the inner Lagrangian Dual is
+  * valid for the original problem only when no proximal penalty is applied
+  * (R == 0, i.e., PrimalProximalHeur degenerates into a warm-started
+  * LagrangianDualSolver): with R > 0 the inner Solver bounds the penalised
+  * function, and no valid lower bound is available. */
+
  OFValue get_lb( void ) override {
-  return( f_max ? best_bound : - Inf< double >() );
+  if( f_max )
+   return( best_bound );
+  return( R == 0 ? LagrangianDualSolver::get_lb() : - Inf< double >() );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  OFValue get_ub( void ) override {
-  return( f_max ? Inf< double >() : best_bound );
+  if( ! f_max )
+   return( best_bound );
+  return( R == 0 ? LagrangianDualSolver::get_ub() : Inf< double >() );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -299,8 +311,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
                 "PrimalProximalHeur::get_var_solution: no Solution stored"
                           ) );
 
-  auto solution = f_Block->get_Solution( nullptr , false );
-  solution->write( f_Block );
+  v_best_sol.front().first->write( f_Block );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -525,6 +536,33 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*--------------------------------------------------------------------------*/
 
  void process_outstanding_Modification( void );
+
+/*--------------------------------------------------------------------------*/
+ /// instantiate an auxiliary Solver from a BlockSolverConfig .txt file
+ /** Load the BlockSolverConfig from the given file, a sibling of this class'
+  * source file, instantiate the (first) named Solver via the factory and
+  * apply its ComputeConfig (if any). The Solver is NOT registered on
+  * f_Block, so it cannot interfere with PrimalProximalHeur itself (which is
+  * already attached to f_Block); the caller owns it and must delete it. */
+
+ CDASolver * new_aux_solver( const std::string & cfgname );
+
+/*--------------------------------------------------------------------------*/
+ /// recover a feasible completion of the current (integer) point
+ /** A Lagrangian point in general violates the coupling constraints of
+  * f_Block (the ones the Lagrangian Dual dualizes), so its objective value
+  * is not a valid bound. This method fixes the binary Variables driven by
+  * the proximal term at their current (rounded) values and solves the
+  * restricted problem on f_Block with the auxiliary Solver picked from
+  * RecoveryCfg.txt, which enforces the coupling constraints: its optimum is
+  * a genuinely feasible completion of the integer point. On success returns
+  * true, writes the completion cost in \p cost and leaves the completion in
+  * the Variables of f_Block (so that a Solution snapshot picks it up); if
+  * the restricted problem is infeasible (the integer point admits no
+  * feasible completion) returns false. The fixing is done with eNoMod and
+  * undone before returning, so it is invisible to any other Solver. */
+
+ bool recover_primal( double & cost );
 
 /*--------------------------------------------------------------------------*/
 

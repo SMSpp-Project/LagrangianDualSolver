@@ -59,7 +59,11 @@
 
 #include "FRealObjective.h"
 
+#include "FRowConstraint.h"
+
 #include "BlockSolverConfig.h"
+
+#include <cmath>
 
 #include <filesystem>
 
@@ -273,7 +277,13 @@ int PrimalProximalHeur::compute( bool changedvars )
  // handler (which discovers feasible-integer solutions at a Bundle SS) and
  // by the main loop (which checks at the end of each PPH iteration).
 
- auto record_feasible = [ this ]( double value ) {
+ // comparator making the heap top the best Solution: a is "worse" than b
+ // in the sense of the optimization direction
+ auto sol_cmp = [ this ]( const sol_value & a , const sol_value & b ) {
+  return( f_max ? ( a.second < b.second ) : ( a.second > b.second ) );
+  };
+
+ auto record_feasible = [ this , & sol_cmp ]( double value ) {
   // is the new value better than the current best?
   const bool better = f_max ? ( value > best_bound ) : ( value < best_bound );
   if( better )
@@ -285,7 +295,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( v_best_sol.size() < f_MaxSol ) {
    // there is free space, just throw the new Solution in and re-heap
    v_best_sol.emplace_back( f_Block->get_Solution() , value );
-   std::push_heap( v_best_sol.begin() , v_best_sol.end() );
+   std::push_heap( v_best_sol.begin() , v_best_sol.end() , sol_cmp );
    if( worse )
     worst_bound = value;
    return;
@@ -308,13 +318,13 @@ int PrimalProximalHeur::compute( bool changedvars )
      second_worst = it->second;
     }
 
+  if( bad == v_best_sol.end() )  // no entry at worst_bound (numerical drift)
+   return;                       // play it safe and discard the new value
+
+  delete bad->first;
   *bad = { f_Block->get_Solution() , value };
   // re-heap from scratch (the replacement may have broken the order)
-  std::make_heap( v_best_sol.begin() , v_best_sol.end() ,
-                  [ this ]( const sol_value & a , const sol_value & b ) {
-                   return( f_max ? ( a.second < b.second )
-                                 : ( a.second > b.second ) );
-                   } );
+  std::make_heap( v_best_sol.begin() , v_best_sol.end() , sol_cmp );
 
   // the worst is now either the second-worst-before or the new value
   worst_bound = f_max ? std::min( second_worst , value )
@@ -370,46 +380,37 @@ int PrimalProximalHeur::compute( bool changedvars )
   *f_log << "PrimalProximalHeur::compute: solving MILP relaxation"
          << std::endl;
 
- // resolve WarmStartCfg.txt next to this source file. __FILE__ is baked
- // in at compile time and points to LagrangianDualSolver/src/<this>.cpp,
- // so the sibling LagrangianDualSolver/WarmStartCfg.txt is reachable
- // regardless of the process working directory.
- const std::string warmstart_cfg_file =
-  ( std::filesystem::path( __FILE__ ).parent_path().parent_path() /
-    "WarmStartCfg.txt" ).string();
-
- auto warmstart_cfg = Configuration::deserialize( warmstart_cfg_file );
- auto warmstart_bsc = dynamic_cast< BlockSolverConfig * >( warmstart_cfg );
- if( ! warmstart_bsc || warmstart_bsc->get_SolverNames().empty() ) {
-  delete warmstart_cfg;
-  throw( std::runtime_error(
-   "PrimalProximalHeur::compute: " + warmstart_cfg_file +
-   " is not a valid BlockSolverConfig" ) );
-  }
-
- // instantiate the warm-start Solver via the factory, picking name and
- // (optional) ComputeConfig from WarmStartCfg.txt. The Solver is NOT
- // registered on f_Block so it cannot interfere with PrimalProximalHeur
- // itself (which is already attached to f_Block).
- auto warmstart =
-  dynamic_cast< CDASolver * >(
-   Solver::new_Solver( warmstart_bsc->get_SolverName( 0 ) ) );
- if( ! warmstart ) {
-  delete warmstart_bsc;
-  throw( std::runtime_error(
-   "PrimalProximalHeur::compute: warm-start Solver is not a CDASolver"
-                            ) );
-  }
- if( warmstart_bsc->num_ComputeConfig() > 0 )
-  if( auto cc = warmstart_bsc->get_SolverConfig( 0 ) )
-   warmstart->set_ComputeConfig( cc );
+ auto warmstart = new_aux_solver( "WarmStartCfg.txt" );
  warmstart->set_Block( f_Block );
  warmstart->compute( changedvars );
  warmstart->get_dual_solution();
  warmstart->get_var_solution();
 
  delete warmstart;
- delete warmstart_bsc;
+
+ // re-sync the Lagrangian multipliers with the just-computed LP duals: the
+ // Lambda Variables of the Lagrangian Dual Block were initialised from the
+ // Constraint duals when set_Block() built it, i.e., before the warm-start
+ // ran, so without this the warm-start would not reach the inner Solver
+ {
+  auto Ls = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );
+  auto Lsit = Ls->begin();
+  for( const auto & el : f_Block->get_static_constraints() )
+   un_any_const_static( el ,
+                        [ & Lsit ]( FRowConstraint & con ) {
+                         ( Lsit++ )->set_value( con.get_dual() );
+                         } ,
+                        un_any_type< FRowConstraint >() );
+
+  auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
+  auto Ldit = Ld->begin();
+  for( const auto & el : f_Block->get_dynamic_constraints() )
+   un_any_const_dynamic( el ,
+                         [ & Ldit ]( FRowConstraint & con ) {
+                          ( Ldit++ )->set_value( con.get_dual() );
+                          } ,
+                         un_any_type< FRowConstraint >() );
+  }
 
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -425,28 +426,34 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << std::endl << "PrimalProximalHeur::compute: iteration "
           << iters << std::endl;
 
-  if( iters >= 0 ){
-          Index index = 0;
-	        Index kvar = 0;
-          for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-            for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ){
-	             sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
-              auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
-              kvar++;
-            }
-            index++;
-          }
-        }
+  // read the current sub-Block Variable values: they are the proximal
+  // center of this iteration
+  {
+   const auto n_sub = f_Block->get_number_nested_Blocks();
+   Index kvar = 0;
+   for( Index index = 0 ; index < n_sub ; ++index )
+    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+     sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+     ++kvar;
+     }
+   }
 
-  previous_sol.insert( previous_sol.begin() , sol.begin() , sol.end() );
+  previous_sol.assign( sol.begin() , sol.end() );
 
   // apply the proximal term to the inner objective(s)- - - - - - - - - - - -
+  // with R == 0 the proximal machinery is inert: the penalty terms would
+  // rewrite every objective coefficient to its own value (a storm of
+  // Modification per inner iteration via the event handler below, heavy at
+  // scale) and the handler could only re-record the same un-penalised
+  // points, so both are skipped and PrimalProximalHeur degenerates into a
+  // warm-started LagrangianDualSolver (plus the final primal recovery)
 
   LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: adding penalty terms"
           << std::endl;
 
-  add_penalty_terms();
+  if( R != 0 )
+   add_penalty_terms();
 
   // register an event handler on the inner Solver that checks at every
   // iteration whether the current point is feasible-and-integer, and if so
@@ -454,7 +461,8 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   Index index_event = 0;
 
-  LagrangianDualSolver::set_event_handler(
+  if( R != 0 )
+   LagrangianDualSolver::set_event_handler(
     ThinComputeInterface::eEverykIteration ,
     [ this , &sol , &index_event , &record_feasible , &is_integer_solution ]
     () {
@@ -535,19 +543,19 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << "PrimalProximalHeur::compute: removing penalty terms"
           << std::endl;
 
-  remove_penalty_terms();
+  if( R != 0 )
+   remove_penalty_terms();
 
   // recompute the linearized penalty contribution at this iteration- - - - -
 
   penalty = 0;
   addterm = 0;
-  if( iters >= 0 )
-   for( Index ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
-    const auto si  = sol[ ivar ];
-    const auto psi = previous_sol[ ivar ];
-    penalty += R * ( psi - si ) * ( psi - si );
-    addterm += R * si * ( 1.0 - 2.0 * psi );
-    }
+  for( Index ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
+   const auto si  = sol[ ivar ];
+   const auto psi = previous_sol[ ivar ];
+   penalty += R * ( psi - si ) * ( psi - si );
+   addterm += R * si * ( 1.0 - 2.0 * psi );
+   }
 
   // bound from the inner Solver, corrected by the proximal contribution
   const auto value_bound = f_max ? ( InnerSolver->get_ub() - addterm )
@@ -573,9 +581,8 @@ int PrimalProximalHeur::compute( bool changedvars )
    }
 
   // stopping criterion: previous and current solution coincide (within
-  // 1e-3 in penalty terms, equivalent too identical to within sqrt( 1e-3 / R ))
-  if( iters >= 0 )
-   is_the_same = ( penalty < 1e-3 );
+  // 1e-3 in penalty terms, i.e., identical to within sqrt( 1e-3 / R ))
+  is_the_same = ( penalty < 1e-3 );
 
   #ifdef BIN_VARS
    is_integer = is_integer_solution();
@@ -632,24 +639,30 @@ int PrimalProximalHeur::compute( bool changedvars )
   return( res );
   }
 
- // if we stopped because of solution convergence, also record the current
- // (integer) value as a candidate Solution so it shows up in v_best_sol
- if( is_the_same ) {
-  double bound;
-  if( ! is_integer )
-   bound = f_max ? get_lb() : get_ub();
-  else {
-   bound = f_max ? std::max( get_lb() , value_FUNCTION )
-                 : std::min( get_ub() , value_FUNCTION );
-   v_best_sol.emplace_back( f_Block->get_Solution() , value_FUNCTION );
-   }
-  best_bound = bound;
-  LOG_VERB( 2 )
-   *f_log << "PrimalProximalHeur::compute: converged after " << ( iters - 1 )
-          << " iterations, LB = " << InnerSolver->get_lb()
-          << ", UB = " << InnerSolver->get_ub()
-          << ", best feasible = " << bound << std::endl;
+ // final primal recovery: a Lagrangian point in general violates the
+ // coupling constraints of f_Block, so the in-loop record sites (properly)
+ // almost never fire. Now that the inner objectives have been restored to
+ // the original ones, if the final point is feasible outright record it;
+ // otherwise fix the (rounded) proximal binaries and solve the restricted
+ // problem on f_Block, whose optimum enforces the coupling constraints and
+ // is therefore a genuinely feasible completion, hence a valid bound. If
+ // the restricted problem is infeasible the point admits no feasible
+ // completion and is discarded.
+ if( is_integer && f_Block->is_feasible() )
+  record_feasible( value_FUNCTION );
+ else {
+  double rec_cost;
+  if( recover_primal( rec_cost ) )
+   record_feasible( rec_cost );
   }
+
+ LOG_VERB( 2 )
+  *f_log << "PrimalProximalHeur::compute: "
+         << ( is_the_same ? "converged" : "stopped" ) << " after "
+         << ( iters - 1 ) << " iterations, LB = " << InnerSolver->get_lb()
+         << ", UB = " << InnerSolver->get_ub()
+         << ", best feasible = " << ( f_max ? get_lb() : get_ub() )
+         << std::endl;
 
  changed_penalties = false;
 
@@ -731,6 +744,108 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
  f_mod_lock.clear( std::memory_order_release );  // release the lock
 
  }  // end( PrimalProximalHeur::process_outstanding_Modification )
+
+/*--------------------------------------------------------------------------*/
+
+CDASolver * PrimalProximalHeur::new_aux_solver( const std::string & cfgname )
+{
+ // resolve the config file next to this source file: __FILE__ is baked in
+ // at compile time and points to LagrangianDualSolver/src/<this>.cpp, so
+ // the sibling LagrangianDualSolver/<cfgname> is reachable regardless of
+ // the process working directory
+ const std::string cfgfile =
+  ( std::filesystem::path( __FILE__ ).parent_path().parent_path() / cfgname
+    ).string();
+
+ auto cfg = Configuration::deserialize( cfgfile );
+ auto bsc = dynamic_cast< BlockSolverConfig * >( cfg );
+ if( ( ! bsc ) || bsc->get_SolverNames().empty() ) {
+  delete cfg;
+  throw( std::runtime_error( "PrimalProximalHeur::new_aux_solver: " +
+                             cfgfile + " is not a valid BlockSolverConfig"
+                           ) );
+  }
+
+ auto slvr = dynamic_cast< CDASolver * >(
+                            Solver::new_Solver( bsc->get_SolverName( 0 ) ) );
+ if( ! slvr ) {
+  delete bsc;
+  throw( std::runtime_error( "PrimalProximalHeur::new_aux_solver: the Solver"
+                             " in " + cfgfile + " is not a CDASolver" ) );
+  }
+
+ if( bsc->num_ComputeConfig() > 0 )
+  if( auto cc = bsc->get_SolverConfig( 0 ) )
+   slvr->set_ComputeConfig( cc );
+
+ delete bsc;
+ return( slvr );
+
+ }  // end( PrimalProximalHeur::new_aux_solver )
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::recover_primal( double & cost )
+{
+ // fix the proximal binaries at their rounded values; eNoMod keeps the
+ // fixing invisible to the Solver attached to f_Block, and it is undone
+ // below before anyone else can compute()
+ for( const auto & sbd : idx_to_var_sbi1 )
+  for( const auto & dv : sbd ) {
+   const auto pv = dv.second;
+   pv->set_value( std::round( pv->get_value() ) );
+   pv->is_fixed( true , eNoMod );
+   }
+
+ // solve the restricted problem with the recovery Solver, which sees the
+ // fixed binaries as bounds and enforces the coupling constraints
+ auto solve_restricted = [ & ]( const char * tag ) -> bool {
+  auto recovery = new_aux_solver( "RecoveryCfg.txt" );
+  recovery->set_Block( f_Block );
+  const auto rc = recovery->compute( true );
+  const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
+                  recovery->has_var_solution();
+  if( ok ) {
+   recovery->get_var_solution();  // the completion into the Block Variables
+   cost = recovery->get_var_value();
+   }
+  delete recovery;
+  return( ok );
+  };
+
+ bool ok = solve_restricted( "full" );
+
+ if( ! ok ) {
+  // the fully-fixed point admits no feasible completion: relax the
+  // restriction one-sidedly, keeping only the binaries at 1 fixed, so
+  // more can be activated (e.g. more units committed to cover a demand
+  // the fixed set cannot); the problem remains a restriction of the
+  // original one, so any of its solutions still yields a valid bound.
+  // Note that with equality couplings this direction does not always
+  // help (an over-active set can be as infeasible as an under-active
+  // one), whence the last resort below.
+  for( const auto & sbd : idx_to_var_sbi1 )
+   for( const auto & dv : sbd )
+    if( dv.second->get_value() < 0.5 )
+     dv.second->is_fixed( false , eNoMod );
+
+  ok = solve_restricted( "ones" );
+  }
+
+ // un-fix the proximal binaries
+ for( const auto & sbd : idx_to_var_sbi1 )
+  for( const auto & dv : sbd )
+   dv.second->is_fixed( false , eNoMod );
+
+ if( ! ok )
+  // last resort: nothing fixed, i.e. the original problem within the
+  // recovery Solver's own budget; whatever incumbent it finds is still
+  // a valid bound, only no longer tied to the proximal point
+  ok = solve_restricted( "free" );
+
+ return( ok );
+
+ }  // end( PrimalProximalHeur::recover_primal )
 
 /*--------------------------------------------------------------------------*/
 
