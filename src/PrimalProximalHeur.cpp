@@ -505,7 +505,9 @@ int PrimalProximalHeur::compute( bool changedvars )
       LOG_VERB( 2 )
        *f_log << "  (event) IS_FEASIBLE_SOL: " << value_FUNCTION
               << std::endl;
-      record_feasible( value_FUNCTION );
+      double rec_cost;
+      if( recover_primal( rec_cost ) )
+       record_feasible( rec_cost );
       }
      else LOG_VERB( 2 )
       *f_log << "  (event) IS_INFEASIBLE_SOL: " << value_FUNCTION
@@ -601,7 +603,9 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( can_record ) {
    LOG_VERB( 2 )
     *f_log << "  IS_FEASIBLE_SOL" << std::endl;
-   record_feasible( value_FUNCTION );
+   double rec_cost;
+   if( recover_primal( rec_cost ) )
+    record_feasible( rec_cost );
    }
   else LOG_VERB( 2 )
    *f_log << "  IS_INFEASIBLE_SOL" << std::endl;
@@ -639,18 +643,15 @@ int PrimalProximalHeur::compute( bool changedvars )
   return( res );
   }
 
- // final primal recovery: a Lagrangian point in general violates the
- // coupling constraints of f_Block, so the in-loop record sites (properly)
- // almost never fire. Now that the inner objectives have been restored to
- // the original ones, if the final point is feasible outright record it;
- // otherwise fix the (rounded) proximal binaries and solve the restricted
- // problem on f_Block, whose optimum enforces the coupling constraints and
- // is therefore a genuinely feasible completion, hence a valid bound. If
- // the restricted problem is infeasible the point admits no feasible
- // completion and is discarded.
- if( is_integer && f_Block->is_feasible() )
-  record_feasible( value_FUNCTION );
- else {
+ // final primal recovery: a Lagrangian point in general violates the coupling
+ // constraints of f_Block. Now that the inner objectives have been restored to
+ // the original ones, fix the (rounded) proximal binaries and solve the
+ // restricted problem on f_Block, whose optimum enforces the coupling
+ // constraints and is therefore a genuinely feasible completion with its true
+ // primal cost, hence a valid bound. This is done unconditionally: value_FUNCTION
+ // is the Lagrangian value of the point (a lower bound), never a valid upper
+ // bound. If the restricted problem is infeasible the point is discarded.
+ {
   double rec_cost;
   if( recover_primal( rec_cost ) )
    record_feasible( rec_cost );
