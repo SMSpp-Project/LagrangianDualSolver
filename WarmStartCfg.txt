@@ -34,10 +34,16 @@ ComputeConfig         # exact type of the ComputeConfig object
 1  # f_diff == 0 ==> all non-provided parameters are set to the default value
    # f_diff == 1 ==> all non-provided parameters are not changed
 
-1 # number of integer parameters
+3 # number of integer parameters
 
 # now all the integer parameters
 intRelaxIntVars 1 # nonzero if the continuous relaxation is solved
+
+# All specific GUROBI parameter (uncomment based on Solver)
+QCPDual         1 # compute duals of quadratic constraints (needed when the
+                  # relaxation is a QCP, e.g. AC instances; ignored for LPs)
+NumericFocus    3 # without it the QCP barrier with QCPDual stops SUBOPTIMAL
+                  # (or OPTIMAL but dual-less) on the AC SOCP relaxations
 
 0 # number of double parameters
 
