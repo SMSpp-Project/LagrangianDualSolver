@@ -32,7 +32,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define PrimalProximalHeur_LOG 0
+ #define PrimalProximalHeur_LOG 1
  /* If non-zero, enables the verbose trace messages emitted by
   * PrimalProximalHeur to f_log under runtime logVerb control. Default
   * 0 keeps the trace silent; set to 1 manually during development to
@@ -505,7 +505,9 @@ int PrimalProximalHeur::compute( bool changedvars )
       LOG_VERB( 2 )
        *f_log << "  (event) IS_FEASIBLE_SOL: " << value_FUNCTION
               << std::endl;
-      record_feasible( value_FUNCTION );
+      double rec_cost;
+      if( recover_primal( rec_cost ) )
+       record_feasible( rec_cost );
       }
      else LOG_VERB( 2 )
       *f_log << "  (event) IS_INFEASIBLE_SOL: " << value_FUNCTION
@@ -601,7 +603,9 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( can_record ) {
    LOG_VERB( 2 )
     *f_log << "  IS_FEASIBLE_SOL" << std::endl;
-   record_feasible( value_FUNCTION );
+   double rec_cost;
+   if( recover_primal( rec_cost ) )
+    record_feasible( rec_cost );
    }
   else LOG_VERB( 2 )
    *f_log << "  IS_INFEASIBLE_SOL" << std::endl;
@@ -639,14 +643,21 @@ int PrimalProximalHeur::compute( bool changedvars )
   return( res );
   }
 
- // if we converged to an integer point that is feasible (guaranteed by tight
- // PPH tolerances + suitably loose is_feasible in the sub-Blocks), record its
- // value: at a feasible point with the proximal penalty ~0 at convergence,
- // value_FUNCTION equals the true primal cost, so it is a valid upper bound.
- if( is_integer && f_Block->is_feasible() )
-  record_feasible( value_FUNCTION );
+ // final primal recovery: a Lagrangian point in general violates the coupling
+ // constraints of f_Block. Now that the inner objectives have been restored to
+ // the original ones, fix the (rounded) proximal binaries and solve the
+ // restricted problem on f_Block, whose optimum enforces the coupling
+ // constraints and is therefore a genuinely feasible completion with its true
+ // primal cost, hence a valid bound. This is done unconditionally: value_FUNCTION
+ // is the Lagrangian value of the point (a lower bound), never a valid upper
+ // bound. If the restricted problem is infeasible the point is discarded.
+ {
+  double rec_cost;
+  if( recover_primal( rec_cost ) )
+   record_feasible( rec_cost );
+  }
 
- LOG_VERB( 2 )
+ //LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: "
          << ( is_the_same ? "converged" : "stopped" ) << " after "
          << ( iters - 1 ) << " iterations, LB = " << InnerSolver->get_lb()
@@ -772,6 +783,143 @@ CDASolver * PrimalProximalHeur::new_aux_solver( const std::string & cfgname )
  return( slvr );
 
  }  // end( PrimalProximalHeur::new_aux_solver )
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::recover_primal( double & cost )
+{
+ // fix the proximal binaries at their rounded values; eNoMod keeps the
+ // fixing invisible to the Solver attached to f_Block, and it is undone
+ // below before anyone else can compute()
+ for( const auto & sbd : idx_to_var_sbi1 )
+  for( const auto & dv : sbd ) {
+   const auto pv = dv.second;
+   pv->set_value( std::round( pv->get_value() ) );
+   pv->is_fixed( true , eNoMod );
+   }
+
+ // solve the restricted problem with the recovery Solver, which sees the
+ // fixed binaries as bounds and enforces the coupling constraints
+ auto solve_restricted = [ & ]( const char * tag ) -> bool {
+  auto recovery = new_aux_solver( "RecoveryCfg.txt" );
+  
+  Index pos   = 0;
+  Index index = 0;
+
+  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+       const auto chnl = sbi->open_channel();
+       const auto mp   = Observer::make_par( eModBlck , chnl );
+       auto fobj = static_cast< Function * >(
+                     static_cast< p_FRO >( sbi->get_objective()
+                                          )->get_function() );
+
+       if( ! is_linear[ index ] ) {
+       // quadratic inner objective: update both linear and (BIN_VARS off only)
+       // quadratic coefficients
+       auto qf = static_cast< p_DQF >( fobj );
+       for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+       const auto idx_in_obj = fobj->is_active(
+                                   idx_to_var_sbi1[ index ][ ivar ].second );
+       const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+       const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
+       if( qf->get_num_active_var() > idx_in_obj ) {
+       #ifdef BIN_VARS
+       qf->modify_linear_coefficient(
+                                   idx_in_obj ,
+                                   c1 - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
+                                   mp );
+       #else
+       qf->modify_term( idx_in_obj ,
+                            c1 - R * 2.0 * previous_sol[ pos ] ,
+                            c2 + R ,
+                            mp );
+       #endif
+       }
+       else if( R > 0 )
+       #ifdef BIN_VARS
+       qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+                            - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
+                            0.0 ,
+                            mp );
+       #else
+       qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+                            - R * 2.0 * previous_sol[ pos ] ,
+                            R ,
+                            mp );
+       #endif
+       ++pos;
+       }
+       }
+       else {
+       // linear inner objective: only the linear coefficient changes
+       auto lf = static_cast< p_LF >( fobj );
+       for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+       const auto idx_in_obj = fobj->is_active(
+                                   idx_to_var_sbi1[ index ][ ivar ].second );
+       const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+       if( lf->get_num_active_var() > idx_in_obj )
+       lf->modify_coefficient(
+                            idx_in_obj ,
+                            c1 - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
+                            mp );
+       else if( R > 0 )
+       lf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+                            - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
+                            mp );
+       ++pos;
+       }
+       }
+
+       sbi->close_channel( chnl );
+       ++index;
+  }
+
+  recovery->set_Block( f_Block );
+
+  const auto rc = recovery->compute( true );
+  const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
+                  recovery->has_var_solution();
+  if( ok ) {
+   recovery->get_var_solution();  // the completion into the Block Variables
+   cost = recovery->get_var_value();
+   }
+  delete recovery;
+  return( ok );
+  };
+
+ bool ok = solve_restricted( "full" );
+
+ if( ! ok ) {
+  // the fully-fixed point admits no feasible completion: relax the
+  // restriction one-sidedly, keeping only the binaries at 1 fixed, so
+  // more can be activated (e.g. more units committed to cover a demand
+  // the fixed set cannot); the problem remains a restriction of the
+  // original one, so any of its solutions still yields a valid bound.
+  // Note that with equality couplings this direction does not always
+  // help (an over-active set can be as infeasible as an under-active
+  // one), whence the last resort below.
+  for( const auto & sbd : idx_to_var_sbi1 )
+   for( const auto & dv : sbd )
+    if( dv.second->get_value() < 0.5 )
+     dv.second->is_fixed( false , eNoMod );
+
+  ok = solve_restricted( "ones" );
+  }
+
+ // un-fix the proximal binaries
+ for( const auto & sbd : idx_to_var_sbi1 )
+  for( const auto & dv : sbd )
+   dv.second->is_fixed( false , eNoMod );
+
+ if( ! ok )
+  // last resort: nothing fixed, i.e. the original problem within the
+  // recovery Solver's own budget; whatever incumbent it finds is still
+  // a valid bound, only no longer tied to the proximal point
+  ok = solve_restricted( "free" );
+
+ return( ok );
+
+ }  // end( PrimalProximalHeur::recover_primal )
 
 /*--------------------------------------------------------------------------*/
 

@@ -562,6 +562,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * feasible completion) returns false. The fixing is done with eNoMod and
   * undone before returning, so it is invisible to any other Solver. */
 
+ bool recover_primal( double & cost );
 
 /*--------------------------------------------------------------------------*/
 
