@@ -31,17 +31,11 @@
 /*------------------------------- MACROS -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#ifndef NDEBUG
- #define PrimalProximalHeur_LOG 1
- /* If non-zero, enables the verbose trace messages emitted by
-  * PrimalProximalHeur to f_log under runtime logVerb control. Default
-  * 0 keeps the trace silent; set to 1 manually during development to
-  * follow the heuristic step by step. Same pattern as CHECK_SOLUTIONS
-  * in LagBFunction.cpp. */
-#else
- #define PrimalProximalHeur_LOG 0
- // never change this
-#endif
+#define PrimalProximalHeur_LOG 0
+/* If non-zero, enables the verbose trace messages emitted by
+ * PrimalProximalHeur to f_log under runtime logVerb control. Default 0
+ * keeps the trace silent; set to 1 manually during development to follow
+ * the heuristic step by step. */
 
 #if PrimalProximalHeur_LOG
  #define LOG_VERB( lvl ) if( f_log && ( logVerb >= ( lvl ) ) )
@@ -800,7 +794,7 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 
  // solve the restricted problem with the recovery Solver, which sees the
  // fixed binaries as bounds and enforces the coupling constraints
- auto solve_restricted = [ & ]( const char * tag ) -> bool {
+ auto solve_restricted = [ & ]( const char * stage ) -> bool {
   auto recovery = new_aux_solver( "RecoveryCfg.txt" );
   
   Index index = 0;
@@ -865,6 +859,15 @@ bool PrimalProximalHeur::recover_primal( double & cost )
    //cost = recovery->get_var_value();
    cost = value;
    }
+
+   LOG_VERB( 2 ) {
+   *f_log << "  recover_primal[ " << stage << " ]: ";
+   if( ok )
+    *f_log << "cost = " << cost << std::endl;
+   else
+    *f_log << "infeasible" << std::endl;
+   }
+   
   delete recovery;
   return( ok );
   };
