@@ -651,7 +651,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    record_feasible( rec_cost );
   }
 
- //LOG_VERB( 2 )
+ LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: "
          << ( is_the_same ? "converged" : "stopped" ) << " after "
          << ( iters - 1 ) << " iterations, LB = " << InnerSolver->get_lb()
@@ -796,12 +796,12 @@ bool PrimalProximalHeur::recover_primal( double & cost )
  // fixed binaries as bounds and enforces the coupling constraints
  auto solve_restricted = [ & ]( const char * stage ) -> bool {
   auto recovery = new_aux_solver( "RecoveryCfg.txt" );
-  
+
   Index index = 0;
 
  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
   const auto chnl = sbi->open_channel();
-  const auto mp   = Observer::make_par( eModBlck , chnl );
+  const auto mp = Observer::make_par( eModBlck , chnl );
   auto fobj = static_cast< Function * >(
                   static_cast< p_FRO >( sbi->get_objective()
                                         )->get_function() );
@@ -843,31 +843,34 @@ bool PrimalProximalHeur::recover_primal( double & cost )
                   recovery->has_var_solution();
   if( ok ) {
    recovery->get_var_solution();  // the completion into the Block Variables
+
+   // evaluate the recovered solution on the pristine copies of the inner
+   // objectives: the live ones only had the true costs restored on the
+   // binary Variables, so their value is not the true cost of the solution
    double value = 0;
-  Index idx = 0;
-  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-   if( is_linear[ idx ] ) {
-    Funct_sbi[ idx ].compute( true );
-    value += Funct_sbi[ idx ].get_value();
+   Index idx = 0;
+   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+    if( is_linear[ idx ] ) {
+     Funct_sbi[ idx ].compute( true );
+     value += Funct_sbi[ idx ].get_value();
+     }
+    else {
+     Funct_sbi_quad[ idx ].compute( true );
+     value += Funct_sbi_quad[ idx ].get_value();
+     }
+    ++idx;
     }
-   else {
-    Funct_sbi_quad[ idx ].compute( true );
-    value += Funct_sbi_quad[ idx ].get_value();
-    }
-   ++idx;
-   }
-   //cost = recovery->get_var_value();
    cost = value;
    }
 
-   LOG_VERB( 2 ) {
+  LOG_VERB( 2 ) {
    *f_log << "  recover_primal[ " << stage << " ]: ";
    if( ok )
     *f_log << "cost = " << cost << std::endl;
    else
     *f_log << "infeasible" << std::endl;
    }
-   
+
   delete recovery;
   return( ok );
   };
@@ -920,7 +923,7 @@ void PrimalProximalHeur::add_penalty_terms( void )
 
  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
   const auto chnl = sbi->open_channel();
-  const auto mp   = Observer::make_par( eModBlck , chnl );
+  const auto mp = Observer::make_par( eModBlck , chnl );
   auto fobj = static_cast< Function * >(
                   static_cast< p_FRO >( sbi->get_objective()
                                         )->get_function() );
@@ -1000,7 +1003,7 @@ void PrimalProximalHeur::remove_penalty_terms( void )
 
  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
   const auto chnl = sbi->open_channel();
-  const auto mp   = Observer::make_par( eModBlck , chnl );
+  const auto mp = Observer::make_par( eModBlck , chnl );
   auto fobj = static_cast< Function * >(
                   static_cast< p_FRO >( sbi->get_objective()
                                         )->get_function() );
