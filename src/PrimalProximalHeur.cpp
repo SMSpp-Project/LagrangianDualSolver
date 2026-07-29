@@ -31,11 +31,17 @@
 /*------------------------------- MACROS -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#define PrimalProximalHeur_LOG 0
-/* If non-zero, enables the verbose trace messages emitted by
- * PrimalProximalHeur to f_log under runtime logVerb control. Default 0
- * keeps the trace silent; set to 1 manually during development to follow
- * the heuristic step by step. */
+#ifndef NDEBUG
+ #define PrimalProximalHeur_LOG 1
+ /* If non-zero, enables the verbose trace messages emitted by
+  * PrimalProximalHeur to f_log under runtime logVerb control. Default
+  * 0 keeps the trace silent; set to 1 manually during development to
+  * follow the heuristic step by step. Same pattern as CHECK_SOLUTIONS
+  * in LagBFunction.cpp. */
+#else
+ #define PrimalProximalHeur_LOG 0
+ // never change this
+#endif
 
 #if PrimalProximalHeur_LOG
  #define LOG_VERB( lvl ) if( f_log && ( logVerb >= ( lvl ) ) )
@@ -651,7 +657,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    record_feasible( rec_cost );
   }
 
- LOG_VERB( 2 )
+ //LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: "
          << ( is_the_same ? "converged" : "stopped" ) << " after "
          << ( iters - 1 ) << " iterations, LB = " << InnerSolver->get_lb()
@@ -794,7 +800,7 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 
  // solve the restricted problem with the recovery Solver, which sees the
  // fixed binaries as bounds and enforces the coupling constraints
- auto solve_restricted = [ & ]( const char * stage ) -> bool {
+ auto solve_restricted = [ & ]( const char * tag ) -> bool {
   auto recovery = new_aux_solver( "RecoveryCfg.txt" );
   
   Index index = 0;
@@ -859,15 +865,6 @@ bool PrimalProximalHeur::recover_primal( double & cost )
    //cost = recovery->get_var_value();
    cost = value;
    }
-
-  LOG_VERB( 2 ) {
-   *f_log << "  recover_primal[ " << stage << " ]: ";
-   if( ok )
-    *f_log << "cost = " << cost << std::endl;
-   else
-    *f_log << "infeasible" << std::endl;
-   }
-
   delete recovery;
   return( ok );
   };
