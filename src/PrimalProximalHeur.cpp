@@ -31,17 +31,11 @@
 /*------------------------------- MACROS -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#ifndef NDEBUG
- #define PrimalProximalHeur_LOG 1
- /* If non-zero, enables the verbose trace messages emitted by
-  * PrimalProximalHeur to f_log under runtime logVerb control. Default
-  * 0 keeps the trace silent; set to 1 manually during development to
-  * follow the heuristic step by step. Same pattern as CHECK_SOLUTIONS
-  * in LagBFunction.cpp. */
-#else
- #define PrimalProximalHeur_LOG 0
- // never change this
-#endif
+#define PrimalProximalHeur_LOG 0
+/* If non-zero, enables the verbose trace messages emitted by
+ * PrimalProximalHeur to f_log under runtime logVerb control. Default 0
+ * keeps the trace silent; set to 1 manually during development to follow
+ * the heuristic step by step. */
 
 #if PrimalProximalHeur_LOG
  #define LOG_VERB( lvl ) if( f_log && ( logVerb >= ( lvl ) ) )
@@ -657,7 +651,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    record_feasible( rec_cost );
   }
 
- //LOG_VERB( 2 )
+ LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: "
          << ( is_the_same ? "converged" : "stopped" ) << " after "
          << ( iters - 1 ) << " iterations, LB = " << InnerSolver->get_lb()
@@ -800,89 +794,93 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 
  // solve the restricted problem with the recovery Solver, which sees the
  // fixed binaries as bounds and enforces the coupling constraints
- auto solve_restricted = [ & ]( const char * tag ) -> bool {
+ auto solve_restricted = [ & ]( const char * stage ) -> bool {
   auto recovery = new_aux_solver( "RecoveryCfg.txt" );
-  
-  Index pos   = 0;
+
+  Index pos = 0;
   Index index = 0;
 
   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-       const auto chnl = sbi->open_channel();
-       const auto mp   = Observer::make_par( eModBlck , chnl );
-       auto fobj = static_cast< Function * >(
-                     static_cast< p_FRO >( sbi->get_objective()
-                                          )->get_function() );
+   const auto chnl = sbi->open_channel();
+   const auto mp = Observer::make_par( eModBlck , chnl );
+   auto fobj = static_cast< Function * >(
+		     static_cast< p_FRO >( sbi->get_objective()
+					   )->get_function() );
 
-       if( ! is_linear[ index ] ) {
-       // quadratic inner objective: update both linear and (BIN_VARS off only)
-       // quadratic coefficients
-       auto qf = static_cast< p_DQF >( fobj );
-       for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
-       const auto idx_in_obj = fobj->is_active(
-                                   idx_to_var_sbi1[ index ][ ivar ].second );
-       const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
-       const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
-       if( qf->get_num_active_var() > idx_in_obj ) {
+   if( ! is_linear[ index ] ) {
+    // quadratic inner objective: update the linear and (BIN_VARS off only)
+    // the quadratic coefficients
+    auto qf = static_cast< p_DQF >( fobj );
+    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+     const auto idx_in_obj = fobj->is_active(
+			      idx_to_var_sbi1[ index ][ ivar ].second );
+     const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+     const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
+     if( qf->get_num_active_var() > idx_in_obj ) {
+      #ifdef BIN_VARS
+       qf->modify_linear_coefficient( idx_in_obj ,
+				      c1 - R * ( 1.0 -
+						 2.0 * previous_sol[ pos ] ) ,
+				      mp );
+      #else
+       qf->modify_term( idx_in_obj , c1 - R * 2.0 * previous_sol[ pos ] ,
+			c2 + R , mp );
+      #endif
+      }
+     else
+      if( R > 0 )
        #ifdef BIN_VARS
-       qf->modify_linear_coefficient(
-                                   idx_in_obj ,
-                                   c1 - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
-                                   mp );
+	qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+			  - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) , 0.0 ,
+			  mp );
        #else
-       qf->modify_term( idx_in_obj ,
-                            c1 - R * 2.0 * previous_sol[ pos ] ,
-                            c2 + R ,
-                            mp );
+	qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+			  - R * 2.0 * previous_sol[ pos ] , R , mp );
        #endif
-       }
-       else if( R > 0 )
-       #ifdef BIN_VARS
-       qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
-                            - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
-                            0.0 ,
-                            mp );
-       #else
-       qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
-                            - R * 2.0 * previous_sol[ pos ] ,
-                            R ,
-                            mp );
-       #endif
-       ++pos;
-       }
-       }
-       else {
-       // linear inner objective: only the linear coefficient changes
-       auto lf = static_cast< p_LF >( fobj );
-       for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
-       const auto idx_in_obj = fobj->is_active(
-                                   idx_to_var_sbi1[ index ][ ivar ].second );
-       const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
-       if( lf->get_num_active_var() > idx_in_obj )
-       lf->modify_coefficient(
-                            idx_in_obj ,
-                            c1 - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
-                            mp );
-       else if( R > 0 )
+     ++pos;
+     }
+    }
+   else {
+    // linear inner objective: only the linear coefficient changes
+    auto lf = static_cast< p_LF >( fobj );
+    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+     const auto idx_in_obj = fobj->is_active(
+			      idx_to_var_sbi1[ index ][ ivar ].second );
+     const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+     if( lf->get_num_active_var() > idx_in_obj )
+      lf->modify_coefficient( idx_in_obj ,
+			      c1 - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
+			      mp );
+     else
+      if( R > 0 )
        lf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
-                            - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
-                            mp );
-       ++pos;
-       }
-       }
+			 - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) , mp );
+     ++pos;
+     }
+    }
 
-       sbi->close_channel( chnl );
-       ++index;
-  }
+   sbi->close_channel( chnl );
+   ++index;
+   }
 
   recovery->set_Block( f_Block );
 
   const auto rc = recovery->compute( true );
   const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
-                  recovery->has_var_solution();
+		  recovery->has_var_solution();
   if( ok ) {
    recovery->get_var_solution();  // the completion into the Block Variables
    cost = recovery->get_var_value();
    }
+
+  LOG_VERB( 2 ) {
+   *f_log << "  recover_primal[ " << stage << " ]: ";
+   if( ok )
+    *f_log << "cost = " << cost << std::endl;
+   else
+    *f_log << "infeasible" << std::endl;
+   }
+
   delete recovery;
   return( ok );
   };
