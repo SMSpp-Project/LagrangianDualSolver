@@ -796,81 +796,68 @@ bool PrimalProximalHeur::recover_primal( double & cost )
  // fixed binaries as bounds and enforces the coupling constraints
  auto solve_restricted = [ & ]( const char * stage ) -> bool {
   auto recovery = new_aux_solver( "RecoveryCfg.txt" );
-
-  Index pos = 0;
+  
   Index index = 0;
 
-  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-   const auto chnl = sbi->open_channel();
-   const auto mp = Observer::make_par( eModBlck , chnl );
-   auto fobj = static_cast< Function * >(
-		     static_cast< p_FRO >( sbi->get_objective()
-					   )->get_function() );
+ for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+  const auto chnl = sbi->open_channel();
+  const auto mp   = Observer::make_par( eModBlck , chnl );
+  auto fobj = static_cast< Function * >(
+                  static_cast< p_FRO >( sbi->get_objective()
+                                        )->get_function() );
 
-   if( ! is_linear[ index ] ) {
-    // quadratic inner objective: update the linear and (BIN_VARS off only)
-    // the quadratic coefficients
-    auto qf = static_cast< p_DQF >( fobj );
-    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
-     const auto idx_in_obj = fobj->is_active(
-			      idx_to_var_sbi1[ index ][ ivar ].second );
-     const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
-     const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
-     if( qf->get_num_active_var() > idx_in_obj ) {
-      #ifdef BIN_VARS
-       qf->modify_linear_coefficient( idx_in_obj ,
-				      c1 - R * ( 1.0 -
-						 2.0 * previous_sol[ pos ] ) ,
-				      mp );
-      #else
-       qf->modify_term( idx_in_obj , c1 - R * 2.0 * previous_sol[ pos ] ,
-			c2 + R , mp );
-      #endif
-      }
-     else
-      if( R > 0 )
-       #ifdef BIN_VARS
-	qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
-			  - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) , 0.0 ,
-			  mp );
-       #else
-	qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
-			  - R * 2.0 * previous_sol[ pos ] , R , mp );
-       #endif
-     ++pos;
-     }
+  if( ! is_linear[ index ] ) {
+   auto qf = static_cast< p_DQF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
+    if( qf->get_num_active_var() > idx_in_obj )
+     #ifdef BIN_VARS
+      qf->modify_linear_coefficient( idx_in_obj , c1 , mp );
+     #else
+      qf->modify_term( idx_in_obj , c1 , c2 , mp );
+     #endif
     }
-   else {
-    // linear inner objective: only the linear coefficient changes
-    auto lf = static_cast< p_LF >( fobj );
-    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
-     const auto idx_in_obj = fobj->is_active(
-			      idx_to_var_sbi1[ index ][ ivar ].second );
-     const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
-     if( lf->get_num_active_var() > idx_in_obj )
-      lf->modify_coefficient( idx_in_obj ,
-			      c1 - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
-			      mp );
-     else
-      if( R > 0 )
-       lf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
-			 - R * ( 1.0 - 2.0 * previous_sol[ pos ] ) , mp );
-     ++pos;
-     }
-    }
-
-   sbi->close_channel( chnl );
-   ++index;
    }
+  else {
+   auto lf = static_cast< p_LF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    if( lf->get_num_active_var() > idx_in_obj )
+     lf->modify_coefficient( idx_in_obj , c1 , mp );
+    }
+   }
+
+  sbi->close_channel( chnl );
+  ++index;
+  }
 
   recovery->set_Block( f_Block );
 
   const auto rc = recovery->compute( true );
   const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
-		  recovery->has_var_solution();
+                  recovery->has_var_solution();
   if( ok ) {
    recovery->get_var_solution();  // the completion into the Block Variables
-   cost = recovery->get_var_value();
+   double value = 0;
+  Index idx = 0;
+  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+   if( is_linear[ idx ] ) {
+    Funct_sbi[ idx ].compute( true );
+    value += Funct_sbi[ idx ].get_value();
+    }
+   else {
+    Funct_sbi_quad[ idx ].compute( true );
+    value += Funct_sbi_quad[ idx ].get_value();
+    }
+   ++idx;
+   }
+   //cost = recovery->get_var_value();
+   cost = value;
    }
 
   LOG_VERB( 2 ) {
