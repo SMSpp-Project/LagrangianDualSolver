@@ -244,15 +244,17 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  /// lower bound: the best feasible value (max) or the dual bound (min)
  /** For a minimization problem the bound of the inner Lagrangian Dual is
-  * valid for the original problem only when no proximal penalty is applied
-  * (R == 0, i.e., PrimalProximalHeur degenerates into a warm-started
-  * LagrangianDualSolver): with R > 0 the inner Solver bounds the penalised
-  * function, and no valid lower bound is available. */
+  * valid for the original problem only when no proximal penalty is ever
+  * applied, i.e., when R == 0 or the Block has no static binary Variable
+  * to penalise (in both cases PrimalProximalHeur degenerates into a
+  * warm-started LagrangianDualSolver): otherwise the inner Solver bounds
+  * the penalised function, and no valid lower bound is available. */
 
  OFValue get_lb( void ) override {
   if( f_max )
    return( best_bound );
-  return( R == 0 ? LagrangianDualSolver::get_lb() : - Inf< double >() );
+  return( ( R == 0 ) || ( NumStatVar == 0 ) ?
+	  LagrangianDualSolver::get_lb() : - Inf< double >() );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -260,7 +262,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
  OFValue get_ub( void ) override {
   if( ! f_max )
    return( best_bound );
-  return( R == 0 ? LagrangianDualSolver::get_ub() : Inf< double >() );
+  return( ( R == 0 ) || ( NumStatVar == 0 ) ?
+	  LagrangianDualSolver::get_ub() : Inf< double >() );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
