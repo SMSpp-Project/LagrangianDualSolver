@@ -1279,16 +1279,18 @@ void LagrangianDualSolver::clear_LD_BlockSolverConfig( bool keepcfg )
   return;
 
  if( LagrDual ) {
-  if( keepcfg ) {
-   auto BSC = f_BSCfg->clone();
-   BSC->clear();
-   BSC->apply( LagrDual );
-   delete BSC;
-   }
-  else {
-   f_BSCfg->clear();
-   f_BSCfg->apply( LagrDual );
-   }
+  // the Solver of the Lagrangian Dual may have been registered through a
+  // throwaway clone of f_BSCfg [see CloneCfg], whose registration record
+  // died with it, so a cleared apply() of f_BSCfg could not remove them
+  // [see BlockSolverConfig::apply()]: since every Solver on the (wholly
+  // internal) Lagrangian Dual was put there by this object anyway, its
+  // Block tree is swept directly
+  std::function< void( Block * ) > wipe = [ & wipe ]( Block * b ) {
+   b->unregister_Solvers( true );
+   for( Block::Index i = 0 ; i < b->get_number_nested_Blocks() ; ++i )
+    wipe( b->get_nested_Block( i ) );
+   };
+  wipe( LagrDual );
   }
 
  if( ! keepcfg ) {
