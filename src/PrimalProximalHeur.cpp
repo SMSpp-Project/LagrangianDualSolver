@@ -288,7 +288,8 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   if( v_best_sol.size() < f_MaxSol ) {
    // there is free space, just throw the new Solution in and re-heap
-   v_best_sol.emplace_back( f_Block->get_Solution() , value );
+   v_best_sol.emplace_back( f_Block->get_Solution( nullptr , false ) ,
+                            value );
    std::push_heap( v_best_sol.begin() , v_best_sol.end() , sol_cmp );
    if( worse )
     worst_bound = value;
@@ -316,7 +317,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    return;                       // play it safe and discard the new value
 
   delete bad->first;
-  *bad = { f_Block->get_Solution() , value };
+  *bad = { f_Block->get_Solution( nullptr , false ) , value };
   // re-heap from scratch (the replacement may have broken the order)
   std::make_heap( v_best_sol.begin() , v_best_sol.end() , sol_cmp );
 
