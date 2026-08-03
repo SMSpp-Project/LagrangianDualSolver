@@ -1144,10 +1144,14 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   if( LSBb->get_registered_solvers().empty() )
    return;
 
-  // ask it to the Solver that was used to compute() the inner Block
+  // ask it to the Solver that was used to compute() the inner Block; note
+  // that the Solver may have no dual solution to offer (say, it solved the
+  // sub-Block as an integer MILP), in which case it is silently skipped
   auto rsp = LSBb->get_registered_solvers().begin();
   std::advance( rsp , v_LBF[ b ]->get_int_par( LagBFunction::intInnrSlvr ) );
   if( auto SBSb = dynamic_cast< CDASolver * >( *rsp ) ) {
+   if( ! SBSb->has_dual_solution() )
+    return;
    SBSb->get_dual_solution( cfg );
    if( iBCopy )  // the sub-Block is a copy
     f_Block->get_nested_Block( b )->map_back_solution( LSBb , nullptr , cfg );
