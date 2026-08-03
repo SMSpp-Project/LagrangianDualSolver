@@ -61,13 +61,13 @@ namespace SMSpp_di_unipi_it
             eChgIntegrality, ///< change integrality of a variable
             eFixX,           ///< fix a variable to a value
             eUnfixX,         ///< unfix a variable
-            // eChgLB,          ///< change lower bound of a variable
-            // eChgUB,          ///< change upper bound of a variable
+            eChgLB,          ///< change lower bound of a variable
+            eChgUB,          ///< change upper bound of a variable
         };
         /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/
 
         // constructor
-        LagrangianChange(int type, std::vector<double> value) : f_type(type), f_value(value) {}
+        LagrangianChange(int type, std::vector<double> value, std::vector<AbstractPath> paths) : f_type(type), f_value(std::move(value)), v_paths(std::move(paths)) {}
         // decostructor
         ~LagrangianChange() = default;
         /*-------------------- PUBLIC METHODS OF THE CLASS -------------------------*/
@@ -90,6 +90,12 @@ namespace SMSpp_di_unipi_it
                 v_data.resize(ni.getSize());
                 data.getVar(v_data.data());
             }
+            // read AbstractPath
+            auto pg = group.getGroup("VariablesPath");
+            if (pg.isNull())
+                v_paths.clear();
+            else
+                AbstractPath::deserialize(v_paths, pg);
         }
         /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
@@ -105,6 +111,11 @@ namespace SMSpp_di_unipi_it
             (group.addVar("Data",
                           netCDF::NcDouble(), ni))
                 .putVar(v_data.data());
+            if (!v_paths.empty())
+            {
+                auto pg = group.addGroup("VariablesPath");
+                AbstractPath::serialize(v_paths, pg);
+            }
         }
         /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
@@ -117,25 +128,41 @@ namespace SMSpp_di_unipi_it
             {
             case eEmpty:
                 throw std::invalid_argument("LagrangianChange: empty change cannot be applied");
+                // Change Obj require in data[0] index, data[1] new coefficient, data[2] new quadratic coefficient (if quadratic)
+                // in this case constains AbstractPath contains only 2 element, the variable and the objective function
             case eChgObj:
             {
-                const auto block = Index(v_data[0]);
-                const auto idx = Index(v_data[1]);
-                auto obj = static_cast<FRealObjective *>(block->get_objective());
-                auto fobj = obj->get_function();
-                auto pv = get_static_variable_by_index(block, idx);
+                Variable *pv = nullptr;
+                Function *fobj = nullptr;
+                if (v_paths.size() != 2)
+                    throw std::invalid_argument(
+                        "LagrangianChange: eChgObj requires 2 AbstractPath elements (variable and objective function)");
+                for (const auto &path : v_paths)
+                {
+                    auto node_type = path.get_last_node(block).type;
+
+                    if (node_type == 'V' || node_type == 'v')
+                        pv = path.get_element<Variable>(block);
+                    else if (node_type == 'O')
+                    {
+                        auto *obj = path.get_element<FRealObjective>(block);
+                        fobj = obj->get_function();
+                    }
+                }
+                if (!pv || !fobj)
+                    throw std::invalid_argument(
+                        "LagrangianChange: eChgObj requires a variable and an objective function in AbstractPath");
 
                 // --- Quadratic Case -----------------------------------------------
                 if (auto qf = dynamic_cast<DQuadFunction *>(fobj))
                 {
-                    if (v_data.size() != 4)
+                    if (v_data.size() != 2)
                         throw std::invalid_argument(
-                            "LagrangianChange: eChgObj on quadratic objective needs 4 values");
-
-                    const auto new_c1 = v_data[2];
-                    const auto new_c2 = v_data[3];
+                            "LagrangianChange: eChgObj on quadratic objective needs 2 values");
 
                     auto pos = qf->is_active(pv);
+                    const auto new_c1 = v_data[0];
+                    const auto new_c2 = v_data[1];
 
                     double old_c1 = 0.0, old_c2 = 0.0;
                     if (pos < qf->get_num_active_var())
@@ -149,17 +176,17 @@ namespace SMSpp_di_unipi_it
 
                     if (doUndo)
                         returnChange = (new LagrangianChange(eChgObj,
-                                                             {double(block), double(idx), old_c1, old_c2}));
+                                                             {old_c1, old_c2}, std::vector<AbstractPath>{v_paths}));
                 }
 
                 // --- Linear Case -----------------------------------------------
                 if (auto lf = dynamic_cast<LinearFunction *>(fobj))
                 {
-                    if (v_data.size() != 3)
+                    if (v_data.size() != 1)
                         throw std::invalid_argument(
-                            "LagrangianChange: eChgObj on linear objective needs 3 values");
+                            "LagrangianChange: eChgObj on linear objective needs 1 value");
 
-                    const auto new_c1 = v_data[2];
+                    const auto new_c1 = v_data[0];
                     auto pos = lf->is_active(pv);
 
                     const double old_c1 = (pos < lf->get_num_active_var())
@@ -172,64 +199,179 @@ namespace SMSpp_di_unipi_it
                         lf->add_variable(pv, new_c1, issueMod);
 
                     if (doUndo)
-                        returnChange = (new LagrangianChange(eChgObj, {double(block), double(idx), old_c1}));
+                        returnChange = (new LagrangianChange(eChgObj, {old_c1}, std::vector<AbstractPath>{v_paths}));
                 }
 
                 throw std::invalid_argument(
                     "LagrangianChange: objective Function type not supported");
+                break;
             }
 
+            // v_paths contains only the objective function, and v_data[0] contains the new sense
             case eChgSense:
             {
                 // apply change to the block
+                auto obj = v_paths[0].get_element<Objective>(block);
                 if (doUndo)
-                    returnChange = new LagrangianChange(eChgSense, std::vector<double>{v_data[0], static_cast<double>(block->get_objective()->get_sense())});
-                block->get_objective()->set_sense(static_cast<int>(v_data[1]));
+                    returnChange = new LagrangianChange(eChgSense, std::vector<double>{static_cast<double>(block->get_objective()->get_sense())}, std::vector<AbstractPath>{v_paths});
+                obj->set_sense(static_cast<int>(v_data[0]));
+                break;
             }
+            // v_paths constains the variable, v_data[0] contains the the new integrality
             case eChgIntegrality:
             {
-                const auto block = Index(v_data[0]);
-                const auto idx = Index(v_data[1]);
-                const bool new_integer = (v_data[2] != 0.0);
-
-                auto pv = get_static_variable_by_index(block, idx);
+                const bool new_integer = (v_data[0] != 0.0);
+                auto pv = v_paths[0].get_element<Variable>(block);
                 const bool old_integer = pv->is_integer();
 
                 pv->is_integer(new_integer, issueMod);
                 if (doUndo)
                     returnChange = new LagrangianChange(eChgIntegrality,
-                                                        {double(block), double(idx), old_integer ? 1.0 : 0.0});
+                                                        {old_integer ? 1.0 : 0.0}, std::vector<AbstractPath>{v_paths});
+                break;
             }
+            // v_paths constains the variable, v_data[0] contains the new fixed value
             case eFixX:
             {
-                const auto block = Index(v_data[0]);
-                const auto idx = Index(v_data[1]);
-                const auto fix_value = v_data[2];
+                const auto fix_value = v_data[0];
 
-                auto pv = get_static_variable_by_index(block, idx);
+                auto pv = v_paths[0].get_element<Variable>(block);
                 const bool was_fixed = pv->is_fixed();
-                const double old_value = pv->get_value();
-
-                pv->set_value(fix_value);
-                pv->is_fixed(true, issueMod);
 
                 if (doUndo)
-                    returnChange = was_fixed ? new LagrangianChange(eFixX, {double(block), double(idx), old_value}) : new LagrangianChange(eUnfixX, {double(block), double(idx)});
+                    returnChange = was_fixed ? new LagrangianChange(eFixX, {pv->get_value()}, std::vector<AbstractPath>{v_paths}) : new LagrangianChange(eUnfixX, {}, std::vector<AbstractPath>{v_paths});
+                pv->set_value(fix_value);
+                pv->is_fixed(true, issueMod);
+                break;
             }
+            // v_paths constains the variable
             case eUnfixX:
             {
-                const auto block = Index(v_data[0]);
-                const auto idx = Index(v_data[1]);
-
-                auto pv = get_static_variable_by_index(block, idx);
-                const double old_value = pv->get_value();
+                auto pv = v_paths[0].get_element<Variable>(block);
 
                 pv->is_fixed(false, issueMod);
 
                 if (doUndo)
+                    returnChange = new LagrangianChange(eFixX, {pv->get_value()}, std::vector<AbstractPath>{v_paths});
+                break;
+            }
+            // v_paths constains the variable, v_data[0] contains the new lower bound
+            case eChgLB:
+            {
+                auto pv = v_paths[0].get_element<Variable>(block);
+                const auto new_lb = v_data[0];
+                bool found = false;
+                for (Index i = 0; i < pv->get_num_active(); ++i)
                 {
-                    returnChange = new LagrangianChange(eFixX, {double(block), double(idx), old_value});
+                    auto *dep = var->get_active(i);
+                    if (auto *c = dynamic_cast<BoxConstraint *>(dep))
+                    {
+                        if (doUndo)
+                            returnChange = new LagrangianChange(eChgLB, {c->get_lhs()}, std::vector<AbstractPath>{v_paths});
+                        c->set_lhs(new_lb, issueMod);
+                        found = true;
+                        break;
+                    }
+                    else if (auto *c = dynamic_cast<LBConstraint *>(dep))
+                    {
+                        if (doUndo)
+                            returnChange = new LagrangianChange(eChgLB, {c->get_lhs()}, std::vector<AbstractPath>{v_paths});
+                        c->set_lhs(new_lb, issueMod);
+                        found = true;
+                        break;
+                    }
                 }
+                if (!found)
+                {
+                    if (doUndo)
+                        returnChange = new LagrangianChange(eChgLB, {pv->get_lb()}, std::vector<AbstractPath>{v_paths});
+                    auto con = new LBConstraint(pv->get_block(), pv, new_lb);
+                    Block *blk = pv->get_block();
+                    Index idx = Inf<Index>();
+
+                    auto &d_constraints = blk->get_dynamic_constraints(); // c_Vec_any &
+
+                    for (Index i = 0; i < d_constraints.size(); ++i)
+                    {
+                        if (d_constraints[i].type() == typeid(std::list<LBConstraint>))
+                        {
+                            idx = i;
+                            break;
+                        }
+                    }
+
+                    if (idx == Inf<Index>())
+                    {
+                        // nessun gruppo di LBConstraint dinamici: lo registriamo ora
+                        std::list<LBConstraint> empty_list;
+                        blk->set_dynamic_constraint(std::move(empty_list), "LBConstraint");
+                        idx = d_constraints.size() - 1;
+                    }
+
+                    auto *d_list = std::any_cast<std::list<LBConstraint>>(&d_constraints[idx]);
+                    // d_list è garantito non-nullptr qui, perché idx è stato appena
+                    // verificato/creato per contenere esattamente std::list<LBConstraint>
+
+                    std::list<LBConstraint> newlist;
+                    newlist.emplace_back(blk, pv, new_lb);
+
+                    blk->add_dynamic_constraints(*d_list, newlist, issueMod);
+                }
+                break;
+            }
+            case eChgUB:
+            {
+                auto pv = v_paths[0].get_element<Variable>(block);
+                const auto new_ub = v_data[0];
+                bool found = false;
+                for (Index i = 0; i < pv->get_num_active(); ++i)
+                {
+                    auto *dep = var->get_active(i);
+                    if (auto *c = dynamic_cast<BoxConstraint *>(dep))
+                    {
+                        if (doUndo)
+                            returnChange = new LagrangianChange(eChgUB, {c->get_rhs()}, std::vector<AbstractPath>{v_paths});
+                        c->set_rhs(new_ub, issueMod);
+                        found = true;
+                        break;
+                    }
+                    else if (auto *c = dynamic_cast<UBConstraint *>(dep))
+                    {
+                        if (doUndo)
+                            returnChange = new LagrangianChange(eChgUB, {c->get_rhs()}, std::vector<AbstractPath>{v_paths});
+                        c->set_rhs(new_ub, issueMod);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                {
+                    if (doUndo)
+                        returnChange = new LagrangianChange(eChgUB, {pv->get_ub()}, std::vector<AbstractPath>{v_paths});
+                    auto con = new UBConstraint(pv->get_block(), pv, new_ub);
+                    auto blk = pv->get_block();
+                    Index idx = Inf<Index>();
+                    for (Index i = 0; i < d_constraints.size(); ++i)
+                    {
+                        if (d_constraints[i].type() == typeid(std::list<UBConstraint>))
+                        {
+                            idx = i;
+                            break;
+                        }
+                    }
+                    if (idx == Inf<Index>())
+                    {
+                        // nessun gruppo di UBConstraint dinamici: lo registriamo ora
+                        std::list<UBConstraint> empty_list;
+                        blk->set_dynamic_constraint(std::move(empty_list), "UBConstraint");
+                        idx = d_constraints.size() - 1;
+                    }
+                    auto *d_list = std::any_cast<std::list<UBConstraint>>(&d_constraints[idx]);
+                    std::list<UBConstraint> newlist;
+                    newlist.emplace_back(blk, pv, new_ub);
+                    blk->add_dynamic_constraints(*d_list, std::move(newlist), issueMod);
+                }
+                break;
             }
             default:
                 throw std::invalid_argument("LagrangianChange: unknown change type");
@@ -237,8 +379,10 @@ namespace SMSpp_di_unipi_it
             return returnChange;
 
         protected:
-            int f_type;                 ///< type of the change
-            std::vector<double> v_data; ///< value of the change
+            int f_type;                        ///< type of the change
+            std::vector<double> v_data;        ///< value of the change
+            std::vector<AbstractPath> v_paths; ///< vector of abstract path (variables and constraints) involved in the change
+
         private:
         }
 
