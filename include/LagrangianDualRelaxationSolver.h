@@ -374,18 +374,23 @@ namespace SMSpp_di_unipi_it
                 break;
             }
             default:
+            {
                 throw std::invalid_argument("LagrangianChange: unknown change type");
             }
+            }
             return returnChange;
-
-        protected:
-            int f_type;                        ///< type of the change
-            std::vector<double> v_data;        ///< value of the change
-            std::vector<AbstractPath> v_paths; ///< vector of abstract path (variables and constraints) involved in the change
-
-        private:
         }
+        // getter
+        [[nodiscard]] int get_type() const { return f_type; }
+        [[nodiscard]] const std::vector<double> &get_data() const { return v_data; }
+        [[nodiscard]] const std::vector<AbstractPath> &get_paths() const { return v_paths; }
 
+    protected:
+        int f_type;                        ///< type of the change
+        std::vector<double> v_data;        ///< value of the change
+        std::vector<AbstractPath> v_paths; ///< vector of abstract path (variables and constraints) involved in the change
+
+    private:
         SMSpp_insert_in_factory_h;
     }; // end of class LagrangianChange
 
@@ -554,13 +559,12 @@ namespace SMSpp_di_unipi_it
             std::vector<Change *> branch() override
             {
                 std::vector<Change *> changes;
+                ColVariable *mostFracVar = nullptr;
+                double bestCriterionValue = -1.0;
                 switch (branchingStrategy)
                 {
                 case mostFractional:
                 {
-                    ColVariable *mostFracVar = nullptr;
-                    double maxFractionality = -1.0;
-                    Index sb = 0, selectedSB = 0;
                     for (const auto &sbd : idx_to_var_sbi1) // for each subblock
                     {
                         for (const auto &dv : sbd) // for each variable in the subblock
@@ -568,14 +572,12 @@ namespace SMSpp_di_unipi_it
                             const auto pv = dv.second;
                             double value = pv->get_value();
                             double fractionality = std::abs(value - std::round(value));
-                            if (fractionality > maxFractionality)
+                            if (fractionality > bestCriterionValue)
                             {
-                                maxFractionality = fractionality;
+                                bestCriterionValue = fractionality;
                                 mostFracVar = pv;
-                                selectedSB = sb;
                             }
                         }
-                        ++sb;
                     }
                     break;
                 }
@@ -583,8 +585,11 @@ namespace SMSpp_di_unipi_it
                     throw(std::runtime_error("LagrangianDualRelaxationSolver::branch: branching strategy not implemented"));
                 }
 
-                changes.push_back(new LagrangianChange(LagrangianChange::eFixX, {double(selectedSB), double(mostFracVar->get_index()), std::ceil(mostFracVar->get_value())}));
-                changes.push_back(new LagrangianChange(LagrangianChange::eFixX, {double(selectedSB), double(mostFracVar->get_index()), std::floor(mostFracVar->get_value())}));
+                if (!mostFracVar)
+                    throw(std::runtime_error("LagrangianDualRelaxationSolver::branch: no fractional variable found"));
+
+                changes.push_back(new LagrangianChange(LagrangianChange::eChgUB, {std::floor(mostFracVar->get_value())}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
+                changes.push_back(new LagrangianChange(LagrangianChange::eChgLB, {std::ceil(mostFracVar->get_value())}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
                 return changes;
             }
 
@@ -596,101 +601,145 @@ namespace SMSpp_di_unipi_it
                 auto c = dynamic_cast<LagrangianChange *>(change);
                 if (!c)
                     throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: change is not a LagrangianChange"));
-                if (c->get_type() == LagrangianChange::eFixX)
+                if (c->get_type() == LagrangianChange::eChgLB)
                 {
+                    auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
+                    if (!pv)
+                        throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
+                    auto value = c->get_data()[0];
+                    auto lbf = v_LBF[Block2Index(pv->get_Block())];
+
                     switch (applyStrategy)
                     {
                     case Master:
                     {
-                        auto index = c->get_data()[1];
-                        auto value = c->get_data()[2];
-                        auto lbf = v_LBF[Index(c->get_data()[0])];
-                        auto inner = lbf->get_inner_block();
-                        auto pv = get_static_variable_by_index(inner, Index(index));
-                        // build the contraints
-                        auto con = new BoxConstraint(pv, value, value);
-                        lbf->add_dynamic_constraint(std::list<Constraint *>{con});
+                        Index found_pos = Inf<Index>();
+                        double oldLB = pv->get_lb();
+                        for (Index i = 0; i < lbf->get_num_active_var(); ++i)
+                        {
+                            auto *gi = dynamic_cast<LinearFunction *>(lbf->get_Lagrangian_term(i));
+                            if (!gi)
+                                continue;
+
+                            auto pos_in_gi = gi->is_active(pv);
+                            if (pos_in_gi >= gi->get_num_active_var())
+                                continue; // pv non è coinvolta in questo termine
+
+                            if (std::abs(gi->get_coefficient(pos_in_gi) + 1.0) > 1e-6)
+                                continue; // stessa variabile ma relazione diversa
+
+                            found_pos = i;
+                            break;
+                        }
+                        if (found_pos < Inf<Index>())
+                        {
+                            // trovata: aggiorna solo il termine costante (cioè "value")
+                            auto *gi = static_cast<LinearFunction *>(lbf->get_Lagrangian_term(found_pos));
+                            oldLB = gi->get_constant_term();
+                            gi->set_constant_term(value);
+                        }
+                        else
+                        {
+                            // g(x) = value -x = -1*x + value
+                            auto *g = new LinearFunction(LinearFunction::v_coeff_pair{{pv, -1.0}}, //-1 coefficent
+                                                         value);                                   // constant term
+                            ColVariable *y = new ColVariable();
+                            y->is_positive(true);
+                            lbf->add_dual_pairs(LagBFunction::v_dual_pair{{y, g}});
+                        }
                         if (doUndo)
                         {
-                            undoChange = new LagrangianChange(LagrangianChange::eUnfixX, {c->get_data()[0], c->get_data()[1]});
+                            undoChange = new LagrangianChange(LagrangianChange::eChgLB, {oldLB}, std::vector<AbstractPath>{c->get_paths()});
                         }
+                        break;
+                    }
+                    case Subproblem:
+                    {
+                    }
+                    default:
+                        throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
+                    }
+                }
+                else if (c->get_type() == LagrangianChange::eChgUB)
+                {
+                    auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
+                    if (!pv)
+                        throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
+                    auto value = c->get_data()[0];
+                    auto lbf = v_LBF[Block2Index(pv->get_Block())];
+
+                    switch (applyStrategy)
+                    {
+                    case Master:
+                    {
+                        Index found_pos = Inf<Index>();
+                        double oldUB = pv->get_ub();
+                        for (Index i = 0; i < lbf->get_num_active_var(); ++i)
+                        {
+                            auto *gi = dynamic_cast<LinearFunction *>(lbf->get_Lagrangian_term(i));
+                            if (!gi)
+                                continue;
+
+                            auto pos_in_gi = gi->is_active(pv);
+                            if (pos_in_gi >= gi->get_num_active_var())
+                                continue; // pv non è coinvolta in questo termine
+
+                            if (std::abs(gi->get_coefficient(pos_in_gi) - 1.0) > 1e-6)
+                                continue; // stessa variabile ma relazione diversa
+
+                            found_pos = i;
+                            break;
+                        }
+                        if (found_pos < Inf<Index>())
+                        {
+                            // trovata: aggiorna solo il termine costante (cioè "value")
+                            auto *gi = static_cast<LinearFunction *>(lbf->get_Lagrangian_term(found_pos));
+                            oldUB = gi->get_constant_term() * -1.0; // store the old upper bound
+                            gi->set_constant_term(-value);
+                        }
+                        else
+                        {
+                            // g(x) = x - value = 1*x - value
+
+                            auto *g = new LinearFunction(LinearFunction::v_coeff_pair{{pv, 1.0}}, // 1 coefficent
+                                                         -value);                                 // constant term
+                            ColVariable *y = new ColVariable();
+                            y->is_positive(true);
+                            lbf->add_dual_pairs(LagBFunction::v_dual_pair{{y, g}});
+                        }
+                        if (doUndo)
+                        {
+                            undoChange = new LagrangianChange(LagrangianChange::eChgUB, {oldUB}, std::vector<AbstractPath>{c->get_paths()});
+                        }
+                        break;
                     }
                     case Subproblem:
                     {
                         auto index = c->get_data()[1];
-                        auto value = c->get_data()[2];
                         auto lbf = v_LBF[Index(c->get_data()[0])];
                         auto inner = lbf->get_inner_block();
                         auto pv = get_static_variable_by_index(inner, Index(index));
-
-                        pv->fix_value(value);
                         if (doUndo)
                         {
-                            undoChange = new LagrangianChange(LagrangianChange::eUnfixX, {c->get_data()[0], c->get_data()[1]});
-                        }
+                            undoChange = new LagrangianChange(LagrangianChange::eFixX, {c->get_data()[0], c->get_data()[1], pv->get_value()});
+                        };
                     }
-                    default:
-                        throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
+                        pv->unfix_value();
+                        break;
                     }
-                    else if (c->get_type() == LagrangianChange::eUnfixX)
-                    {
-                        switch (applyStrategy)
-                        {
-                        case Master:
-                        {
-                            auto value = c->get_data()[2];
-                            auto lbf = v_LBF[Index(c->get_data()[0])];
-                            auto pv = get_static_variable_by_index(lbf->get_inner_block(), Index(c->get_data()[1]));
-                            // remove the constraint
-                            bool found = false;
-                            BoxConstraint *removeCon = nullptr;
-                            for (Index i = 0; i < lbf->get_dynamic_constraints().size(); ++i)
-                            {
-                                auto con = lbf->get_dynamic_constraints()[i];
-                                if (auto box = dynamic_cast<BoxConstraint *>(con))
-                                {
-                                    if (box->is_active(pv) && box->get_rhs() == value && box->get_lhs() == value)
-                                    {
-                                        found = true;
-                                        removeCon = box;
-                                        if (doUndo)
-                                        {
-                                            undoChange = new LagrangianChange(LagrangianChange::eFixX, {c->get_data()[0], c->get_data()[1], value});
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!found)
-                                throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: constraint to unfix not found"));
-                            lbf->remove_dynamic_constraint(new std::list<Constraint *>{removeCon});
-                            delete removeCon;
-                        }
-                        case Subproblem:
-                        {
-                            auto index = c->get_data()[1];
-                            auto lbf = v_LBF[Index(c->get_data()[0])];
-                            auto inner = lbf->get_inner_block();
-                            auto pv = get_static_variable_by_index(inner, Index(index));
-                            if (doUndo)
-                            {
-                                undoChange = new LagrangianChange(LagrangianChange::eFixX, {c->get_data()[0], c->get_data()[1], pv->get_value()});
-                            };
-                        }
-                            pv->unfix_value();
-                        }
-                    default:
-                        throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
-                    }
-                    else undoChange = c->apply(this->f_Block, doUndo);
+                default:
+                    throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
                 }
-                return undoChange;
+                else
+                    undoChange = c->apply(this->f_Block, doUndo);
             }
 
-        private:
-            bool PPHdone = false;
-            int branchingStrategy = mostFractional;
-            int applyStrategy = Master;
-        };
-    }
+            return undoChange;
+        }
+
+    private:
+        bool PPHdone = false;
+        int branchingStrategy = mostFractional;
+        int applyStrategy = Master;
+    };
 }
