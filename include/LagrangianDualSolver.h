@@ -2021,6 +2021,15 @@ FRowConstraint * constraint_with_index( Index i ) {
  double constr2val( const FRowConstraint & con , ColVariable & lvar );
 
 /*--------------------------------------------------------------------------*/
+ /// maps the dual box of con, if any, onto the box of the multiplier lvar
+ /** If con declares a box for its optimal Lagrangian multiplier, writes in
+  * box the corresponding box for the Lagrangian variable lvar and returns
+  * true; returns false otherwise. */
+
+ bool constr2box( const FRowConstraint & con , const ColVariable & lvar ,
+		  std::array< ColVariable::VarValue , 2 > & box );
+
+/*--------------------------------------------------------------------------*/
 
  void split_constraint( const FRowConstraint & con ,
 			std::vector< LinearFunction::v_coeff_pair > & split );

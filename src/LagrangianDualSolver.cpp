@@ -32,6 +32,8 @@
 
 #include "LinearFunction.h"
 
+#include "OneVarConstraint.h"
+
 #include "RBlockConfig.h"
 
 /*--------------------------------------------------------------------------*/
@@ -442,9 +444,16 @@ void LagrangianDualSolver::set_Block( Block * block )
  std::vector< std::vector< v_coeff_pair > > LagTerms( NumVar );
  auto LTit = LagTerms.begin();
 
+ // the boxes the relaxed constraints declare for their multipliers, if any:
+ // collected while scanning and turned into OneVarConstraint at the end
+ std::vector< std::array< VarValue , 2 > > dboxes;
+ bool any_dbox = false;
+
  // scan all static FRowConstraints - - - - - - - - - - - - - - - - - - - - -
  {
   auto Lit = Ls->begin();
+  dboxes.assign( static_cons , { -INFshift , INFshift } );
+  auto dbit = dboxes.begin();
 
   // define a lambda that does the job
   auto scan = [ & ]( FRowConstraint & con ) -> void {
@@ -462,10 +471,18 @@ void LagrangianDualSolver::set_Block( Block * block )
     // 0 and the Lagrangian term is empty
     *( objit++ ) = std::make_pair( &*( Lit++ ) , 0 );
     ++LTit;
+    ++dbit;
     return;
     }
 
    auto coef = constr2val( con , *Lit );
+
+   // if the constraint declares a box for its multiplier, map it onto the
+   // Lagrangian variable; note that constr2val() has already imposed the
+   // sign constraint, which the box is intersected with
+   if( constr2box( con , *Lit , *dbit ) )
+    any_dbox = true;
+   ++dbit;
 
    // write the coefficient in the objective
    *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
@@ -517,6 +534,12 @@ void LagrangianDualSolver::set_Block( Block * block )
 
    auto coef = constr2val( con , *Lit );
 
+   // a box on the multiplier of a dynamic constraint would have to be a
+   // dynamic OneVarConstraint following it around: not supported yet
+   if( con.has_dual_box() )
+    throw( std::invalid_argument( "LagrangianDualSolver: dual box on a "
+                                  "dynamic constraint not supported yet" ) );
+
    // write the coefficient in the objective
    *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
@@ -541,6 +564,23 @@ void LagrangianDualSolver::set_Block( Block * block )
 				new LinearFunction( std::move( objcf ) ) );
  obj->set_sense( f_max ? Objective::eMin : Objective::eMax , eNoMod );
  LagrDual->set_objective( obj , eNoMod );
+
+ // impose the boxes the relaxed constraints declared - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // a box is what keeps a Lagrangian subproblem bounded when some of the
+ // Variable it involves are unbounded, which is why it is worth telling the
+ // Solver of the Lagrangian Dual rather than leaving it to reconstruct it
+ // out of the extreme rays; a OneVarConstraint is how the Solver sees it
+
+ if( any_dbox ) {
+  auto bc = new std::vector< BoxConstraint >( static_cons );
+  for( Index i = 0 ; i < static_cons ; ++i ) {
+   (*bc)[ i ].set_variable( &(*Ls)[ i ] );
+   (*bc)[ i ].set_lhs( dboxes[ i ][ 0 ] , eNoMod );
+   (*bc)[ i ].set_rhs( dboxes[ i ][ 1 ] , eNoMod );
+   }
+  LagrDual->add_static_constraint( *bc , "MultBox" );
+  }
 
  // pass the Lagrangian terms to the corresponding LagBFunction - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1629,6 +1669,47 @@ double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
   }
 
  return( - rhs );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+bool LagrangianDualSolver::constr2box( const FRowConstraint & con ,
+				      const ColVariable & lvar ,
+				      std::array< ColVariable::VarValue , 2 > & box )
+{
+ // maps the box that con declares for its multiplier, if it declares one,
+ // onto the box of the Lagrangian variable lvar; returns true if the
+ // resulting box says anything at all
+ //
+ // two things stand between the two boxes. first, NNMult turns a naturally
+ // <= 0 multiplier into a >= 0 one by changing the sign of everything [see
+ // constr2val()], and a box has to be reflected accordingly. second, lvar
+ // may already be sign-constrained, and the two restrictions intersect
+
+ if( ! con.has_dual_box() )
+  return( false );
+
+ auto lhs = con.get_lhs();
+ auto rhs = con.get_rhs();
+
+ const bool flip = NNMult && ( lhs < rhs ) &&
+                   ( f_max ? ( lhs == -INFshift ) : ( rhs == INFshift ) );
+
+ auto lb = flip ? - con.get_dual_ub() : con.get_dual_lb();
+ auto ub = flip ? - con.get_dual_lb() : con.get_dual_ub();
+
+ if( lvar.is_positive() )
+  lb = std::max( lb , VarValue( 0 ) );
+ if( lvar.is_negative() )
+  ub = std::min( ub , VarValue( 0 ) );
+
+ if( lb > ub )
+  throw( std::invalid_argument(
+	     "LagrangianDualSolver: dual box empty against the sign of the "
+	     "multiplier" ) );
+
+ box = { lb , ub };
+ return( true );
  }
 
 /*--------------------------------------------------------------------------*/
