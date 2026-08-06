@@ -246,6 +246,12 @@ void PrimalProximalHeur::set_par( idx_type par , double value )
 {
  switch( par ) {
   case( dbl_penaltyFactor ): R = value; break;
+
+  // the accuracy required of the heuristic is kept here, while
+  // dbl_LDSRelAcc is the one the inner Solver has to solve the Lagrangian
+  // Dual with; before, both were the latter
+  case( dblRelAcc ):     RelAcc = value; break;
+  case( dbl_LDSRelAcc ): InnerSolver->set_par( dblRelAcc , value ); break;
   default:
    LagrangianDualSolver::set_par( par , value );
   }
@@ -253,6 +259,23 @@ void PrimalProximalHeur::set_par( idx_type par , double value )
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::gap_closed( void ) const
+{
+ // the optimum lies between the valid bound of the unpenalized iteration
+ // and the value of the best feasible solution found, so the heuristic has
+ // delivered the required accuracy as soon as the two are that close
+ const double lb = f_max ? best_bound : valid_bound;
+ const double ub = f_max ? valid_bound : best_bound;
+
+ if( ( ! std::isfinite( lb ) ) || ( ! std::isfinite( ub ) ) )
+  return( false );
+
+ return( ub - lb <= RelAcc * std::max( double( 1 ) , std::abs( lb ) ) );
+
+ }  // end( PrimalProximalHeur::gap_closed )
+
 /*--------------------------------------------------------------------------*/
 
 int PrimalProximalHeur::compute( bool changedvars )
@@ -349,6 +372,7 @@ int PrimalProximalHeur::compute( bool changedvars )
          << std::endl;
 
  best_bound = f_max ? - Inf< double >() : Inf< double >();
+ valid_bound = f_max ? Inf< double >() : - Inf< double >();
 
  std::vector< double > sol( NumStatVar );
 
@@ -442,12 +466,23 @@ int PrimalProximalHeur::compute( bool changedvars )
   // scale) and the handler could only re-record the same un-penalised
   // points, so both are skipped and PrimalProximalHeur degenerates into a
   // warm-started LagrangianDualSolver (plus the final primal recovery)
+  //
+  // an unpenalized first iteration would compute the Lagrangian Dual of the
+  // original objective, i.e., the one valid bound on the original problem
+  // there can be (every penalized iteration bounds the penalized objective
+  // instead), which get_lb() / get_ub() would then have to report and
+  // gap_closed() would measure the quality of the heuristic against. It is
+  // not done because it is not free: the inner Solver performs intMaxIter
+  // iterations per call, so unless that is large the bound it produces is
+  // way off, and the iteration is one less for the heuristic itself, which
+  // measurably worsens the solution it returns
+  const bool penalized = ( R != 0 );
 
   LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: adding penalty terms"
           << std::endl;
 
-  if( R != 0 )
+  if( penalized )
    add_penalty_terms();
 
   // register an event handler on the inner Solver that checks at every
@@ -456,7 +491,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   Index index_event = 0;
 
-  if( R != 0 )
+  if( penalized )
    LagrangianDualSolver::set_event_handler(
     ThinComputeInterface::eEverykIteration ,
     [ this , &sol , &index_event , &record_feasible , &is_integer_solution ]
@@ -523,6 +558,11 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << "PrimalProximalHeur::compute: Lagrangian Dual solved"
           << std::endl;
 
+  // the first iteration solved the Lagrangian Dual of the original
+  // objective: its bound is the valid one on the original problem
+  if( ! penalized )
+   valid_bound = f_max ? InnerSolver->get_ub() : InnerSolver->get_lb();
+
   // read back the current sub-Block Variable values - - - - - - - - - - - -
   {
    const auto n_sub = f_Block->get_number_nested_Blocks();
@@ -540,7 +580,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    *f_log << "PrimalProximalHeur::compute: removing penalty terms"
           << std::endl;
 
-  if( R != 0 )
+  if( penalized )
    remove_penalty_terms();
 
   // recompute the linearized penalty contribution at this iteration- - - - -
@@ -607,6 +647,13 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   ++iters;
 
+  // the accuracy required of the heuristic has been reached: the best
+  // feasible solution found is within RelAcc of the optimum, since the
+  // latter lies between valid_bound and it, so there is nothing left to
+  // look for
+  if( gap_closed() )
+   break;
+
   if( is_the_same || ( iters >= maxIter ) )
    break;
 
@@ -655,8 +702,8 @@ int PrimalProximalHeur::compute( bool changedvars )
  LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: "
          << ( is_the_same ? "converged" : "stopped" ) << " after "
-         << ( iters - 1 ) << " iterations, LB = " << InnerSolver->get_lb()
-         << ", UB = " << InnerSolver->get_ub()
+         << ( iters - 1 ) << " iterations, LB = " << get_lb()
+         << ", UB = " << get_ub()
          << ", best feasible = " << ( f_max ? get_lb() : get_ub() )
          << std::endl;
 
@@ -664,7 +711,18 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  unlock();  // unlock the Solver mutex
 
- return( res );
+ // an error of the inner Solver is an error of the heuristic; otherwise
+ // what is returned says whether the solution found is as accurate as it
+ // was required to be, which is what an heuristic can promise: kOK if the
+ // gap between it and the valid bound is within RelAcc, kLowPrecision if a
+ // solution was found but no such guarantee comes with it
+ if( res >= kError )
+  return( res );
+
+ if( gap_closed() )
+  return( kOK );
+
+ return( kLowPrecision );
 
  }  // end( PrimalProximalHeur::compute )
 

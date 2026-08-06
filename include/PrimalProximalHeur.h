@@ -125,6 +125,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
   dbl_penaltyFactor = dblLastLDSlvPar ,  ///< PPH quadratic penalty factor
 
+  dbl_LDSRelAcc ,  ///< relative accuracy required to the inner Solver
+                   /**< The accuracy the Lagrangian Dual is solved with,
+                    * i.e., what is passed to the inner Solver as its
+                    * dblRelAcc. It is a different thing from the dblRelAcc
+                    * of PrimalProximalHeur, which is the accuracy required
+                    * of the solution the heuristic produces, cf. compute()
+                    * and gap_closed(). */
+
   dblLastPPHPar   ///< first allowed new double parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of double algorithmic parameters. */
@@ -144,6 +152,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   maxIter  = get_dflt_int_par( intMaxIterPPH );
   f_MaxSol = get_dflt_int_par( intMaxSol );
   R        = get_dflt_dbl_par( dbl_penaltyFactor );
+  RelAcc   = Solver::get_dflt_dbl_par( dblRelAcc );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -243,18 +252,19 @@ class PrimalProximalHeur : public LagrangianDualSolver
  *  @{ */
 
  /// lower bound: the best feasible value (max) or the dual bound (min)
- /** For a minimization problem the bound of the inner Lagrangian Dual is
-  * valid for the original problem only when no proximal penalty is ever
-  * applied, i.e., when R == 0 or the Block has no static binary Variable
-  * to penalise (in both cases PrimalProximalHeur degenerates into a
-  * warm-started LagrangianDualSolver): otherwise the inner Solver bounds
-  * the penalised function, and no valid lower bound is available. */
+ /** For a minimization problem this is the bound of the Lagrangian Dual of
+  * the original objective: that of the inner Solver when no proximal
+  * penalty is ever applied, i.e., when R == 0 or the Block has no static
+  * binary Variable to penalise (in both cases PrimalProximalHeur
+  * degenerates into a warm-started LagrangianDualSolver), and the bound of
+  * the unpenalized first iteration otherwise, since the inner Solver then
+  * bounds the penalized function. */
 
  OFValue get_lb( void ) override {
   if( f_max )
    return( best_bound );
   return( ( R == 0 ) || ( NumStatVar == 0 ) ?
-	  LagrangianDualSolver::get_lb() : - Inf< double >() );
+	  LagrangianDualSolver::get_lb() : valid_bound );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -263,7 +273,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   if( ! f_max )
    return( best_bound );
   return( ( R == 0 ) || ( NumStatVar == 0 ) ?
-	  LagrangianDualSolver::get_ub() : Inf< double >() );
+	  LagrangianDualSolver::get_ub() : valid_bound );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -318,6 +328,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// true if the best solution found is within dblRelAcc of the valid bound
+ /** The optimum lies between the bound of the unpenalized iteration and the
+  * value of the best feasible solution found, so this is the criterion by
+  * which the heuristic has delivered the accuracy it was required to. */
+
+ bool gap_closed( void ) const;
+
+/*--------------------------------------------------------------------------*/
  /// evaluate the original (unpenalized) objective at the current point
  /** Compute and return the value of the original objective function of
   * f_Block at the current values of its sub-Block variables, ignoring
@@ -359,14 +377,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
  *
  *  @{ */
 
- [[nodiscard]] idx_type get_num_int_par( void ) const override {
-  return( LagrangianDualSolver::get_num_int_par() + 1 );
+ [[nodiscard]] idx_type int_par_first_is( void ) const override {
+  return( intLastPPHPar );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- [[nodiscard]] idx_type get_num_dbl_par( void ) const override {
-  return( LagrangianDualSolver::get_num_dbl_par() + 1 );
+ [[nodiscard]] idx_type dbl_par_first_is( void ) const override {
+  return( dblLastPPHPar );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -382,8 +400,11 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  if( par == dbl_penaltyFactor )
-   return( 0 );
+  switch( par ) {
+   case( dbl_penaltyFactor ): return( 0 );
+   case( dbl_LDSRelAcc ):
+    return( InnerSolver->get_dflt_dbl_par( dblRelAcc ) );
+   }
   return( LagrangianDualSolver::get_dflt_dbl_par( par ) );
   }
 
@@ -403,8 +424,11 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dbl_par( idx_type par ) const override {
-  if( par == dbl_penaltyFactor )
-   return( R );
+  switch( par ) {
+   case( dbl_penaltyFactor ): return( R );
+   case( dblRelAcc ):         return( RelAcc );
+   case( dbl_LDSRelAcc ):     return( InnerSolver->get_dbl_par( dblRelAcc ) );
+   }
   return( LagrangianDualSolver::get_dbl_par( par ) );
   }
 
@@ -423,6 +447,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
   const override {
   if( name == "dbl_penaltyFactor" )
    return( dbl_penaltyFactor );
+  if( name == "dbl_LDSRelAcc" )
+   return( dbl_LDSRelAcc );
   return( LagrangianDualSolver::dbl_par_str2idx( name ) );
   }
 
@@ -440,9 +466,12 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::string _ret = "dbl_penaltyFactor";
+  static const std::string _pf = "dbl_penaltyFactor";
+  static const std::string _ra = "dbl_LDSRelAcc";
   if( idx == dbl_penaltyFactor )
-   return( _ret );
+   return( _pf );
+  if( idx == dbl_LDSRelAcc )
+   return( _ra );
   return( LagrangianDualSolver::dbl_par_idx2str( idx ) );
   }
 
@@ -477,6 +506,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  double R;        ///< proximal penalty factor (dbl_penaltyFactor)
 
+ double RelAcc;   ///< accuracy required of the solution found (dblRelAcc)
+
  // working state - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  double penalty  = 0;  ///< current value of the quadratic penalty term
@@ -487,6 +518,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
  ///< original objective value at the current candidate solution
 
  double best_bound;   ///< best objective value over the feasible solutions
+
+ double valid_bound;
+ ///< bound on the original problem, from the unpenalized first iteration
+ /**< The value of the Lagrangian Dual of the *original* objective, which
+  * the first iteration computes before any proximal penalty is applied:
+  * a valid lower bound for a minimization problem (upper for a
+  * maximization one), whereas the bound of every later iteration is on
+  * the penalized objective and says nothing about the original one. */
 
  double worst_bound;  ///< worst objective value over the feasible solutions
 
