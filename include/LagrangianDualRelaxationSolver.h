@@ -6,50 +6,6 @@
 namespace SMSpp_di_unipi_it
 {
 
-    // by claude, da controllare
-    static ColVariable *get_static_variable_by_index(Block *block, Index idx)
-    {
-        ColVariable *result = nullptr;
-        Index cur = 0;
-
-        for (const auto &el : block->get_static_variables())
-        {
-            if (result)
-                break;
-
-            if (un_any_thing_0(ColVariable, el, {
-                    if (cur == idx)
-                        result = &var;
-                    ++cur;
-                }))
-                continue;
-
-            if (un_any_thing_1(ColVariable, el, {
-                    for (Index j = 0; j < var.size(); ++j, ++cur)
-                        if (cur == idx)
-                        {
-                            result = var.data() + j;
-                            break;
-                        }
-                }))
-                continue;
-
-            if (un_any_thing_K(ColVariable, el, {
-                    for (Index j = 0; j < var.num_elements(); ++j, ++cur)
-                        if (cur == idx)
-                        {
-                            result = var.data() + j;
-                            break;
-                        }
-                }))
-                continue;
-        }
-        if (!result)
-            throw std::invalid_argument(
-                "LagrangianChange: variable index out of range");
-
-        return (result);
-    }
 
     class LagrangianChange : public Change
     {
@@ -489,7 +445,8 @@ namespace SMSpp_di_unipi_it
                                                // RelaxationSolver(),
                                                PPHdone(false),
                                                branchingStrategy(mostFractional),
-                                               applyStrategy(Master)
+                                               applyStrategy(Master),
+                                               map_varToLF()
             {
             }
 
@@ -613,28 +570,12 @@ namespace SMSpp_di_unipi_it
                     {
                     case Master:
                     {
-                        Index found_pos = Inf<Index>();
+                        // Index found_pos = Inf<Index>();
                         double oldLB = pv->get_lb();
-                        for (Index i = 0; i < lbf->get_num_active_var(); ++i)
-                        {
-                            auto *gi = dynamic_cast<LinearFunction *>(lbf->get_Lagrangian_term(i));
-                            if (!gi)
-                                continue;
-
-                            auto pos_in_gi = gi->is_active(pv);
-                            if (pos_in_gi >= gi->get_num_active_var())
-                                continue; // pv non è coinvolta in questo termine
-
-                            if (std::abs(gi->get_coefficient(pos_in_gi) + 1.0) > 1e-6)
-                                continue; // stessa variabile ma relazione diversa
-
-                            found_pos = i;
-                            break;
-                        }
-                        if (found_pos < Inf<Index>())
+                        if (map_varToLF.contains(pv))
                         {
                             // trovata: aggiorna solo il termine costante (cioè "value")
-                            auto *gi = static_cast<LinearFunction *>(lbf->get_Lagrangian_term(found_pos));
+                            auto *gi = map_varToLF[pv];
                             oldLB = gi->get_constant_term();
                             gi->set_constant_term(value);
                         }
@@ -646,6 +587,7 @@ namespace SMSpp_di_unipi_it
                             ColVariable *y = new ColVariable();
                             y->is_positive(true);
                             lbf->add_dual_pairs(LagBFunction::v_dual_pair{{y, g}});
+                            map_varToLF[pv] = g;
                         }
                         if (doUndo)
                         {
@@ -655,6 +597,7 @@ namespace SMSpp_di_unipi_it
                     }
                     case Subproblem:
                     {
+                        throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented yet for eChgLB"));
                     }
                     default:
                         throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
@@ -672,28 +615,11 @@ namespace SMSpp_di_unipi_it
                     {
                     case Master:
                     {
-                        Index found_pos = Inf<Index>();
                         double oldUB = pv->get_ub();
-                        for (Index i = 0; i < lbf->get_num_active_var(); ++i)
-                        {
-                            auto *gi = dynamic_cast<LinearFunction *>(lbf->get_Lagrangian_term(i));
-                            if (!gi)
-                                continue;
-
-                            auto pos_in_gi = gi->is_active(pv);
-                            if (pos_in_gi >= gi->get_num_active_var())
-                                continue; // pv non è coinvolta in questo termine
-
-                            if (std::abs(gi->get_coefficient(pos_in_gi) - 1.0) > 1e-6)
-                                continue; // stessa variabile ma relazione diversa
-
-                            found_pos = i;
-                            break;
-                        }
-                        if (found_pos < Inf<Index>())
+                        if (map_varToLF.contains(pv))
                         {
                             // trovata: aggiorna solo il termine costante (cioè "value")
-                            auto *gi = static_cast<LinearFunction *>(lbf->get_Lagrangian_term(found_pos));
+                            auto *gi = map_varToLF[pv];
                             oldUB = gi->get_constant_term() * -1.0; // store the old upper bound
                             gi->set_constant_term(-value);
                         }
@@ -706,6 +632,7 @@ namespace SMSpp_di_unipi_it
                             ColVariable *y = new ColVariable();
                             y->is_positive(true);
                             lbf->add_dual_pairs(LagBFunction::v_dual_pair{{y, g}});
+                            map_varToLF[pv] = g;
                         }
                         if (doUndo)
                         {
@@ -715,20 +642,101 @@ namespace SMSpp_di_unipi_it
                     }
                     case Subproblem:
                     {
-                        auto index = c->get_data()[1];
-                        auto lbf = v_LBF[Index(c->get_data()[0])];
-                        auto inner = lbf->get_inner_block();
-                        auto pv = get_static_variable_by_index(inner, Index(index));
-                        if (doUndo)
-                        {
-                            undoChange = new LagrangianChange(LagrangianChange::eFixX, {c->get_data()[0], c->get_data()[1], pv->get_value()});
-                        };
+                        throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented yet for eChgUB"));
+                        /*                         auto index = c->get_data()[1];
+                                                auto lbf = v_LBF[Index(c->get_data()[0])];
+                                                auto inner = lbf->get_inner_block();
+                                                auto pv = get_static_variable_by_index(inner, Index(index));
+                                                if (doUndo)
+                                                {
+                                                    undoChange = new LagrangianChange(LagrangianChange::eFixX, {c->get_data()[0], c->get_data()[1], pv->get_value()});
+                                                }; */
                     }
                         pv->unfix_value();
                         break;
                     }
                 default:
                     throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
+                }
+                else if (c->get_type() == LagrangianChange::eFixX)
+                {
+                    auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
+                    if (!pv)
+                        throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
+                    auto value = c->get_data()[0];
+                    switch (applyStrategy)
+                    {
+                    case Master:
+                    {
+                        throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented yet for eFixX"));
+                    }
+                    case Subproblem:
+                    {
+
+                        if (doUndo)
+                        {
+                            if (pv->is_fixed())
+                            {
+                                undoChange = new LagrangianChange(LagrangianChange::eFixX, {pv->get_value()}, std::vector<AbstractPath>{c->get_paths()});
+                            }
+                            else
+                            {
+                                undoChange = new LagrangianChange(LagrangianChange::eUnfixX, {}, std::vector<AbstractPath>{c->get_paths()});
+                            }
+                        }
+                        if (!gi)
+                            throw std::runtime_error("LagrangianDualRelaxationSolver::apply: global information not set");
+                        using PurgedColumn = std::map<ColVariable *, std::vector<Solution *>>;
+                        const auto handler_id = lbf->set_event_handler(LagBFunction::eColumnPurged,
+                        //TODO insert here lambda function
+                        [lbf,pv,gi = this->f_global_information]() -> int {
+                            Solution *sol = lbf->release_current_purged_solution();
+                            if (!sol)
+                                throw std::logic_error("eColumnPurged called without a Solution");
+                            auto collection = gi->get_from_Universe<PurgedColumn>("map_varToSol");
+                            if (!collection)
+                            {
+                                gi->add_to_Universe<PurgedColumn>("map_varToSol");
+                                collection = gi->get_from_Universe<PurgedColumn>("map_varToSol");
+                            }
+                            Change *chg = 
+                            collection->write("prunedColumn",std::vector<Solution*>{{pv,std::move(sol)}});
+                            return ThinComputeInterface::eContinue;                           
+                        }
+                        );
+                        pv->set_value(value);
+                        pv->is_fixed(true);
+                        lbf->reset_event_handler(LagBFunction::eColumnPurged, handler_id);
+                        break;
+                    }
+                    default:
+                        throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
+                    }
+                }
+                else if (c->get_type() == LagrangianChange::eUnfixX)
+                {
+                    auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
+                    if (!pv)
+                        throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
+                    switch (applyStrategy)
+                    {
+                    case Master:
+                    {
+                        throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented yet for eFixX"));
+                    }
+                    case Subproblem:
+                    {
+                        if (doUndo)
+                        {
+                            undoChange = new LagrangianChange(LagrangianChange::eFixX, {pv->get_value()}, std::vector<AbstractPath>{c->get_paths()});
+                        }
+                        pv->is_fixed(false);
+                        // add column from globalInformation
+                        break;
+                    }
+                    default:
+                        throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
+                    }
                 }
                 else
                     undoChange = c->apply(this->f_Block, doUndo);
@@ -741,5 +749,6 @@ namespace SMSpp_di_unipi_it
         bool PPHdone = false;
         int branchingStrategy = mostFractional;
         int applyStrategy = Master;
+        std::unordered_map<Variable *, LinearFunction *> map_varToLF;
     };
 }
