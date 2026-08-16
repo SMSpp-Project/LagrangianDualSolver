@@ -614,16 +614,19 @@ public:
   *   inner Solver and then changed sign, if necessary, when the dual solution
   *   is written in the Block
   *
-  * - int_LDSlv_CloneCfg [0]: true (nonzero) if each time a BlockSolverConfig
-  *   is apply()-ed to a Block (either the inner Block in a LagBFunction or
-  *   the Lagrangian Dual Block itself) it needs to be clone()-d. this is only
-  *   necessary if the BlockSolverConfig contains any component (typically,
-  *   something in the "extra" Configuration of a ComputeConfig) that gets
+  * - int_LDSlv_CloneCfg [0]: true (nonzero) if each time a BlockConfig is
+  *   apply()-ed to a Block (either the inner Block in a LagBFunction or the
+  *   Lagrangian Dual Block itself) it needs to be clone()-d. this is only
+  *   necessary if the BlockConfig contains any component that gets
   *   "consumed" when apply()-ed, which can happen, but it is not frequent.
   *   it is therefore in general necessary to foresee the possibility of
   *   cloning, but this is not done by default unless this parameter is
-  *   properly set (in which case it will apply to *all* BlockSolverConfig,
-  *   which may be overkill in some cases but a balance needs to be had).
+  *   properly set (in which case it will apply to *all* BlockConfig, which
+  *   may be overkill in some cases but a balance needs to be had). note that
+  *   a BlockSolverConfig is *always* clone()-d, whatever the value of this
+  *   parameter: the clone is what registers the Solver, and is therefore
+  *   also the only object that can un-register exactly them when the
+  *   configuration is un-done [see BlockSolverConfig::apply()].
   *
   * - int_InnerS_WVarSCfg [-1]: the index in the "cache of Configurations"
   *   created with vstr_LDSl_Cfg of the Configuration that is used in the
@@ -2113,6 +2116,22 @@ FRowConstraint * constraint_with_index( Index i ) {
   * given, else f_DBSCfg; nullptr if none applies. Defined out-of-line since it
   * dynamic_cast<>s to the (here incomplete) BlockSolverConfig. */
  BlockSolverConfig * default_BSCfg_for( Block * inner ) const;
+
+ /// the cleared BlockSolverConfig that configured the Lagrangian Dual
+ /** The clone of f_BSCfg that has actually been apply()-ed to LagrDual,
+  * kept clear()-ed: apply()-ing it removes all and only the Solver that it
+  * has registered there [see BlockSolverConfig::apply()], which is how the
+  * configuration is un-done. nullptr if LagrDual is not configured. */
+ BlockSolverConfig * f_aBSCfg = nullptr;
+
+ /// the cleared BlockSolverConfig that configured each inner Block
+ /** For each sub-Block, the clone of the BlockSolverConfig that has actually
+  * been apply()-ed to it, kept clear()-ed [see f_aBSCfg]. A clone per Block
+  * is necessary because the same BlockSolverConfig is typically apply()-ed
+  * to many sub-Block, while the record of the registered Solver that its
+  * cleared apply() uses is per-Block. Entries are nullptr where no
+  * BlockSolverConfig applied. */
+ std::vector< BlockSolverConfig * > v_aBSCfg;
 
  std::vector< Configuration * > v_Cfg;  ///< the "Configuration cache"
 
