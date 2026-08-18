@@ -234,8 +234,14 @@ void LagrangianDualSolver::set_Block( Block * block )
      BCi = c;
    }
 
-  if( BCi )
-   BCi->apply( csbi );
+  if( BCi ) {
+   // always through a clone: apply() moves the individual Configuration out
+   // of the BlockConfig into the one it hands to the Block, which owns and
+   // destroys it, so the same BlockConfig could not be apply()-ed twice
+   auto cBCi = BCi->clone();
+   cBCi->apply( csbi );
+   delete cBCi;
+   }
 
   // now construct the LagBFunction; note that doing so may cause the
   // Objective of the inner Block (and therefore the Variable) to be
@@ -292,9 +298,13 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
   }
 
- // if a BlockConfig is present, apply() it
- if( f_BCfg )
-  f_BCfg->apply( LagrDual );
+ // if a BlockConfig is present, apply() it; as for the inner Block, always
+ // through a clone [see above]
+ if( f_BCfg ) {
+  auto cBCfg = f_BCfg->clone();
+  cBCfg->apply( LagrDual );
+  delete cBCfg;
+  }
 
  // check conditions on f_Block- - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -784,9 +794,6 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
    if( LagrDual )
     throw( std::logic_error( "changing NNMult with registered Block" ) );
    NNMult = bool( value );
-   break;
-  case( int_LDSlv_CloneCfg ):
-   CloneCfg = bool( value );
    break;
   case( int_InnerS_WVarSCfg ):
    WVarSCfg = value;
