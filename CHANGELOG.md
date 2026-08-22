@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed 
 
+- the first iteration of PrimalProximalHeur is not penalized, so that
+  the bound it produces is the one of the original problem: get_lb() /
+  get_ub() report it and it is what the accuracy the heuristic is asked
+  for is measured against
+
 ### Fixed 
 
 ## [0.2.0] - 2025-12-12

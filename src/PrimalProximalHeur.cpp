@@ -467,16 +467,15 @@ int PrimalProximalHeur::compute( bool changedvars )
   // points, so both are skipped and PrimalProximalHeur degenerates into a
   // warm-started LagrangianDualSolver (plus the final primal recovery)
   //
-  // an unpenalized first iteration would compute the Lagrangian Dual of the
-  // original objective, i.e., the one valid bound on the original problem
-  // there can be (every penalized iteration bounds the penalized objective
-  // instead), which get_lb() / get_ub() would then have to report and
-  // gap_closed() would measure the quality of the heuristic against. It is
-  // not done because it is not free: the inner Solver performs intMaxIter
-  // iterations per call, so unless that is large the bound it produces is
-  // way off, and the iteration is one less for the heuristic itself, which
-  // measurably worsens the solution it returns
-  const bool penalized = ( R != 0 );
+  // the first iteration is not penalized either: it solves the Lagrangian
+  // Dual of the original objective, which is the only valid bound on the
+  // original problem the heuristic can produce, every penalized iteration
+  // bounding the penalized objective instead. get_lb() / get_ub() report
+  // it and gap_closed() measures the solution found against it. The
+  // iteration is not lost, since the proximal center of the next one is
+  // the fractional solution the Lagrangian Dual converges to, which is
+  // what the penalty is meant to be built on
+  const bool penalized = ( R != 0 ) && ( iters > 0 );
 
   LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: adding penalty terms"
