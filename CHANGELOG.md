@@ -14,7 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - the first iteration of PrimalProximalHeur is not penalized, so that
   the bound it produces is the one of the original problem: get_lb() /
   get_ub() report it and it is what the accuracy the heuristic is asked
-  for is measured against
+  for is measured against. intUseWarmStartPSol asks for the previous
+  behaviour, i.e. that the primal solution of the warm start be the
+  proximal center of the first iteration
+
+- the parameters of PrimalProximalHeur named after the base Solver refer
+  to the heuristic itself: intMaxIter is the number of its iterations and
+  dblMaxTime the time it is given as a whole, out of which each call to
+  the inner Solver gets what is left; the inner Solver is given
+  intInnerMaxIter and dblInnerRelAcc (was dbl_LDSRelAcc), and the
+  configuration files of the Solver of the warm start and of the primal
+  recovery are strWarmStartBSC (empty, i.e. no warm start, by default)
+  and strRecoveryBSC
+
+- the trace of PrimalProximalHeur is compiled in and silent by default,
+  intLogVerb turning it on at runtime, rather than the other way around
 
 ### Fixed 
 
