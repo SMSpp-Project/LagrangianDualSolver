@@ -1,11 +1,14 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - WarmStartCfg.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - RecoveryCfg.txt- - - - - - - - - - - - - - -
 #
-# BlockSolverConfig used by PrimalProximalHeur to instantiate the warm-start
-# Solver via the factory. The Solver solves the LP relaxation of f_Block to
-# initialise the Lagrangian dual multipliers from a meaningful point.
+# BlockSolverConfig used by PrimalProximalHeur to instantiate the primal
+# recovery Solver via the factory. With the binary variables driven by the
+# proximal term fixed at their (integer) values, the Solver solves the
+# restricted problem on f_Block, enforcing the coupling constraints that a
+# Lagrangian point in general violates: its optimum is a genuinely feasible
+# completion of the integer point, hence a valid bound.
 #
-#   Luca Mencarelli, Antonio Frangioni, Donato Meoli
+#   Donato Meoli
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -27,28 +30,25 @@ GRBMILPSolver         # name of Solver
 
 # now all the ComputeConfig
 # 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# ComputeConfig of the :MILPSolver used for the warm-start LP relaxation
+# ComputeConfig of the :MILPSolver used for the primal recovery
 
 ComputeConfig         # exact type of the ComputeConfig object
 
 1  # f_diff == 0 ==> all non-provided parameters are set to the default value
    # f_diff == 1 ==> all non-provided parameters are not changed
 
-3 # number of integer parameters
+1 # number of integer parameters
 
 # now all the integer parameters
-intRelaxIntVars 1 # nonzero if the continuous relaxation is solved
+intRelaxIntVars 0 # the restricted problem is solved keeping integrality:
+                  # with the proximal binaries fixed only few dependent
+                  # integer variables remain, presolve disposes of them
 
-# All specific GUROBI parameter (uncomment based on Solver)
-QCPDual         1 # compute duals of quadratic constraints (needed when the
-                  # relaxation is a QCP, e.g. AC instances; ignored for LPs)
-NumericFocus    3 # without it the QCP barrier with QCPDual stops SUBOPTIMAL
-                  # (or OPTIMAL but dual-less) on the AC SOCP relaxations
-
-0 # number of double parameters
+1 # number of double parameters
 
 # now all the double parameters
-# [none]
+dblMaxTime 60     # max running time (seconds): the restricted problem is
+                  # tiny, a timeout only guards degenerate cases
 
 0 # number of string parameters
 
@@ -78,5 +78,5 @@ NumericFocus    3 # without it the QCP barrier with QCPDual stops SUBOPTIMAL
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - END WarmStartCfg.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - END RecoveryCfg.txt- - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -106,7 +106,23 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  enum int_par_type_PPH {
 
-  intMaxIterPPH = intLastLDSlvPar ,  ///< maximum number of PPH iterations
+  intInnerMaxIter = intLastLDSlvPar ,
+  ///< maximum number of iterations of the inner Solver
+  /**< The maximum number of iterations the Lagrangian Dual is solved with
+   * at each proximal iteration, i.e., what is passed to the inner Solver
+   * as its intMaxIter; the intMaxIter of PrimalProximalHeur is instead the
+   * maximum number of its own (outer) iterations, as for any Solver it
+   * refers to the algorithm the class implements. */
+
+  intUseWarmStartPSol ,
+  ///< use the primal solution of the warm start as first proximal center
+  /**< If nonzero, the primal solution the warm start leaves in the
+   * Variables is the proximal center of the first iteration, which is
+   * therefore penalized like all the others. If zero (the default), the
+   * first iteration solves the Lagrangian Dual of the original objective:
+   * its solution is the first proximal center, and its bound is valid for
+   * the original problem, and stronger than the one of the continuous
+   * relaxation. */
 
   intLastPPHPar   ///< first allowed new int parameter for derived classes
                   /**< Convenience value for easily allow derived classes
@@ -125,11 +141,49 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
   dbl_penaltyFactor = dblLastLDSlvPar ,  ///< PPH quadratic penalty factor
 
+  dblInnerRelAcc ,  ///< relative accuracy required to the inner Solver
+                   /**< The accuracy the Lagrangian Dual is solved with,
+                    * i.e., what is passed to the inner Solver as its
+                    * dblRelAcc. It is a different thing from the dblRelAcc
+                    * of PrimalProximalHeur, which is the accuracy required
+                    * of the solution the heuristic produces, cf. compute()
+                    * and gap_closed(). */
+
   dblLastPPHPar   ///< first allowed new double parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of double algorithmic parameters. */
 
   };  // end( dbl_par_type_PPH )
+
+/*--------------------------------------------------------------------------*/
+ /// public enum for the string algorithmic parameters
+ /** Public enum describing the different algorithmic parameters of string
+  * type that PrimalProximalHeur has in addition to these of
+  * LagrangianDualSolver. The value strLastPPHPar is provided so that the
+  * list can be easily further extended by derived classes. */
+
+ enum str_par_type_PPH {
+
+  strWarmStartBSC = strLastLDSlvPar ,
+  ///< filename of the BlockSolverConfig of the warm start
+  /**< The BlockSolverConfig of the Solver that computes the warm start,
+   * i.e., the point the Lagrangian multipliers are initialized from. With
+   * the empty string, which is the default, no warm start is done and the
+   * multipliers start from wherever set_Block() left them. */
+
+  strRecoveryBSC ,
+  ///< filename of the BlockSolverConfig of the primal recovery
+  /**< The BlockSolverConfig of the Solver that solves the restricted
+   * problem the primal recovery is, i.e., the one that turns a fractional
+   * point into a feasible solution of the original problem. With the empty
+   * string there is no primal recovery, and the only solutions recorded
+   * are those the iterations happen to hit. */
+
+  strLastPPHPar   ///< first allowed new str parameter for derived classes
+                  /**< Convenience value for easily allow derived classes
+                   * to extend the set of string algorithmic parameters. */
+
+  };  // end( str_par_type_PPH )
 
 /** @} ---------------------------------------------------------------------*/
 /*------------- CONSTRUCTING AND DESTRUCTING PrimalProximalHeur ------------*/
@@ -140,9 +194,13 @@ class PrimalProximalHeur : public LagrangianDualSolver
  /// constructor: ensure every field is initialized
 
  PrimalProximalHeur( void ) : LagrangianDualSolver() {
-  logVerb = get_dflt_int_par( intLogVerb );
-  maxIter = get_dflt_int_par( intMaxIterPPH );
-  R       = get_dflt_dbl_par( dbl_penaltyFactor );
+  logVerb   = get_dflt_int_par( intLogVerb );
+  maxIter   = Solver::get_dflt_int_par( intMaxIter );
+  f_MaxSol  = get_dflt_int_par( intMaxSol );
+  UseWSPSol = get_dflt_int_par( intUseWarmStartPSol );
+  R         = get_dflt_dbl_par( dbl_penaltyFactor );
+  RelAcc    = Solver::get_dflt_dbl_par( dblRelAcc );
+  MaxTime   = Solver::get_dflt_dbl_par( dblMaxTime );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -188,7 +246,15 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * see the comments to set_ComputeConfig() for details). The PPH-specific
   * int parameters are:
   *
-  * - intMaxIterPPH [Inf< int >()]: maximum number of PPH iterations.
+  * - intMaxIter [Inf< int >()]: maximum number of PPH iterations, the
+  *                 iterations of the inner Solver being capped by
+  *                 intInnerMaxIter instead.
+  *
+  * - intInnerMaxIter [Inf< int >()]: maximum number of iterations of each
+  *                 call to the inner Solver.
+  *
+  * - intUseWarmStartPSol [0]: whether the primal solution of the warm
+  *                 start is the proximal center of the first iteration.
   *
   * - intMaxSol [1]: maximum number of feasible solutions generated by the
   *                  heuristic that are kept; the best ones (in terms of
@@ -217,6 +283,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  void set_par( idx_type par , double value ) override;
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// set the string parameters of PrimalProximalHeur
+ /** Set the string parameters specific of PrimalProximalHeur, i.e.,
+  * strWarmStartBSC, and call the version of LagrangianDualSolver for the
+  * others. */
+
+ void set_par( idx_type par , std::string && value ) override;
+
 /*--------------------------------------------------------------------------*/
  /// set the ostream for the PrimalProximalHeur log
 
@@ -241,14 +315,29 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /** @name Accessing the found solutions (if any)
  *  @{ */
 
+ /// lower bound: the best feasible value (max) or the dual bound (min)
+ /** For a minimization problem this is the bound of the Lagrangian Dual of
+  * the original objective: that of the inner Solver when no proximal
+  * penalty is ever applied, i.e., when R == 0 or the Block has no static
+  * binary Variable to penalise (in both cases PrimalProximalHeur
+  * degenerates into a warm-started LagrangianDualSolver), and the bound of
+  * the unpenalized first iteration otherwise, since the inner Solver then
+  * bounds the penalized function. */
+
  OFValue get_lb( void ) override {
-  return( f_max ? best_bound : - Inf< double >() );
+  if( f_max )
+   return( best_bound );
+  return( ( R == 0 ) || ( NumStatVar == 0 ) ?
+	  LagrangianDualSolver::get_lb() : valid_bound );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  OFValue get_ub( void ) override {
-  return( f_max ? Inf< double >() : best_bound );
+  if( ! f_max )
+   return( best_bound );
+  return( ( R == 0 ) || ( NumStatVar == 0 ) ?
+	  LagrangianDualSolver::get_ub() : valid_bound );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -299,11 +388,18 @@ class PrimalProximalHeur : public LagrangianDualSolver
                 "PrimalProximalHeur::get_var_solution: no Solution stored"
                           ) );
 
-  auto solution = f_Block->get_Solution( nullptr , false );
-  solution->write( f_Block );
+  v_best_sol.front().first->write( f_Block );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// true if the best solution found is within dblRelAcc of the valid bound
+ /** The optimum lies between the bound of the unpenalized iteration and the
+  * value of the best feasible solution found, so this is the criterion by
+  * which the heuristic has delivered the accuracy it was required to. */
+
+ bool gap_closed( void ) const;
+
+/*--------------------------------------------------------------------------*/
  /// evaluate the original (unpenalized) objective at the current point
  /** Compute and return the value of the original objective function of
   * f_Block at the current values of its sub-Block variables, ignoring
@@ -345,22 +441,29 @@ class PrimalProximalHeur : public LagrangianDualSolver
  *
  *  @{ */
 
- [[nodiscard]] idx_type get_num_int_par( void ) const override {
-  return( LagrangianDualSolver::get_num_int_par() + 1 );
+ [[nodiscard]] idx_type int_par_first_is( void ) const override {
+  return( intLastPPHPar );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- [[nodiscard]] idx_type get_num_dbl_par( void ) const override {
-  return( LagrangianDualSolver::get_num_dbl_par() + 1 );
+ [[nodiscard]] idx_type dbl_par_first_is( void ) const override {
+  return( dblLastPPHPar );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ [[nodiscard]] idx_type str_par_first_is( void ) const override {
+  return( strLastPPHPar );
   }
 
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
   switch( par ) {
-   case( intMaxIterPPH ): return( Inf< int >() );
-   case( intLogVerb ):    return( 2 );
+   case( intInnerMaxIter ):     return( Inf< int >() );
+   case( intUseWarmStartPSol ): return( 0 );
+   case( intLogVerb ):          return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_int_par( par ) );
   }
@@ -368,20 +471,39 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  if( par == dbl_penaltyFactor )
-   return( 0 );
+  switch( par ) {
+   case( dbl_penaltyFactor ): return( 0 );
+   case( dblInnerRelAcc ):
+    return( InnerSolver->get_dflt_dbl_par( dblRelAcc ) );
+   }
   return( LagrangianDualSolver::get_dflt_dbl_par( par ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ [[nodiscard]] const std::string & get_dflt_str_par( idx_type par )
+  const override {
+  static const std::string _empty;
+  static const std::string _rec = "RecoveryCfg.txt";
+  if( par == strWarmStartBSC )
+   return( _empty );
+  if( par == strRecoveryBSC )
+   return( _rec );
+  return( LagrangianDualSolver::get_dflt_str_par( par ) );
   }
 
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_int_par( idx_type par ) const override {
   switch( par ) {
-   case( intMaxSol ):     return( f_MaxSol );
-   case( intLogVerb ):    return( logVerb +
-                                  ( LagrangianDualSolver::get_int_par( par )
-                                    << 4 ) );
-   case( intMaxIterPPH ): return( maxIter );
+   case( intMaxSol ):   return( f_MaxSol );
+   case( intLogVerb ):  return( logVerb +
+                                ( LagrangianDualSolver::get_int_par( par )
+                                  << 4 ) );
+   case( intMaxIter ):  return( maxIter );
+   case( intInnerMaxIter ):
+    return( InnerSolver->get_int_par( intMaxIter ) );
+   case( intUseWarmStartPSol ): return( UseWSPSol );
    }
   return( LagrangianDualSolver::get_int_par( par ) );
   }
@@ -389,8 +511,12 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dbl_par( idx_type par ) const override {
-  if( par == dbl_penaltyFactor )
-   return( R );
+  switch( par ) {
+   case( dbl_penaltyFactor ): return( R );
+   case( dblRelAcc ):         return( RelAcc );
+   case( dblMaxTime ):        return( MaxTime );
+   case( dblInnerRelAcc ):    return( InnerSolver->get_dbl_par( dblRelAcc ) );
+   }
   return( LagrangianDualSolver::get_dbl_par( par ) );
   }
 
@@ -398,8 +524,10 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
   const override {
-  if( name == "intMaxIterPPH" )
-   return( intMaxIterPPH );
+  if( name == "intInnerMaxIter" )
+   return( intInnerMaxIter );
+  if( name == "intUseWarmStartPSol" )
+   return( intUseWarmStartPSol );
   return( LagrangianDualSolver::int_par_str2idx( name ) );
   }
 
@@ -409,6 +537,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
   const override {
   if( name == "dbl_penaltyFactor" )
    return( dbl_penaltyFactor );
+  if( name == "dblInnerRelAcc" )
+   return( dblInnerRelAcc );
   return( LagrangianDualSolver::dbl_par_str2idx( name ) );
   }
 
@@ -416,9 +546,12 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::string _ret = "intMaxIterPPH";
-  if( idx == intMaxIterPPH )
-   return( _ret );
+  static const std::string _mi = "intInnerMaxIter";
+  static const std::string _ws = "intUseWarmStartPSol";
+  if( idx == intInnerMaxIter )
+   return( _mi );
+  if( idx == intUseWarmStartPSol )
+   return( _ws );
   return( LagrangianDualSolver::int_par_idx2str( idx ) );
   }
 
@@ -426,10 +559,48 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::string _ret = "dbl_penaltyFactor";
+  static const std::string _pf = "dbl_penaltyFactor";
+  static const std::string _ra = "dblInnerRelAcc";
   if( idx == dbl_penaltyFactor )
-   return( _ret );
+   return( _pf );
+  if( idx == dblInnerRelAcc )
+   return( _ra );
   return( LagrangianDualSolver::dbl_par_idx2str( idx ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ [[nodiscard]] const std::string & get_str_par( idx_type par )
+  const override {
+  if( par == strWarmStartBSC )
+   return( WarmStartBSC );
+  if( par == strRecoveryBSC )
+   return( RecoveryBSC );
+  return( LagrangianDualSolver::get_str_par( par ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ [[nodiscard]] idx_type str_par_str2idx( const std::string & name )
+  const override {
+  if( name == "strWarmStartBSC" )
+   return( strWarmStartBSC );
+  if( name == "strRecoveryBSC" )
+   return( strRecoveryBSC );
+  return( LagrangianDualSolver::str_par_str2idx( name ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
+  const override {
+  static const std::string _ws = "strWarmStartBSC";
+  static const std::string _rc = "strRecoveryBSC";
+  if( idx == strWarmStartBSC )
+   return( _ws );
+  if( idx == strRecoveryBSC )
+   return( _rc );
+  return( LagrangianDualSolver::str_par_idx2str( idx ) );
   }
 
 /** @} ---------------------------------------------------------------------*/
@@ -461,7 +632,18 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  Index f_MaxSol;  ///< maximum number of Solution to keep
 
+ int UseWSPSol;   ///< whether the warm-start primal is the first center
+
  double R;        ///< proximal penalty factor (dbl_penaltyFactor)
+
+ double RelAcc;   ///< accuracy required of the solution found (dblRelAcc)
+
+ double MaxTime;  ///< time limit of the whole heuristic (dblMaxTime)
+
+ std::string WarmStartBSC;  ///< BlockSolverConfig of the warm start
+
+ std::string RecoveryBSC = "RecoveryCfg.txt";
+ ///< BlockSolverConfig of the primal recovery
 
  // working state - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -473,6 +655,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
  ///< original objective value at the current candidate solution
 
  double best_bound;   ///< best objective value over the feasible solutions
+
+ double valid_bound;
+ ///< bound on the original problem, from the unpenalized first iteration
+ /**< The value of the Lagrangian Dual of the *original* objective, which
+  * the first iteration computes before any proximal penalty is applied:
+  * a valid lower bound for a minimization problem (upper for a
+  * maximization one), whereas the bound of every later iteration is on
+  * the penalized objective and says nothing about the original one. */
 
  double worst_bound;  ///< worst objective value over the feasible solutions
 
@@ -525,6 +715,33 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*--------------------------------------------------------------------------*/
 
  void process_outstanding_Modification( void );
+
+/*--------------------------------------------------------------------------*/
+ /// instantiate an auxiliary Solver from a BlockSolverConfig .txt file
+ /** Load the BlockSolverConfig from the given file, a sibling of this class'
+  * source file, instantiate the (first) named Solver via the factory and
+  * apply its ComputeConfig (if any). The Solver is NOT registered on
+  * f_Block, so it cannot interfere with PrimalProximalHeur itself (which is
+  * already attached to f_Block); the caller owns it and must delete it. */
+
+ CDASolver * new_aux_solver( const std::string & cfgname );
+
+/*--------------------------------------------------------------------------*/
+ /// recover a feasible completion of the current (integer) point
+ /** A Lagrangian point in general violates the coupling constraints of
+  * f_Block (the ones the Lagrangian Dual dualizes), so its objective value
+  * is not a valid bound. This method fixes the binary Variables driven by
+  * the proximal term at their current (rounded) values and solves the
+  * restricted problem on f_Block with the auxiliary Solver picked from
+  * RecoveryCfg.txt, which enforces the coupling constraints: its optimum is
+  * a genuinely feasible completion of the integer point. On success returns
+  * true, writes the completion cost in \p cost and leaves the completion in
+  * the Variables of f_Block (so that a Solution snapshot picks it up); if
+  * the restricted problem is infeasible (the integer point admits no
+  * feasible completion) returns false. The fixing is done with eNoMod and
+  * undone before returning, so it is invisible to any other Solver. */
+
+ bool recover_primal( double & cost );
 
 /*--------------------------------------------------------------------------*/
 

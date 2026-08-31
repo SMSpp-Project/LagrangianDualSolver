@@ -11,7 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed 
 
+- the first iteration of PrimalProximalHeur is not penalized, so that
+  the bound it produces is the one of the original problem: get_lb() /
+  get_ub() report it and it is what the accuracy the heuristic is asked
+  for is measured against. intUseWarmStartPSol asks for the previous
+  behaviour, i.e. that the primal solution of the warm start be the
+  proximal center of the first iteration
+
+- the parameters of PrimalProximalHeur named after the base Solver refer
+  to the heuristic itself: intMaxIter is the number of its iterations and
+  dblMaxTime the time it is given as a whole, out of which each call to
+  the inner Solver gets what is left; the inner Solver is given
+  intInnerMaxIter and dblInnerRelAcc (was dbl_LDSRelAcc), and the
+  configuration files of the Solver of the warm start and of the primal
+  recovery are strWarmStartBSC (empty, i.e. no warm start, by default)
+  and strRecoveryBSC
+
+- the trace of PrimalProximalHeur is compiled in and silent by default,
+  intLogVerb turning it on at runtime, rather than the other way around
+
 ### Fixed 
+
+- get_ub() of a minimization problem published the bound the inner Solver
+  has on the Lagrangian Dual, which lies on the same side of the optimum as
+  the dual value itself: whenever the inner Solver proved its own
+  optimality, LagrangianDualSolver claimed to have solved the Block, which
+  is false as soon as there is a duality gap. It now publishes only the
+  bound the relaxation gives, and compute() returns kLowPrecision unless
+  the two bounds close, so that what is promised is in the return code
 
 ## [0.2.0] - 2025-12-12
 
