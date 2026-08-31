@@ -368,8 +368,6 @@ public:
  
  int_LDSlv_NNMult ,  ///< if Lagrangian multipliers are all >= 0
 
- int_LDSlv_CloneCfg ,  ///< if BlockSolverConfig need be clone()-d
-
  int_InnerS_WVarSCfg ,  ///< the Configuration for InnerSolver->get_var_sol
 
  int_InnerS_WDualSCfg ,  ///< the Configuration for InnerSolver->get_dual_sol
@@ -524,7 +522,6 @@ public:
   // ensure all parameters are properly given their default value
   iBCopy          = get_dflt_int_par( int_LDSlv_iBCopy );
   NNMult          = get_dflt_int_par( int_LDSlv_NNMult );
-  CloneCfg        = get_dflt_int_par( int_LDSlv_CloneCfg );
   WVarSCfg        = get_dflt_int_par( int_InnerS_WVarSCfg );
   WDualSCfg       = get_dflt_int_par( int_InnerS_WDualSCfg );
   PushCostToOwner = get_dflt_int_par( intPushCostToOwner );
@@ -613,17 +610,6 @@ public:
   *   inequality constraints are all constructed as to be non-negative in the
   *   inner Solver and then changed sign, if necessary, when the dual solution
   *   is written in the Block
-  *
-  * - int_LDSlv_CloneCfg [0]: true (nonzero) if each time a BlockSolverConfig
-  *   is apply()-ed to a Block (either the inner Block in a LagBFunction or
-  *   the Lagrangian Dual Block itself) it needs to be clone()-d. this is only
-  *   necessary if the BlockSolverConfig contains any component (typically,
-  *   something in the "extra" Configuration of a ComputeConfig) that gets
-  *   "consumed" when apply()-ed, which can happen, but it is not frequent.
-  *   it is therefore in general necessary to foresee the possibility of
-  *   cloning, but this is not done by default unless this parameter is
-  *   properly set (in which case it will apply to *all* BlockSolverConfig,
-  *   which may be overkill in some cases but a balance needs to be had).
   *
   * - int_InnerS_WVarSCfg [-1]: the index in the "cache of Configurations"
   *   created with vstr_LDSl_Cfg of the Configuration that is used in the
@@ -1566,7 +1552,6 @@ public:
   static const std::array dflt_int_par = {
     0 , // int_LDSlv_iBCopy
     1 , // int_LDSlv_NNMult
-    0 , // int_LDSlv_CloneCfg
    -1 , // int_InnerS_WVarSCfg
    -1 , // int_InnerS_WDualSCfg
     1 , // intPushCostToOwner
@@ -1641,7 +1626,6 @@ public:
   switch( par ) {
    case( int_LDSlv_iBCopy ):     return( iBCopy );
    case( int_LDSlv_NNMult ):     return( NNMult );
-   case( int_LDSlv_CloneCfg ):   return( CloneCfg );
    case( int_InnerS_WVarSCfg ):  return( WVarSCfg );
    case( int_InnerS_WDualSCfg ): return( WDualSCfg );
    case( intPushCostToOwner ):   return( PushCostToOwner );
@@ -1711,7 +1695,6 @@ public:
   static const std::map< std::string , idx_type > int_pars_map = {
    { "int_LDSlv_iBCopy"     , int_LDSlv_iBCopy } ,
    { "int_LDSlv_NNMult"     , int_LDSlv_NNMult } ,
-   { "int_LDSlv_CloneCfg"   , int_LDSlv_CloneCfg } ,
    { "int_InnerS_WVarSCfg"  , int_InnerS_WVarSCfg } ,
    { "int_InnerS_WDualSCfg" , int_InnerS_WDualSCfg } ,
    { "intPushCostToOwner"   , intPushCostToOwner } ,
@@ -1791,10 +1774,9 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 7 > int_pars_str = {
-   "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_LDSlv_CloneCfg" ,
-   "int_InnerS_WVarSCfg" , "int_InnerS_WDualSCfg" , "intPushCostToOwner" ,
-   "intSparseLagPairs" };
+  static const std::array< std::string , 6 > int_pars_str = {
+   "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_InnerS_WVarSCfg" ,
+   "int_InnerS_WDualSCfg" , "intPushCostToOwner" , "intSparseLagPairs" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
@@ -2117,8 +2099,6 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  bool NNMult;         ///< true if Lagrangian multipliers are all >= 0
 
- bool CloneCfg;       ///< true if BlockSolverConfig need be clone()-d
-
  int WVarSCfg;        ///< the Configuration for IS->get_var_solution()
 
  int WDualSCfg;       ///< the Configuration for IS->get_dual_solution()
@@ -2191,6 +2171,22 @@ FRowConstraint * constraint_with_index( Index i ) {
   * given, else f_DBSCfg; nullptr if none applies. Defined out-of-line since it
   * dynamic_cast<>s to the (here incomplete) BlockSolverConfig. */
  BlockSolverConfig * default_BSCfg_for( Block * inner ) const;
+
+ /// the cleared BlockSolverConfig that configured the Lagrangian Dual
+ /** The clone of f_BSCfg that has actually been apply()-ed to LagrDual,
+  * kept clear()-ed: apply()-ing it removes all and only the Solver that it
+  * has registered there [see BlockSolverConfig::apply()], which is how the
+  * configuration is un-done. nullptr if LagrDual is not configured. */
+ BlockSolverConfig * f_aBSCfg = nullptr;
+
+ /// the cleared BlockSolverConfig that configured each inner Block
+ /** For each sub-Block, the clone of the BlockSolverConfig that has actually
+  * been apply()-ed to it, kept clear()-ed [see f_aBSCfg]. A clone per Block
+  * is necessary because the same BlockSolverConfig is typically apply()-ed
+  * to many sub-Block, while the record of the registered Solver that its
+  * cleared apply() uses is per-Block. Entries are nullptr where no
+  * BlockSolverConfig applied. */
+ std::vector< BlockSolverConfig * > v_aBSCfg;
 
  std::vector< Configuration * > v_Cfg;  ///< the "Configuration cache"
 

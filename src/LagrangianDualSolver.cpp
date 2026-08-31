@@ -234,8 +234,14 @@ void LagrangianDualSolver::set_Block( Block * block )
      BCi = c;
    }
 
-  if( BCi )
-   BCi->apply( csbi );
+  if( BCi ) {
+   // always through a clone: apply() moves the individual Configuration out
+   // of the BlockConfig into the one it hands to the Block, which owns and
+   // destroys it, so the same BlockConfig could not be apply()-ed twice
+   auto cBCi = BCi->clone();
+   cBCi->apply( csbi );
+   delete cBCi;
+   }
 
   // now construct the LagBFunction; note that doing so may cause the
   // Objective of the inner Block (and therefore the Variable) to be
@@ -292,9 +298,13 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
   }
 
- // if a BlockConfig is present, apply() it
- if( f_BCfg )
-  f_BCfg->apply( LagrDual );
+ // if a BlockConfig is present, apply() it; as for the inner Block, always
+ // through a clone [see above]
+ if( f_BCfg ) {
+  auto cBCfg = f_BCfg->clone();
+  cBCfg->apply( LagrDual );
+  delete cBCfg;
+  }
 
  // check conditions on f_Block- - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -640,6 +650,8 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
   }
 
+ v_aBSCfg.assign( f_nsb , nullptr );
+
  Index iW2BSCfg = 0;  // index in W2BSCfg
  for( Index i = 0 ; i < f_nsb ; ++i ) {
   Block * csbi = v_LBF[ i ]->get_inner_block();
@@ -663,13 +675,13 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
 
   if( BSCi ) {
-   if( CloneCfg ) {
-    auto cBSCi = BSCi->clone();
-    cBSCi->apply( csbi );
-    delete cBSCi;
-    }
-   else
-    BSCi->apply( csbi );
+   // the same BlockSolverConfig is typically apply()-ed to many sub-Block,
+   // so a clone per sub-Block is kept, clear()-ed, as the object that
+   // un-does this very configuration [see v_aBSCfg]
+   auto cBSCi = BSCi->clone();
+   cBSCi->apply( csbi );
+   cBSCi->clear();
+   v_aBSCfg[ i ] = cBSCi;
    }
   }
 
@@ -686,15 +698,13 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
   }
 
- // if a BlockSolverConfig is present, apply() it
+ // if a BlockSolverConfig is present, apply() it; as for the sub-Block, the
+ // apply() is done through a clone that is then kept, clear()-ed, as the
+ // object that un-does this very configuration [see f_aBSCfg]
  if( f_BSCfg ) {
-  if( CloneCfg ) {
-   auto cBSC = f_BSCfg->clone();
-   cBSC->apply( LagrDual );
-   delete cBSC;
-   }
-  else
-   f_BSCfg->apply( LagrDual );
+  f_aBSCfg = f_BSCfg->clone();
+  f_aBSCfg->apply( LagrDual );
+  f_aBSCfg->clear();
   }
  
  #if CHECK_DS & 1
@@ -784,9 +794,6 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
    if( LagrDual )
     throw( std::logic_error( "changing NNMult with registered Block" ) );
    NNMult = bool( value );
-   break;
-  case( int_LDSlv_CloneCfg ):
-   CloneCfg = bool( value );
    break;
   case( int_InnerS_WVarSCfg ):
    WVarSCfg = value;
@@ -1293,21 +1300,11 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
 
 void LagrangianDualSolver::clear_LD_BlockSolverConfig( bool keepcfg )
 {
- if( ! f_BSCfg )
-  return;
+ if( LagrDual && f_aBSCfg )  // un-do the configuration of the Lagrangian
+  f_aBSCfg->apply( LagrDual );  // Dual, i.e., remove the Solver it put there
 
- if( LagrDual ) {
-  if( keepcfg ) {
-   auto BSC = f_BSCfg->clone();
-   BSC->clear();
-   BSC->apply( LagrDual );
-   delete BSC;
-   }
-  else {
-   f_BSCfg->clear();
-   f_BSCfg->apply( LagrDual );
-   }
-  }
+ delete f_aBSCfg;
+ f_aBSCfg = nullptr;
 
  if( ! keepcfg ) {
   delete f_BSCfg;
@@ -1367,54 +1364,19 @@ BlockSolverConfig * LagrangianDualSolver::default_BSCfg_for( Block * inner )
 
 void LagrangianDualSolver::clear_inner_BlockSolverConfig( void )
 {
- if( ! LagrDual )
-  return;
+ // each inner Block is un-configured by the very object that configured it
+ // [see v_aBSCfg]: no need to work out again which BlockSolverConfig applies
+ // to which sub-Block
+ if( LagrDual )
+  for( Index i = 0 ; i < v_aBSCfg.size() ; ++i )
+   if( v_aBSCfg[ i ] )
+    v_aBSCfg[ i ]->apply( v_LBF[ i ]->get_inner_block() );
 
- if( ( ! f_DBSCfg ) && ( ! f_DBSCfg_map ) &&
-     ( v_Cfg.empty() || WBSCfg.empty() ) )
-  return;
+ for( auto BSCi : v_aBSCfg )
+  delete BSCi;
 
- Index iW2BSCfg = 0;  // index in W2BSCfg
- for( Index i = 0 ; i < f_nsb ; ++i ) {
-  // the default individual BlockSolverConfig (per inner-Block classname() if a
-  // meta config was given)
-  BlockSolverConfig * BSCi = default_BSCfg_for( v_LBF[ i ]->get_inner_block() );
+ v_aBSCfg.clear();
 
-  if( ! WBSCfg.empty() ) {  // individual BlockSolverConfig are provided
-   Index h;                 // the index in WBSCfg
-
-   if( W2BSCfg.empty() )    // in dense format
-    h = i;
-   else                     // in sparse format
-    if( ( iW2BSCfg < W2BSCfg.size() ) &&
-	( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
-     h = iW2BSCfg++;
-    else
-     h = WBSCfg.size();
- 
-   if( ( h < WBSCfg.size() ) &&
-       ( WBSCfg[ h ] >= 0 ) && ( WBSCfg[ h ] < int( v_Cfg.size() ) ) )
-    if( auto c = dynamic_cast< BlockSolverConfig * >( v_Cfg[ WBSCfg[ h ] ] ) )
-     BSCi = c;
-   }
-
-  if( BSCi ) {  // if an individual BlockSolverConfig is specified
-   BSCi = BSCi->clone();                          // clone it
-   BSCi->clear();                                 // clear it
-   BSCi->apply( v_LBF[ i ]->get_inner_block() );  // apply it
-   delete BSCi;                                   // delete it
-   }
-
-  if( ! WBSCfg.empty() ) {
-   if( W2BSCfg.empty() ) {
-    if( i >= WBSCfg.size() )
-     break;
-    }
-   else
-    if( iW2BSCfg >= W2BSCfg.size() )
-     break;
-   }
-  }
  }  // end( LagrangianDualSolver::clear_inner_BlockSolverConfig )
 
 /*--------------------------------------------------------------------------*/
