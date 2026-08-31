@@ -1020,6 +1020,20 @@ int LagrangianDualSolver::compute( bool changedvars )
   if( res == kInfeasible )
    res = kUnbounded;
 
+ // the inner Solver having solved the Lagrangian Dual to the accuracy it
+ // was asked says nothing about the accuracy of the *original* problem: as
+ // long as the two bounds published by get_lb() and get_ub() do not close,
+ // which needs a feasible solution of the original problem and therefore
+ // does not happen here, what is returned is a relaxation and nothing is
+ // promised about the optimum, which is what kLowPrecision says
+ if( res == kOK ) {
+  const auto lb = get_lb() , ub = get_ub();
+  if( ! ( ( lb > - Inf< OFValue >() ) && ( ub < Inf< OFValue >() ) &&
+          ( ub - lb <= get_dbl_par( dblRelAcc ) *
+                       std::max( OFValue( 1 ) , std::abs( lb ) ) ) ) )
+   res = kLowPrecision;
+  }
+
  unlock();  // unlock the mutex
 
  return( res );
