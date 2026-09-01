@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed 
 
+- the warm start of PrimalProximalHeur asked the auxiliary Solver for the
+  dual solution whatever happened to it: a relaxation stopped by the time
+  limit has none, and the query threw. What the Solver has is asked for,
+  and if the duals are not there the multipliers stay where set_Block()
+  put them, exactly as with no warm start
+
 - get_ub() of a minimization problem published the bound the inner Solver
   has on the Lagrangian Dual, which lies on the same side of the optimum as
   the dual value itself: whenever the inner Solver proved its own

@@ -439,8 +439,16 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( auto tl = time_left() ; tl < Inf< double >() )
    warmstart->set_par( dblMaxTime , tl );
   warmstart->compute( changedvars );
-  warmstart->get_dual_solution();
-  warmstart->get_var_solution();
+
+  // the relaxation may have been stopped, by the time limit above or by its
+  // own, before producing anything: what it has is asked for, and what it
+  // does not have is not, a warm start that did not happen leaving the
+  // multipliers where set_Block() put them, exactly as with no warm start
+  const bool haveduals = warmstart->has_dual_solution();
+  if( haveduals )
+   warmstart->get_dual_solution();
+  if( warmstart->has_var_solution() )
+   warmstart->get_var_solution();
 
   delete warmstart;
 
@@ -449,23 +457,25 @@ int PrimalProximalHeur::compute( bool changedvars )
   // Constraint duals when set_Block() built it, i.e., before the warm start
   // ran, so without this the warm start would not reach the inner Solver
 
-  auto Ls = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );
-  auto Lsit = Ls->begin();
-  for( const auto & el : f_Block->get_static_constraints() )
-   un_any_const_static( el ,
-                        [ & Lsit ]( FRowConstraint & con ) {
-                         ( Lsit++ )->set_value( con.get_dual() );
-                         } ,
-                        un_any_type< FRowConstraint >() );
-
-  auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
-  auto Ldit = Ld->begin();
-  for( const auto & el : f_Block->get_dynamic_constraints() )
-   un_any_const_dynamic( el ,
-                         [ & Ldit ]( FRowConstraint & con ) {
-                          ( Ldit++ )->set_value( con.get_dual() );
+  if( haveduals ) {
+   auto Ls = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );
+   auto Lsit = Ls->begin();
+   for( const auto & el : f_Block->get_static_constraints() )
+    un_any_const_static( el ,
+                         [ & Lsit ]( FRowConstraint & con ) {
+                          ( Lsit++ )->set_value( con.get_dual() );
                           } ,
                          un_any_type< FRowConstraint >() );
+
+   auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
+   auto Ldit = Ld->begin();
+   for( const auto & el : f_Block->get_dynamic_constraints() )
+    un_any_const_dynamic( el ,
+                          [ & Ldit ]( FRowConstraint & con ) {
+                           ( Ldit++ )->set_value( con.get_dual() );
+                           } ,
+                          un_any_type< FRowConstraint >() );
+   }
   }
 
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
