@@ -23,7 +23,7 @@ namespace SMSpp_di_unipi_it
         /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/
 
         // constructor
-        LagrangianChange(int type, std::vector<double> value, std::vector<AbstractPath> paths) : f_type(type), f_value(std::move(value)), v_paths(std::move(paths)) {}
+        LagrangianChange(int type, std::vector<double> value, std::vector<AbstractPath> paths) : f_type(type), v_data(std::move(value)), v_paths(std::move(paths)) {}
         // decostructor
         ~LagrangianChange() = default;
         /*-------------------- PUBLIC METHODS OF THE CLASS -------------------------*/
@@ -240,7 +240,7 @@ namespace SMSpp_di_unipi_it
                 {
                     if (doUndo)
                         returnChange = new LagrangianChange(eChgLB, {pv->get_lb()}, std::vector<AbstractPath>{v_paths});
-                    auto con = new LBConstraint(pv->get_block(), pv, new_lb);
+                    // auto con = new LBConstraint(pv->get_block(), pv, new_lb);
                     Block *blk = pv->get_block();
                     Index idx = Inf<Index>();
 
@@ -303,7 +303,7 @@ namespace SMSpp_di_unipi_it
                 {
                     if (doUndo)
                         returnChange = new LagrangianChange(eChgUB, {pv->get_ub()}, std::vector<AbstractPath>{v_paths});
-                    auto con = new UBConstraint(pv->get_block(), pv, new_ub);
+                    // auto con = new UBConstraint(pv->get_block(), pv, new_ub);
                     auto blk = pv->get_block();
                     Index idx = Inf<Index>();
                     auto &d_constraints = blk->get_dynamic_constraints();
@@ -449,6 +449,9 @@ namespace SMSpp_di_unipi_it
                                            applyStrategy(Master),
                                            map_varToLF()
         {
+            f_global_information->add_to_Universe<std::map<ColVariable *, std::vector<Solution *>>>("map_varToSol");
+            auto collection = f_global_information->get_from_Universe<std::map<ColVariable *, std::vector<Solution *>>>("map_varToSol");
+            collection->write("map_varToSol", std::map<ColVariable *, std::vector<Solution *>>{});
         }
 
         ~LagrangianDualRelaxationSolver() override
@@ -559,13 +562,13 @@ namespace SMSpp_di_unipi_it
             auto c = dynamic_cast<LagrangianChange *>(change);
             if (!c)
                 throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: change is not a LagrangianChange"));
+            auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
+            if (!pv)
+                throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
+            auto lbf = v_LBF[Block2Index(pv->get_Block())];
             if (c->get_type() == LagrangianChange::eChgLB)
             {
-                auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
-                if (!pv)
-                    throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
                 auto value = c->get_data()[0];
-                auto lbf = v_LBF[Block2Index(pv->get_Block())];
 
                 switch (applyStrategy)
                 {
@@ -573,7 +576,7 @@ namespace SMSpp_di_unipi_it
                 {
                     // Index found_pos = Inf<Index>();
                     double oldLB = pv->get_lb();
-                    if (map_varToLF.contains(pv))
+                    if (map_varToLF.contains(pv) && map_varToLF[pv]->get_coefficent() == -1.0)
                     {
                         // trovata: aggiorna solo il termine costante (cioè "value")
                         auto *gi = map_varToLF[pv];
@@ -606,18 +609,14 @@ namespace SMSpp_di_unipi_it
             }
             else if (c->get_type() == LagrangianChange::eChgUB)
             {
-                auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
-                if (!pv)
-                    throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
                 auto value = c->get_data()[0];
-                auto lbf = v_LBF[Block2Index(pv->get_Block())];
 
                 switch (applyStrategy)
                 {
                 case Master:
                 {
                     double oldUB = pv->get_ub();
-                    if (map_varToLF.contains(pv))
+                    if (map_varToLF.contains(pv) && map_varToLF[pv]->get_coefficient() == 1.0)
                     {
                         // trovata: aggiorna solo il termine costante (cioè "value")
                         auto *gi = map_varToLF[pv];
@@ -644,18 +643,6 @@ namespace SMSpp_di_unipi_it
                 case Subproblem:
                 {
                     throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented yet for eChgUB"));
-                    /*                         auto index = c->get_data()[1];
-                                            auto lbf = v_LBF[Index(c->get_data()[0])];
-                                            auto inner = lbf->get_inner_block();
-                                            auto pv = get_static_variable_by_index(inner, Index(index));
-                                            if (doUndo)
-                                            {
-                                                undoChange = new LagrangianChange(LagrangianChange::eFixX, {c->get_data()[0], c->get_data()[1], pv->get_value()});
-                                                };
-                                                }
-                                                    pv->unfix_value();
-                                                    break;
-                                            */
                 }
                 default:
                     throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
@@ -663,9 +650,6 @@ namespace SMSpp_di_unipi_it
             }
             else if (c->get_type() == LagrangianChange::eFixX)
             {
-                auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
-                if (!pv)
-                    throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
                 auto value = c->get_data()[0];
                 switch (applyStrategy)
                 {
@@ -700,15 +684,16 @@ namespace SMSpp_di_unipi_it
                                                                        auto collection = f_global_information->get_from_Universe<PurgedColumn>("map_varToSol");
                                                                        if (!collection)
                                                                        {
-                                                                           f_global_information->add_to_Universe<PurgedColumn>("map_varToSol");
-                                                                           collection = f_global_information->get_from_Universe<PurgedColumn>("map_varToSol");
+                                                                           throw std::runtime_error("LagrangianDualRelaxationSolver::apply: map_varToSol not found in global information");
                                                                        }
                                                                        // TODO controllare che sia giusta e funzioni
-                                                                       collection->write_with("map_varToSol",
-                                                                                              [pv, sol](PurgedColumn &map_varToSol)
-                                                                                              {
-                                                                                                  map_varToSol[pv].push_back(sol);
-                                                                                              });
+                                                                       auto ok = collection->write_with("map_varToSol",
+                                                                                                        [pv, sol](PurgedColumn &map_varToSol)
+                                                                                                        {
+                                                                                                            map_varToSol[pv].push_back(sol);
+                                                                                                        });
+                                                                       // temporarly, check if it works correctly
+                                                                       assert(ok);
                                                                        return ThinComputeInterface::eContinue;
                                                                    });
                     pv->set_value(value);
@@ -722,14 +707,11 @@ namespace SMSpp_di_unipi_it
             }
             else if (c->get_type() == LagrangianChange::eUnfixX)
             {
-                auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
-                if (!pv)
-                    throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
                 switch (applyStrategy)
                 {
                 case Master:
                 {
-                    throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented yet for eFixX"));
+                    throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented yet for eUnfixX"));
                 }
                 case Subproblem:
                 {
@@ -749,7 +731,7 @@ namespace SMSpp_di_unipi_it
                     }
                     std::vector<Solution *> pruned_solutions;
                     const bool found = collection->read_with("map_varToSol",
-                                                             [pv, &pruned_solutions](const PurgedColumn &map_varToSol)
+                                                             [pv, &pruned_solutions](const std::map<ColVariable *, std::vector<Solution *>> &map_varToSol)
                                                              {
                                                                  auto it = map_varToSol.find(pv);
                                                                  if (it != map_varToSol.end())
@@ -760,7 +742,7 @@ namespace SMSpp_di_unipi_it
 
                     if (!found)
                         pruned_solutions.clear();
-                    lbf->restore_pruned_solutions(pruned_solutions);
+                    lbf->restore_purged_solutions(pruned_solutions);
 
                     break;
                 }
@@ -779,5 +761,5 @@ namespace SMSpp_di_unipi_it
         int branchingStrategy = mostFractional;
         int applyStrategy = Master;
         std::unordered_map<Variable *, LinearFunction *> map_varToLF;
-    }
-};
+    };
+}
