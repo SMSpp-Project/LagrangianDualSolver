@@ -1262,29 +1262,11 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- /// lower bound on the optimal value of the Block
- /** For a minimization problem the Lagrangian Dual is a relaxation, and what
-  * the inner Solver has found of it is a valid lower bound. For a
-  * maximization one it is the other way round, and nothing is known from
-  * below [see get_ub()]. */
-
- OFValue get_lb( void ) override {
-  return( f_max ? - Inf< OFValue >() : InnerSolver->get_lb() );
-  }
+ OFValue get_lb( void ) override { return( InnerSolver->get_lb() ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// upper bound on the optimal value of the Block
- /** Symmetrically to get_lb(): for a maximization problem the relaxation
-  * bounds the optimum from above, for a minimization one nothing does. Note
-  * that the bound the inner Solver has on its own optimum is a bound on the
-  * value of the *Lagrangian Dual*, which is on the same side of the optimum
-  * as the dual value itself: publishing it here would claim to have solved
-  * the Block whenever the inner Solver proves its own optimality, which is
-  * false as soon as there is a duality gap. */
 
- OFValue get_ub( void ) override {
-  return( f_max ? InnerSolver->get_ub() : Inf< OFValue >() );
-  }
+ OFValue get_ub( void ) override { return( InnerSolver->get_ub() ); }
 
 /*--------------------------------------------------------------------------*/
 
