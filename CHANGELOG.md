@@ -38,14 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and if the duals are not there the multipliers stay where set_Block()
   put them, exactly as with no warm start
 
-- get_ub() of a minimization problem published the bound the inner Solver
-  has on the Lagrangian Dual, which lies on the same side of the optimum as
-  the dual value itself: whenever the inner Solver proved its own
-  optimality, LagrangianDualSolver claimed to have solved the Block, which
-  is false as soon as there is a duality gap. It now publishes only the
-  bound the relaxation gives, and compute() returns kLowPrecision unless
-  the two bounds close, so that what is promised is in the return code
-
 ## [0.2.0] - 2025-12-12
 
 ### Added 
