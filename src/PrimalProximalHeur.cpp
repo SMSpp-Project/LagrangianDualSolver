@@ -161,7 +161,11 @@ void PrimalProximalHeur::initialize( void )
     return;  // not in inner obj: skip to avoid unsupported add_variable
    double c1 = 0;
    double c2 = 0;
-   if( ! fobj->is_linear() ) {
+   // which of the two it is was settled above by the type of the Function:
+   // Function::is_linear() answers about the function and not about the type,
+   // so a DQuadFunction whose quadratic coefficients all happen to be 0 says
+   // yes to it while its coefficients still sit in triples
+   if( ! is_linear[ index ] ) {
     auto qf = static_cast< p_DQF >( fobj );
     c1 = qf->get_linear_coefficient( i_in_obj );
     c2 = qf->get_quadratic_coefficient( i_in_obj );
