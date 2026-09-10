@@ -260,13 +260,28 @@ class PrimalProximalHeur : public LagrangianDualSolver
   *                  heuristic that are kept; the best ones (in terms of
   *                  objective value) are kept.
   *
-  * - intLogVerb: masks the first two bits of \p value ( & 3 ) and sets the
-  *               verbosity of PrimalProximalHeur as
-  *               = 0 : no log;
-  *               = 1 : detailed iteration-by-iteration log;
-  *               = 2 : even more detailed debug log;
-  *               then passes \p value >> 2 (shifted right 2 places, i.e.,
-  *               killing the first two bits) to LagrangianDualSolver. */
+  * - intLogVerb: one single value encoding the verbosity of both levels of
+  *               the heuristic, i.e., \p value == v + 4 * w with
+  *
+  *               - v == \p value & 3, the first two bits, the verbosity of
+  *                 PrimalProximalHeur itself:
+  *                 = 0 : no log;
+  *                 = 1 : only the anomalies (no binary Variable to penalise,
+  *                       time limit hit in the middle of the loop);
+  *                 = 2 : detailed iteration-by-iteration log;
+  *
+  *               - w == \p value >> 2, i.e., \p value with the first two
+  *                 bits killed, which is passed to LagrangianDualSolver and
+  *                 therefore ends up in the inner Solver, with the meaning
+  *                 that :Solver gives it (for BundleSolver, 0 = no log up to
+  *                 6 = everything).
+  *
+  *               Hence, say, 14 == 2 + 4 * 3 is a fully verbose heuristic
+  *               around a BundleSolver at verbosity 3, while 12 == 0 + 4 * 3
+  *               is the same BundleSolver log with a silent heuristic.
+  *
+  *               Note that nothing is printed unless set_log() has been
+  *               called with a non-nullptr stream, whatever intLogVerb is. */
 
  void set_par( idx_type par , int value ) override;
 
