@@ -3,7 +3,8 @@
 /*--------------------------------------------------------------------------*/
 /** @file
  * Implementation of the PrimalProximalHeur class, which implements the
- * CDASolver interface within the SMS++ framework.
+ * CDASolver interface within the SMS++ framework as a Lagrangian-based
+ * primal-proximal heuristic for binary optimization problems.
  *
  * \author Luca Mencarelli \n
  *         Dipartimento di Informatica \n
@@ -18,16 +19,49 @@
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
 /*--------------------------------------------------------------------------*/
+
+#define BIN_VARS 1
+/**< Compile-time switch: when defined, PrimalProximalHeur expects all the
+ * static "active" Variables of the inner sub-Blocks to be binary (0/1),
+ * and exploits this by linearising the quadratic proximal term into a
+ * simple update of the linear coefficient. When undefined the proximal
+ * term is left quadratic. */
+
+/*--------------------------------------------------------------------------*/
+/*------------------------------- MACROS -----------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+#define PrimalProximalHeur_LOG 1
+/* If non-zero, the verbose trace messages of PrimalProximalHeur are
+ * compiled in, and whether they are printed is then decided at runtime by
+ * intLogVerb, which is 0, i.e., silent, by default. Set this to 0 to
+ * compile the trace out altogether. */
+
+#if PrimalProximalHeur_LOG
+ #define LOG_VERB( lvl ) if( f_log && ( logVerb >= ( lvl ) ) )
+#else
+ #define LOG_VERB( lvl ) if constexpr ( false )
+#endif
+
+/*--------------------------------------------------------------------------*/
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 #include "PrimalProximalHeur.h"
 
+#include "ColVariable.h"
+
 #include "FRealObjective.h"
 
-/*--------------------------------------------------------------------------*/
-/*-------------------------------- MACROS ----------------------------------*/
-/*--------------------------------------------------------------------------*/
+#include "FRowConstraint.h"
+
+#include "BlockSolverConfig.h"
+
+#include <chrono>
+
+#include <cmath>
+
+#include <filesystem>
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
@@ -40,16 +74,6 @@ using namespace SMSpp_di_unipi_it;
 /*--------------------------------------------------------------------------*/
 
 using p_FRO = FRealObjective *;
-using p_LF = LinearFunction *;
-using p_DQF = DQuadFunction *;
-
-/*--------------------------------------------------------------------------*/
-/*-------------------------------- CONSTANTS -------------------------------*/
-/*--------------------------------------------------------------------------*/
-
-/*--------------------------------------------------------------------------*/
-/*-------------------------------- FUNCTIONS -------------------------------*/
-/*--------------------------------------------------------------------------*/
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
@@ -67,130 +91,142 @@ SMSpp_insert_in_factory_cpp_0( PrimalProximalHeur );
 
 void PrimalProximalHeur::set_Block( Block * block )
 {
- if( f_Block )           // was attached to a Block
-  guts_of_destructor();  // cleanup
- LagrangianDualSolver::set_Block( block );  // call method of base class
- if( f_Block ) {
+ if( f_Block )           // was already attached to a Block
+  guts_of_destructor();  // release the PPH-specific state first
+
+ LagrangianDualSolver::set_Block( block );  // call the base method
+
+ if( f_Block ) {         // a new Block is now attached
   initialize();
-  best_bound = f_max ? - Inf< double >() : Inf< double >();
+  best_bound  =   f_max ? - Inf< double >() : Inf< double >();
   worst_bound = - best_bound;
+  addterm     = 0;
   }
- }
+ }  // end( PrimalProximalHeur::set_Block )
 
 /*--------------------------------------------------------------------------*/
 
 void PrimalProximalHeur::initialize( void )
 {
- // count and check the static ColVariable - - - - - - - - - - - - - - - - - 
- // meanwhile construct the static dictionaries for the linear and quadratic
- // terms of the (quadratic) objective functions of the sub-blocks
+ // count and check the static "active" binary ColVariable, and meanwhile
+ // build the per-sub-Block dictionaries (idx_to_var_sbi1/2) carrying the
+ // linear and quadratic coefficients of the inner objective Function of
+ // each sub-Block. The dictionaries are later read by add_penalty_terms()
+ // and remove_penalty_terms() to apply / strip the proximal term.
+
+ LOG_VERB( 2 )
+  *f_log << "PrimalProximalHeur::initialize: maxIter = " << maxIter
+         << ", R = " << R << ", logVerb = " << logVerb << std::endl;
 
  NumStatVar = 0;
 
-{
- pos_id_sbi.resize( f_Block->get_number_nested_Blocks() );
- idx_to_var_sbi1.resize( f_Block->get_number_nested_Blocks() );
- idx_to_var_sbi2.resize( f_Block->get_number_nested_Blocks() );
- Funct_sbi.resize( f_Block->get_number_nested_Blocks()) ;
- 
- Index t = -1;
+ const auto n_sub = f_Block->get_number_nested_Blocks();
+ pos_id_sbi.resize( n_sub );
+ idx_to_var_sbi1.resize( n_sub );
+ idx_to_var_sbi2.resize( n_sub );
+ Funct_sbi.resize( n_sub );
+ Funct_sbi_quad.resize( n_sub );
+ is_linear.resize( n_sub );
+
  Index index = 0;
  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-  Funct_sbi[index] = static_cast< p_DQF >(static_cast< p_FRO >( sbi->get_objective())->get_function());
-  pos_id = 0;
-  for( const auto & el : sbi->get_static_variables() ) {
-   // Singles
-    t++;
-   if( un_any_thing_0( ColVariable , el ,
-		  {
-      if(static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
-            get_num_active_var() > static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
-            )->get_function())->is_active(&var)){ 
-        auto indexz = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()
-        )->get_function())->is_active(&var);
-        auto addval1 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_linear_coefficient(indexz);
-        auto addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
-			  idx_to_var_sbi1[index].push_back(double_var( addval1 , &var ));
-        idx_to_var_sbi2[index].push_back(double_var( addval2 , &var ));
-        idx_to_var1.push_back(double_var( addval1 , & var ));
-        idx_to_var2.push_back(double_var( addval2 , & var ));
-      } else {
-        idx_to_var_sbi1[index].push_back(double_var( 0.0 , &var ));
-        idx_to_var_sbi2[index].push_back(double_var( 0.0 , &var ));
-        idx_to_var1.push_back(double_var( 0.0 , & var ));
-        idx_to_var2.push_back(double_var( 0.0 , & var ));
-      }
-      pos_id++;
-			NumStatVar++;
-          } ) )
-     continue;
-   // Vectors
-   if( un_any_thing_1( ColVariable , el ,
-		  {
-			for (Index j = 0 ; j < var.size() ; ++j){
-        if(static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
-            get_num_active_var() > static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
-            )->get_function())->is_active(var.data()+j)){ 
-          auto indexz = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()
-          )->get_function())->is_active(var.data()+j);
-          auto addval1 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_linear_coefficient(indexz);
-          auto addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
-          idx_to_var_sbi1[index].push_back(double_var( addval1 , var.data()+j ));
-          idx_to_var_sbi2[index].push_back(double_var( addval2 , var.data()+j ));
-          idx_to_var1.push_back(double_var( addval1 , var.data()+j ));
-          idx_to_var2.push_back(double_var( addval2 , var.data()+j ));
-        } else {
-          idx_to_var_sbi1[index].push_back(double_var( 0.0 , var.data()+j ));
-          idx_to_var_sbi2[index].push_back(double_var( 0.0 , var.data()+j ));
-          idx_to_var1.push_back(double_var( 0.0 , var.data()+j ));
-          idx_to_var2.push_back(double_var( 0.0 , var.data()+j ));
-			  }
-        pos_id++;
-      }
-			NumStatVar += var.size();
-          } ) )
-    continue;
-   // Multiarrays
-   if( un_any_thing_K( ColVariable , el ,
-		  {
-			NumStatVar += var.num_elements();
-      for (Index j = 0 ; j < var.num_elements() ; ++j){
-			  if(static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->                                                                                                       
-            get_num_active_var() > static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()                                                                                                         
-            )->get_function())->is_active(var.data()+j)){ 
-          auto indexz = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective()
-          )->get_function())->is_active(var.data()+j);
-          auto addval1 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_linear_coefficient(indexz);
-          auto addval2 = static_cast< p_DQF >( static_cast< p_FRO >( sbi->get_objective())->get_function())->get_quadratic_coefficient(indexz);
-          idx_to_var_sbi1[index].push_back(double_var( addval1 , var.data()+j ));
-          idx_to_var_sbi2[index].push_back(double_var( addval2 , var.data()+j ));
-          idx_to_var1.push_back(double_var( addval1 , var.data()+j ));
-          idx_to_var2.push_back(double_var( addval2 , var.data()+j ));
-        } else {
-          idx_to_var_sbi1[index].push_back(double_var( 0.0 , var.data()+j ));
-          idx_to_var_sbi2[index].push_back(double_var( 0.0 , var.data()+j ));
-          idx_to_var1.push_back(double_var( 0.0 , var.data()+j ));
-          idx_to_var2.push_back(double_var( 0.0 , var.data()+j ));
-			  }
-			  pos_id++;
-			}
-          } ) )
-     continue;
-   throw( std::invalid_argument(
-                "PrimalProximalHeur: static variable not a ColVariable" ) );
+  // identify the kind (linear / quadratic) of the inner objective Function
+  // and cache a copy of it for later evaluation via get_funct_value(); see
+  // the C05Function hierarchy in C05Function.h for the actual taxonomy
+  const auto fobj = static_cast< Function * >(
+                        static_cast< p_FRO >( sbi->get_objective()
+                                              )->get_function() );
+  if( const auto qobj = dynamic_cast< p_DQF >( fobj ) ) {
+   is_linear[ index ]      = false;
+   Funct_sbi_quad[ index ] = *qobj;
    }
-     pos_id_sbi[index] = pos_id;
-    index += 1;
+  else {
+   is_linear[ index ] = true;
+   Funct_sbi[ index ] = *static_cast< p_LF >( fobj );
+   }
+
+  pos_id = 0;
+
+  // helper: register a single binary ColVariable into the sub-Block's
+  // dictionaries — read the coefficients off the inner objective Function,
+  // zero-clamp tiny linear coefficients to keep the proximal term clean.
+  // Variables not currently present in the inner objective are skipped:
+  // injecting them in add_penalty_terms() via add_variable() would issue
+  // a FunctionModVarsAddd that some leaf Blocks (e.g. ThermalUnitBlock)
+  // cannot handle (their obj has a fixed physical layout). The proximal
+  // penalty is therefore not applied to those Variables.
+  auto register_binvar = [ & ]( ColVariable * pv ) {
+   const auto i_in_obj = fobj->is_active( pv );
+   if( i_in_obj >= fobj->get_num_active_var() )
+    return;  // not in inner obj: skip to avoid unsupported add_variable
+   double c1 = 0;
+   double c2 = 0;
+   // which of the two it is was settled above by the type of the Function:
+   // Function::is_linear() answers about the function and not about the type,
+   // so a DQuadFunction whose quadratic coefficients all happen to be 0 says
+   // yes to it while its coefficients still sit in triples
+   if( ! is_linear[ index ] ) {
+    auto qf = static_cast< p_DQF >( fobj );
+    c1 = qf->get_linear_coefficient( i_in_obj );
+    c2 = qf->get_quadratic_coefficient( i_in_obj );
+    }
+   else
+    c1 = static_cast< p_LF >( fobj )->get_coefficient( i_in_obj );
+   if( std::abs( c1 ) < 1e-6 )
+    c1 = 0;
+   idx_to_var_sbi1[ index ].emplace_back( c1 , pv );
+   idx_to_var_sbi2[ index ].emplace_back( c2 , pv );
+   ++pos_id;
+   ++NumStatVar;
+   };
+
+  // helper: check the binary nature of a Variable in BIN_VARS mode
+  auto is_binary = []( const ColVariable & v ) {
+   #ifdef BIN_VARS
+    return( v.is_integer() && ( v.get_lb() == 0.0 ) && ( v.get_ub() == 1.0 ) );
+   #else
+    return( true );
+   #endif
+   };
+
+  // scan static Variables of sbi (Singles / Vectors / Multiarrays)
+  for( const auto & el : sbi->get_static_variables() ) {
+
+   // single ColVariable
+   if( un_any_thing_0( ColVariable , el , {
+                       if( is_binary( var ) )
+                        register_binvar( &var );
+                       } ) )
+    continue;
+
+   // vector of ColVariable
+   if( un_any_thing_1( ColVariable , el , {
+                       for( Index j = 0 ; j < var.size() ; ++j ) {
+                        const auto pv = var.data() + j;
+                        if( is_binary( *pv ) )
+                         register_binvar( pv );
+                        }
+                       } ) )
+    continue;
+
+   // multi-array of ColVariable
+   if( un_any_thing_K( ColVariable , el , {
+                       for( Index j = 0 ; j < var.num_elements() ; ++j ) {
+                        const auto pv = var.data() + j;
+                        if( is_binary( *pv ) )
+                         register_binvar( pv );
+                        }
+                       } ) )
+    continue;
+   }
+
+  pos_id_sbi[ index ] = pos_id;
+  ++index;
   }
- }
 
- if( idx_to_var_sbi1.empty() && idx_to_var_sbi2.empty())
-  throw( std::invalid_argument(
-		      "PrimalProximalHeur::setBlock: no static variable" ) );
-
- std::sort( var_to_idx.begin() , var_to_idx.end() );
-
-
+ if( NumStatVar == 0 ) LOG_VERB( 1 )
+  *f_log << "PrimalProximalHeur::initialize: no static binary Variable, "
+            "compute() will delegate to LagrangianDualSolver" << std::endl;
 
  }  // end( PrimalProximalHeur::initialize )
 
@@ -199,17 +235,19 @@ void PrimalProximalHeur::initialize( void )
 void PrimalProximalHeur::set_par( idx_type par , int value )
 {
  switch( par ) {
-  case( intMaxIter ): maxIter = value; break;
-  case( intMaxSol ):  f_MaxSol = value; break;
+  case( intMaxIter ):    maxIter = value; break;
+  case( intMaxSol ):     f_MaxSol = value; break;
+  case( intUseWarmStartPSol ): UseWSPSol = value; break;
+  case( intInnerMaxIter ):
+   InnerSolver->set_par( intMaxIter , value ); break;
   case( intLogVerb ):
    logVerb = value & 3;
    LagrangianDualSolver::set_par( par , std::max( 0 , value >> 2 ) );
    break;
-  case( intMaxIterLD ): LagrangianDualSolver::set_par( intMaxIter , value );
-                        break;
-  default: LagrangianDualSolver::set_par( par , value );
+  default:
+   LagrangianDualSolver::set_par( par , value );
   }
- }
+ }  // end( PrimalProximalHeur::set_par( int ) )
 
 /*--------------------------------------------------------------------------*/
 
@@ -217,242 +255,537 @@ void PrimalProximalHeur::set_par( idx_type par , double value )
 {
  switch( par ) {
   case( dbl_penaltyFactor ): R = value; break;
-  default:                   LagrangianDualSolver::set_par( par , value );
+
+  // the accuracy required of the heuristic, and the time it is given, are
+  // those of this algorithm; dblInnerRelAcc is instead the accuracy the
+  // inner Solver has to solve the Lagrangian Dual with
+  case( dblRelAcc ):      RelAcc = value; break;
+  case( dblMaxTime ):     MaxTime = value; break;
+  case( dblInnerRelAcc ): InnerSolver->set_par( dblRelAcc , value ); break;
+  default:
+   LagrangianDualSolver::set_par( par , value );
   }
- }
+ }  // end( PrimalProximalHeur::set_par( double ) )
+
+/*--------------------------------------------------------------------------*/
+
+void PrimalProximalHeur::set_par( idx_type par , std::string && value )
+{
+ if( par == strWarmStartBSC )
+  WarmStartBSC = std::move( value );
+ else if( par == strRecoveryBSC )
+  RecoveryBSC = std::move( value );
+ else
+  LagrangianDualSolver::set_par( par , std::move( value ) );
+
+ }  // end( PrimalProximalHeur::set_par( string ) )
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
 /*--------------------------------------------------------------------------*/
 
+bool PrimalProximalHeur::gap_closed( void ) const
+{
+ // the optimum lies between the valid bound of the unpenalized iteration
+ // and the value of the best feasible solution found, so the heuristic has
+ // delivered the required accuracy as soon as the two are that close
+ const double lb = f_max ? best_bound : valid_bound;
+ const double ub = f_max ? valid_bound : best_bound;
+
+ if( ( ! std::isfinite( lb ) ) || ( ! std::isfinite( ub ) ) )
+  return( false );
+
+ return( ub - lb <= RelAcc * std::max( double( 1 ) , std::abs( lb ) ) );
+
+ }  // end( PrimalProximalHeur::gap_closed )
+
+/*--------------------------------------------------------------------------*/
+
 int PrimalProximalHeur::compute( bool changedvars )
 {
- Index iters = 0;
- bool is_the_same = false;
- int res;
- double integer_viol;
- double integer_viol_sum;
- double funct_old = 0.0;
- value_FUNCTION = Inf< double >();
+ // no static binary Variable to apply the proximal penalty to: PPH has
+ // nothing to add over the inner Lagrangian Dual, fall back to it
+ if( NumStatVar == 0 )
+  return( LagrangianDualSolver::compute( changedvars ) );
 
- lock();  // lock the mutex
+ lock();  // lock the Solver mutex
 
- if( f_log && ( logVerb >= 2 ) )
-  *f_log << "\nNumStatVar: " << NumStatVar << "\n";
+ // dblMaxTime is the time the heuristic is given as a whole, so each call
+ // to the inner Solver is given what is left of it
+ const auto start_time = std::chrono::steady_clock::now();
+
+ auto elapsed = [ & start_time ]() -> double {
+  const std::chrono::duration< double > el =
+   std::chrono::steady_clock::now() - start_time;
+  return( el.count() );
+  };
+
+ auto time_left = [ & elapsed , this ]() -> double {
+  return( MaxTime >= Inf< double >() ? Inf< double >()
+                                     : MaxTime - elapsed() );
+  };
+
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // helper: try to insert a new candidate solution (with the given objective
+ // value) into the v_best_sol heap, maintaining the heap invariant and
+ // updating best_bound / worst_bound. Used both by the inner-Solver event
+ // handler (which discovers feasible-integer solutions at a Bundle SS) and
+ // by the main loop (which checks at the end of each PPH iteration).
+
+ // comparator making the heap top the best Solution: a is "worse" than b
+ // in the sense of the optimization direction
+ auto sol_cmp = [ this ]( const sol_value & a , const sol_value & b ) {
+  return( f_max ? ( a.second < b.second ) : ( a.second > b.second ) );
+  };
+
+ auto record_feasible = [ this , & sol_cmp ]( double value ) {
+  // is the new value better than the current best?
+  const bool better = f_max ? ( value > best_bound ) : ( value < best_bound );
+  if( better )
+   best_bound = value;
+
+  // is the new value worse than the current worst?
+  const bool worse = f_max ? ( value < worst_bound ) : ( value > worst_bound );
+
+  if( v_best_sol.size() < f_MaxSol ) {
+   // there is free space, just throw the new Solution in and re-heap
+   v_best_sol.emplace_back( f_Block->get_Solution( nullptr , false ) ,
+                            value );
+   std::push_heap( v_best_sol.begin() , v_best_sol.end() , sol_cmp );
+   if( worse )
+    worst_bound = value;
+   return;
+   }
+
+  if( worse )           // no space, and worse than worst: discard
+   return;
+
+  // no space, but better than the worst: find the worst entry and replace
+  // it; meanwhile compute the second-worst to refresh worst_bound after
+  double second_worst = f_max ? Inf< double >() : - Inf< double >();
+  auto bad = v_best_sol.end();
+  for( auto it = v_best_sol.begin() ; it != v_best_sol.end() ; ++it )
+   if( it->second == worst_bound )
+    bad = it;
+   else {
+    const bool s_worse = f_max ? ( it->second < second_worst )
+                               : ( it->second > second_worst );
+    if( s_worse )
+     second_worst = it->second;
+    }
+
+  if( bad == v_best_sol.end() )  // no entry at worst_bound (numerical drift)
+   return;                       // play it safe and discard the new value
+
+  delete bad->first;
+  *bad = { f_Block->get_Solution( nullptr , false ) , value };
+  // re-heap from scratch (the replacement may have broken the order)
+  std::make_heap( v_best_sol.begin() , v_best_sol.end() , sol_cmp );
+
+  // the worst is now either the second-worst-before or the new value
+  worst_bound = f_max ? std::min( second_worst , value )
+                      : std::max( second_worst , value );
+  };
+
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // helper: tell whether the current values of the sub-Block Variables are
+ // all 0/1 to within 1e-6 (the binary integrality tolerance). Used to gate
+ // the feasibility check in the main loop and in the event handler.
+
+ auto is_integer_solution = [ this ]() -> bool {
+  const auto n_sub = f_Block->get_number_nested_Blocks();
+  for( Index index = 0 ; index < n_sub ; ++index )
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto si = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+    if( si * ( 1 - si ) > 1e-6 )
+     return( false );
+    }
+  return( true );
+  };
+
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ LOG_VERB( 2 )
+  *f_log << "PrimalProximalHeur::compute: NumStatVar = " << NumStatVar
+         << std::endl;
+
+ best_bound = f_max ? - Inf< double >() : Inf< double >();
+ valid_bound = f_max ? Inf< double >() : - Inf< double >();
 
  std::vector< double > sol( NumStatVar );
 
- while( ( ! is_the_same ) && ( iters < maxIter ) ) {
-  // main loop- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // process pending Modification before solving - - - - - - - - - - - - - - -
 
-  if( f_log && ( logVerb >= 2 ) )
-   *f_log << "\niteration = " << iters << "\n";
+ const bool owned = f_Block->is_owned_by( f_id );
+ if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
+  throw( std::runtime_error(
+   "PrimalProximalHeur::compute: unable to lock the Block" ) );
 
-  changed_penalties = false;
+ process_outstanding_Modification();
 
-  bool owned = f_Block->is_owned_by( f_id );
-  if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
-   throw( std::runtime_error(
-                       "PrimalProximalHeur: unable to lock the Block" ) );
+ if( ! owned )
+  f_Block->unlock( f_id );
 
-  process_outstanding_Modification();
+ // warm start: solve the relaxation of f_Block with the auxiliary Solver
+ // that strWarmStartBSC describes, so that the dual variables, and hence
+ // the initial Lambda multipliers of the inner Lagrangian Dual, start from
+ // a meaningful point; with no strWarmStartBSC there is no warm start and
+ // the multipliers start from wherever set_Block() left them
+ const bool warm = ! WarmStartBSC.empty();
 
-  if( ! owned )
-   f_Block->unlock( f_id );
+ if( warm ) {
+  LOG_VERB( 2 )
+   *f_log << "PrimalProximalHeur::compute: solving the relaxation"
+          << std::endl;
 
-  if( iters == 0 )
-   for( Index kvar = 0 ; kvar < NumStatVar ; ++kvar )
-    sol[ kvar ] = rand() % 2;
+  auto warmstart = new_aux_solver( WarmStartBSC );
+  warmstart->set_Block( f_Block );
+  if( auto tl = time_left() ; tl < Inf< double >() )
+   warmstart->set_par( dblMaxTime , tl );
+  warmstart->compute( changedvars );
 
-  previous_sol.insert( previous_sol.begin() , & sol[ 0 ] ,
-		       & sol[ NumStatVar ] );
+  // the relaxation may have been stopped, by the time limit above or by its
+  // own, before producing anything: what it has is asked for, and what it
+  // does not have is not, a warm start that did not happen leaving the
+  // multipliers where set_Block() put them, exactly as with no warm start
+  const bool haveduals = warmstart->has_dual_solution();
+  if( haveduals )
+   warmstart->get_dual_solution();
+  if( warmstart->has_var_solution() )
+   warmstart->get_var_solution();
 
-  if( iters >= 1 ) {
-   if( f_log && ( logVerb >= 2 ) )
-    *f_log << "\nADDING PENALTY TERMS\n\n";
+  delete warmstart;
 
-   add_penalty_terms();
-   changed_penalties = true;
-   process_outstanding_Modification();
+  // re-sync the Lagrangian multipliers with the just-computed duals: the
+  // Lambda Variables of the Lagrangian Dual Block were initialised from the
+  // Constraint duals when set_Block() built it, i.e., before the warm start
+  // ran, so without this the warm start would not reach the inner Solver
+
+  if( haveduals ) {
+   auto Ls = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );
+   auto Lsit = Ls->begin();
+   for( const auto & el : f_Block->get_static_constraints() )
+    un_any_const_static( el ,
+                         [ & Lsit ]( FRowConstraint & con ) {
+                          ( Lsit++ )->set_value( con.get_dual() );
+                          } ,
+                         un_any_type< FRowConstraint >() );
+
+   auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
+   auto Ldit = Ld->begin();
+   for( const auto & el : f_Block->get_dynamic_constraints() )
+    un_any_const_dynamic( el ,
+                          [ & Ldit ]( FRowConstraint & con ) {
+                           ( Ldit++ )->set_value( con.get_dual() );
+                           } ,
+                          un_any_type< FRowConstraint >() );
+   }
+  }
+
+ // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ Index iters = 0;
+ bool is_the_same = false;
+ bool is_integer  = false;
+ int  res         = kOK;
+
+ while( true ) {
+
+  LOG_VERB( 2 )
+   *f_log << std::endl << "PrimalProximalHeur::compute: iteration "
+          << iters << " ( t = " << elapsed() << "s )" << std::endl;
+
+  // read the current sub-Block Variable values: they are the proximal
+  // center of this iteration
+  {
+   const auto n_sub = f_Block->get_number_nested_Blocks();
+   Index kvar = 0;
+   for( Index index = 0 ; index < n_sub ; ++index )
+    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+     sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+     ++kvar;
+     }
    }
 
-  if( f_log && ( logVerb >= 2 ) )
-   *f_log << "COMPUTE SOLUTION" << std::endl;
+  previous_sol.assign( sol.begin() , sol.end() );
+
+  // apply the proximal term to the inner objective(s)- - - - - - - - - - - -
+  // with R == 0 the proximal machinery is inert: the penalty terms would
+  // rewrite every objective coefficient to its own value (a storm of
+  // Modification per inner iteration via the event handler below, heavy at
+  // scale) and the handler could only re-record the same un-penalised
+  // points, so both are skipped and PrimalProximalHeur degenerates into a
+  // warm-started LagrangianDualSolver (plus the final primal recovery)
+  //
+  // the first iteration is not penalized either, unless the primal
+  // solution of the warm start is taken as its proximal center: it solves
+  // the Lagrangian Dual of the original objective, which is the only valid
+  // bound on the original problem the heuristic can produce, every
+  // penalized iteration bounding the penalized objective instead.
+  // get_lb() / get_ub() report it and gap_closed() measures the solution
+  // found against it. The iteration is not lost, since the proximal center
+  // of the next one is the fractional solution the Lagrangian Dual
+  // converges to, which is what the penalty is meant to be built on
+  const bool penalized = ( R != 0 ) &&
+                         ( ( iters > 0 ) || ( UseWSPSol && warm ) );
+
+  LOG_VERB( 2 )
+   *f_log << "PrimalProximalHeur::compute: adding penalty terms"
+          << std::endl;
+
+  if( penalized )
+   add_penalty_terms();
+
+  // register an event handler on the inner Solver that checks at every
+  // iteration whether the current point is feasible-and-integer, and if so
+  // tries to record it in v_best_sol via the record_feasible() helper
+
+  Index index_event = 0;
+
+  if( penalized )
+   LagrangianDualSolver::set_event_handler(
+    ThinComputeInterface::eEverykIteration ,
+    [ this , &sol , &index_event , &record_feasible , &is_integer_solution ]
+    () {
+     if( index_event != InnerSolver->get_elapsed_iterations() - 1 )
+      return( ThinComputeInterface::eContinue );
+     ++index_event;
+
+     value_FUNCTION = get_funct_value();
+     add_penalty_terms();
+
+     // refresh sol[] with the latest sub-Block Variable values
+     const auto n_sub = f_Block->get_number_nested_Blocks();
+     Index kvar = 0;
+     for( Index index = 0 ; index < n_sub ; ++index )
+      for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+       sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+       ++kvar;
+       }
+
+     // recompute the linearized penalty contribution
+     addterm = 0;
+     penalty = 0;
+     for( Index ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
+      const auto si  = sol[ ivar ];
+      const auto psi = previous_sol[ ivar ];
+      penalty += R * ( psi - si ) * ( psi - si );
+      addterm += R * si * ( 1.0 - 2.0 * psi );
+      }
+
+     if( ! is_integer_solution() ) {
+      LOG_VERB( 2 )
+       *f_log << "  (event) IS_NOT_INTEGER_SOL" << std::endl;
+      return( ThinComputeInterface::eContinue );
+      }
+     LOG_VERB( 2 )
+      *f_log << "  (event) IS_INTEGER_SOL, LB = "
+             << ( InnerSolver->get_lb() - addterm ) << std::endl;
+
+     if( f_Block->is_feasible() ) {
+      LOG_VERB( 2 )
+       *f_log << "  (event) IS_FEASIBLE_SOL: " << value_FUNCTION
+              << std::endl;
+      double rec_cost;
+      if( recover_primal( rec_cost ) )
+       record_feasible( rec_cost );
+      }
+     else LOG_VERB( 2 )
+      *f_log << "  (event) IS_INFEASIBLE_SOL: " << value_FUNCTION
+             << std::endl;
+
+     return( ThinComputeInterface::eContinue );
+     } );
+
+  // delegate to the inner Solver - - - - - - - - - - - - - - - - - - - - - -
+
+  LOG_VERB( 2 )
+   *f_log << "PrimalProximalHeur::compute: solving Lagrangian Dual"
+          << std::endl;
+
+  if( auto tl = time_left() ; tl < Inf< double >() )
+   InnerSolver->set_par( dblMaxTime , std::max( double( 0 ) , tl ) );
 
   res = InnerSolver->compute( changedvars );
-  if( f_log && ( logVerb >= 2 ) )
-   *f_log << "SOLUTION COMPUTED" << std::endl;
 
-  if( iters >= 0 ) {
+  LOG_VERB( 2 )
+   *f_log << "PrimalProximalHeur::compute: Lagrangian Dual solved ( t = "
+          << elapsed() << "s )" << std::endl;
+
+  // the first iteration solved the Lagrangian Dual of the original
+  // objective: its bound is the valid one on the original problem
+  if( ! penalized )
+   valid_bound = f_max ? InnerSolver->get_ub() : InnerSolver->get_lb();
+
+  // read back the current sub-Block Variable values - - - - - - - - - - - -
+  {
+   const auto n_sub = f_Block->get_number_nested_Blocks();
    Index kvar = 0;
-   double auxl = 0.0;
-   for( Index kvar = 0 ; kvar < NumStatVar ; ++kvar )
-    sol[ kvar ] = idx_to_var1[ kvar ].second->get_value();
+   for( Index index = 0 ; index < n_sub ; ++index )
+    for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+     sol[ kvar ] = idx_to_var_sbi1[ index ][ ivar ].second->get_value();
+     ++kvar;
+     }
    }
 
-  if( iters >= 1 ) {
-   if( f_log && ( logVerb >= 2 ) )
-    *f_log << "\nREMOVING PENALTY TERMS\n\n";
+  // strip the proximal term from the inner objective(s)- - - - - - - - - - -
 
+  LOG_VERB( 2 )
+   *f_log << "PrimalProximalHeur::compute: removing penalty terms"
+          << std::endl;
+
+  if( penalized )
    remove_penalty_terms();
-   changed_penalties = true;
-   process_outstanding_Modification();
-   }
 
-  if( f_log && ( logVerb >= 2 ) ) {
-   *f_log << "ITERS: " << iters << std::endl;
-   *f_log << "SOL LB: " << InnerSolver->get_lb() << std::endl;
-   *f_log << "SOL UB: " << InnerSolver->get_ub() << std::endl;
-   *f_log << "FUNCT Value: " << get_funct_value() << std::endl;
-   auto bound = f_max ? get_lb() : get_ub();
-   *f_log << "Best Value: " << bound << std::endl;
-   }
+  // recompute the linearized penalty contribution at this iteration- - - - -
 
-  penalty = 0.0;
-  double addterm = 0.0;
-  for( int ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
-   auto si = sol[ ivar ];
-   auto psi = previous_sol[ ivar ];
+  penalty = 0;
+  addterm = 0;
+  for( Index ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
+   const auto si  = sol[ ivar ];
+   const auto psi = previous_sol[ ivar ];
    penalty += R * ( psi - si ) * ( psi - si );
-   addterm += R * si * ( si - 2.0 * psi );
+   addterm += R * si * ( 1.0 - 2.0 * psi );
    }
 
-  if( f_log && ( logVerb >= 2 ) ) {
-   *f_log << "penalty: " << addterm << std::endl;
-   *f_log << "SOL: " << InnerSolver->get_lb() - addterm << std::endl;
+  // bound from the inner Solver, corrected by the proximal contribution
+  const auto value_bound = f_max ? ( InnerSolver->get_ub() - addterm )
+                                 : ( InnerSolver->get_lb() - addterm );
+
+  value_FUNCTION = get_funct_value();
+
+  LOG_VERB( 2 ) {
+   if( std::abs( value_bound - value_FUNCTION ) /
+       std::max( std::abs( value_bound ) , std::abs( value_FUNCTION ) )
+       >= 1e-3 )
+    *f_log << "  ERROR: bound mismatch = " << ( value_bound - value_FUNCTION )
+           << std::endl;
+   *f_log << "  iter = "          << iters                   << std::endl
+          << "  InnerSolver LB = "<< InnerSolver->get_lb()   << std::endl
+          << "  InnerSolver UB = "<< InnerSolver->get_ub()   << std::endl
+          << "  penalty = "       << penalty                 << std::endl
+          << "  addterm = "       << addterm                 << std::endl
+          << "  corrected bound = " << value_bound           << std::endl
+          << "  objective value = " << value_FUNCTION        << std::endl
+          << "  best value = "    << ( f_max ? get_lb() : get_ub() )
+          << std::endl;
    }
 
-  if( f_Block->is_feasible() ) {
-   // if new solution is feasible, add to v_best_sol 
-   // and possibly update the best bound 
-   if( f_log && ( logVerb >= 2 ) )
-    *f_log << "IS_FEASIBLE_SOL" << std::endl;
+  // stopping criterion: previous and current solution coincide (within
+  // 1e-3 in penalty terms, i.e., identical to within sqrt( 1e-3 / R ))
+  is_the_same = ( penalty < 1e-3 );
 
-   // better than the best
-   bool better = f_max ? ( value_FUNCTION > best_bound ) :
-                         ( value_FUNCTION < best_bound );
-   if( better )
-    best_bound = value_FUNCTION;
+  #ifdef BIN_VARS
+   is_integer = is_integer_solution();
+   LOG_VERB( 2 )
+    *f_log << ( is_integer ? "  IS_INTEGER_SOL" : "  IS_NOT_INTEGER_SOL" )
+           << std::endl;
+  #endif
 
-   // worse than the worst
-   bool worse = f_max ? ( value_FUNCTION < worst_bound ) :
-                        ( value_FUNCTION > worst_bound );
-
-   if( v_best_sol.size() < f_MaxSol ) {
-    // there is free space, just throw the new solution in
-    v_best_sol.push_back( std::pair( f_Block->get_Solution() ,
-					 value_FUNCTION ) );
-    std:: push_heap( v_best_sol.begin() , v_best_sol.end() );
-    if( worse )
-     worst_bound = value_FUNCTION;
-    }
-   else
-    if( ! worse ) {
-     // there is no space, so throw it in only if it's better than the worst
-     // find the position of the element with the worst value, and find the
-     // second-worst value to update worst_bound;
-     double second_worst = f_max ? Inf< double >() : - Inf< double >();
-     std::vector< sol_value >::iterator bad;
-     for( auto it = v_best_sol.begin() ; it != v_best_sol.end() ;
-	  ++it )
-      if( it->second == worst_bound )
-       bad = it;
-      else {
-       bool s_worse = f_max ? ( it->second < second_worst ) :
-                              ( it->second > second_worst );
-       if( s_worse )
-	second_worst = it->second;
-       }
-     // replace the worst element with the new one
-     *bad = std::pair( f_Block->get_Solution() , value_FUNCTION );
-     // re-make the heap, since we may have just invalidated it
-     std::make_heap( v_best_sol.begin() , v_best_sol.end() ,
-		     [ this ]( const sol_value & a , const sol_value & b ) {
-		      return( f_max ? ( a.second < b.second ) :
-			              ( a.second > b.second ) );
-		      } );
-     // the worst solution is now either the second worst of the new one
-     if( f_max )
-      worst_bound = std::min( second_worst , value_FUNCTION );
-     else
-      worst_bound = std::max( second_worst , value_FUNCTION );
-     }
+  // try to record the current solution if it is feasible (and integer in
+  // BIN_VARS mode) and we are past the first iteration
+  #ifdef BIN_VARS
+   const bool can_record = f_Block->is_feasible() && is_integer && ( iters >= 1 );
+  #else
+   const bool can_record = f_Block->is_feasible() && ( iters >= 1 );
+  #endif
+  if( can_record ) {
+   LOG_VERB( 2 )
+    *f_log << "  IS_FEASIBLE_SOL" << std::endl;
+   double rec_cost;
+   if( recover_primal( rec_cost ) )
+    record_feasible( rec_cost );
    }
-  else
-   if( f_log && ( logVerb >= 2 ) )
-    *f_log << "IS_INFEASIBLE_SOL" << std::endl;
-    
-  if( iters >= 0 ) {  // stop criterion : check if the current and
-                      // previous solutions are the same
-   // TODO: put some parameter instead 1e-6
-   is_the_same = true;
-   for( int ivar = 0 ; ivar < NumStatVar ; ++ivar )
-    if( std::abs( sol[ ivar ] - previous_sol[ ivar ] ) > 1e-6 ) { 
-     is_the_same = false;
-     break;
-     }
-   }
+  else LOG_VERB( 2 )
+   *f_log << "  IS_INFEASIBLE_SOL" << std::endl;
 
-  iters++;
+  ++iters;
+
+  // the accuracy required of the heuristic has been reached: the best
+  // feasible solution found is within RelAcc of the optimum, since the
+  // latter lies between valid_bound and it, so there is nothing left to
+  // look for
+  if( gap_closed() )
+   break;
+
+  if( is_the_same || ( iters >= maxIter ) )
+   break;
+
+  if( time_left() <= 0 ) {
+   LOG_VERB( 1 )
+    *f_log << "PrimalProximalHeur::compute: out of time" << std::endl;
+   break;
+   }
 
   }  // end( main loop )- - - - - - - - - - - - - - - - - - - - - - - - - - -
-     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- // if iBCopy == false, bring back the inner Block to its original objective
- // "like if nothing ever happened",
- if( ! iBCopy ) {
+ // if the inner Block is not an R3B-copy, restore the original inner
+ // objectives "as if nothing had happened"
+ if( ! iBCopy )
   for( auto lbf : v_LBF )
    lbf->cleanup_inner_objective();
-  }
 
- // because the inner Solver is solving the dual of the original Block,
- // the unbounded an unfeasible return states have to be exchanged
+ // since the inner Solver solves the dual of the original Block, swap
+ // unbounded and infeasible return codes back to the original sense
  if( res == kUnbounded ) {
   res = kInfeasible;
-  if( f_log && ( logVerb >= 2 ) ) {
-   *f_log << "\nINFEASIBLE!\n";
-   *f_log << "NUMBER ITERS: " << iters-1 << "\n";
-   *f_log << "EXIT CODE: " << res << "\n\n";
-   }
+  LOG_VERB( 2 )
+   *f_log << "PrimalProximalHeur::compute: INFEASIBLE, iters = "
+          << ( iters - 1 ) << std::endl;
+  unlock();
   return( res );
   }
-  else {
-  if( res == kInfeasible ){
-   res = kUnbounded;
-   if( f_log && ( logVerb >= 2 ) ){
-    *f_log << "\nUNBOUNDED!\n";
-    *f_log << "NUMBER ITERS: " << iters-1 << "\n";
-    *f_log << "EXIT CODE: " << res << "\n\n";
-    }
-   return( res );
-   }
+ if( res == kInfeasible ) {
+  res = kUnbounded;
+  LOG_VERB( 2 )
+   *f_log << "PrimalProximalHeur::compute: UNBOUNDED, iters = "
+          << ( iters - 1 ) << std::endl;
+  unlock();
+  return( res );
   }
 
- if( is_the_same )
-  if( f_log && ( logVerb >= 2 ) ) {
-   *f_log << "R = " << R << std::endl;
-   *f_log << "IS_THE_SAME = TRUE\n"; 
-   *f_log << "NUMBER ITERS: " << iters-1 << "\n";
-   *f_log << "LB: " << InnerSolver->get_lb() << "\n";
-   *f_log << "UB: " << InnerSolver->get_ub() << "\n";
-   auto bound = f_max ? get_lb() : get_ub();
-   *f_log << "Best Feasible solution: " << bound << std::endl;
-   }
+ // final primal recovery: a Lagrangian point in general violates the coupling
+ // constraints of f_Block. Now that the inner objectives have been restored to
+ // the original ones, fix the (rounded) proximal binaries and solve the
+ // restricted problem on f_Block, whose optimum enforces the coupling
+ // constraints and is therefore a genuinely feasible completion with its true
+ // primal cost, hence a valid bound. This is done unconditionally: value_FUNCTION
+ // is the Lagrangian value of the point (a lower bound), never a valid upper
+ // bound. If the restricted problem is infeasible the point is discarded.
+ {
+  double rec_cost;
+  if( recover_primal( rec_cost ) )
+   record_feasible( rec_cost );
+  }
 
- unlock();  // unlock the mutex
+ LOG_VERB( 2 )
+  *f_log << "PrimalProximalHeur::compute: "
+         << ( is_the_same ? "converged" : "stopped" ) << " after "
+         << ( iters - 1 ) << " iterations, LB = " << get_lb()
+         << ", UB = " << get_ub()
+         << ", best feasible = " << ( f_max ? get_lb() : get_ub() )
+         << std::endl;
 
- return( res );
+ changed_penalties = false;
+
+ unlock();  // unlock the Solver mutex
+
+ // an error of the inner Solver is an error of the heuristic; otherwise
+ // what is returned says whether the solution found is as accurate as it
+ // was required to be, which is what an heuristic can promise: kOK if the
+ // gap between it and the valid bound is within RelAcc, kLowPrecision if a
+ // solution was found but no such guarantee comes with it
+ if( res >= kError )
+  return( res );
+
+ if( gap_closed() )
+  return( kOK );
+
+ return( kLowPrecision );
 
  }  // end( PrimalProximalHeur::compute )
-
-/*--------------------------------------------------------------------------*/
-/*---------------------- METHODS FOR READING RESULTS -----------------------*/
-/*--------------------------------------------------------------------------*/
-
-/*--------------------------------------------------------------------------*/
-/*-------------------------- PROTECTED METHODS -----------------------------*/
-/*--------------------------------------------------------------------------*/
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
@@ -460,46 +793,51 @@ int PrimalProximalHeur::compute( bool changedvars )
 
 void PrimalProximalHeur::process_outstanding_Modification( void )
 {
- bool reload = false;
+ // PrimalProximalHeur does not chain to LagrangianDualSolver::process_-
+ // outstanding_Modification(); it scans the locally queued Modification
+ // and decides whether the sub-Block dictionaries need to be rebuilt
+ // (any change in the inner objectives invalidates the linear / quadratic
+ // coefficient cache) and/or whether the stored best Solutions need to
+ // be re-checked for feasibility (any change in the inner constraints
+ // may invalidate them).
+
+ bool reload            = false;
  bool check_feasibility = false;
 
  while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
-  ;  // try to acquire lock, spin on failure
+  ;  // try to acquire the lock, spin on failure
 
- for( auto mod : v_mod ){
-  if( mod->get_Block() == f_Block ) {
-    //LagrangianDualSolver::process_outstanding_Modification();
-   }
-  else { 
-   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-    if( mod->get_Block() == sbi && ! changed_penalties ) {
-     if( auto tmod = dynamic_cast< C05FunctionModLinRngd * >( mod.get() ) ) 
-      // modifications in the objective of sub-blocks: possible reloading
-      // of the static dictionaries for objective (linear and quadratic) terms
-      reload = true;
-     else
-      // modifications in the constraints of the objective of the sub-block:
-      // possibly some of the (best) solutions become infeasible
-      // (check feasibility) 
-      check_feasibility = true;
-      }
+ for( auto & mod : v_mod ) {
+  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+   if( mod->get_Block() != sbi )
+    continue;
+   if( dynamic_cast< C05FunctionModLin * >( mod.get() ) ) {
+    // inner-objective coefficient change: dictionaries are stale
+    reload = true;
+    }
+   else {
+    // inner-constraint change: stored Solutions may be infeasible
+    check_feasibility = true;
+    reload            = true;
     }
    }
   }
 
- if( f_log && ( logVerb >= 2 ) )
-  *f_log << "check_feasibility = " << check_feasibility << std::endl;
+ LOG_VERB( 2 )
+  *f_log << "PrimalProximalHeur::process_outstanding_Modification: "
+         << "reload = " << reload
+         << ", check_feasibility = " << check_feasibility << std::endl;
 
- if( reload ) {
-  if( f_log && ( logVerb >= 2 ) )
-    *f_log << "reload..." << std::endl;
+ if( reload && ( ! changed_penalties ) ) {
+  guts_of_destructor();
   initialize();
   }
 
  if( check_feasibility ) {
-  // check feasibility of the saved solutions, remove those that have
-  // become unfeasible
+  // rebuild v_best_sol keeping only the Solutions that are still feasible
   std::vector< sol_value > v_best_sol_new;
+  v_best_sol_new.reserve( v_best_sol.size() );
+
   for( auto & sol : v_best_sol ) {
    sol.first->write( f_Block );
    if( f_Block->is_feasible() )
@@ -508,123 +846,324 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
     delete sol.first;
    }
 
-  v_best_sol = v_best_sol_new;
+  v_best_sol = std::move( v_best_sol_new );
   std::make_heap( v_best_sol.begin() , v_best_sol.end() ,
-		  [ this ]( const sol_value & a , const sol_value & b ) {
-		   return( f_max ? ( a.second < b.second ) :
-			           ( a.second > b.second ) );
-		   } );
+                  [ this ]( const sol_value & a , const sol_value & b ) {
+                   return( f_max ? ( a.second < b.second )
+                                 : ( a.second > b.second ) );
+                   } );
   }
 
  v_mod.clear();
 
- f_mod_lock.clear( std::memory_order_release );  // release lock
+ f_mod_lock.clear( std::memory_order_release );  // release the lock
 
- if( v_mod.empty() )  // no Modification coming directly from f_Block
-  return;             // all done
-  
  }  // end( PrimalProximalHeur::process_outstanding_Modification )
+
+/*--------------------------------------------------------------------------*/
+
+CDASolver * PrimalProximalHeur::new_aux_solver( const std::string & cfgname )
+{
+ // the file is looked for where it is given and, failing that, next to
+ // this source file: __FILE__ is baked in at compile time and points to
+ // LagrangianDualSolver/src/<this>.cpp, so the sibling
+ // LagrangianDualSolver/<cfgname> is reachable regardless of the process
+ // working directory
+ std::string cfgfile = cfgname;
+ if( ! std::filesystem::exists( cfgfile ) )
+  cfgfile = ( std::filesystem::path( __FILE__ ).parent_path().parent_path()
+              / cfgname ).string();
+
+ auto cfg = Configuration::deserialize( cfgfile );
+ auto bsc = dynamic_cast< BlockSolverConfig * >( cfg );
+ if( ( ! bsc ) || bsc->get_SolverNames().empty() ) {
+  delete cfg;
+  throw( std::runtime_error( "PrimalProximalHeur::new_aux_solver: " +
+                             cfgfile + " is not a valid BlockSolverConfig"
+                           ) );
+  }
+
+ auto slvr = dynamic_cast< CDASolver * >(
+                            Solver::new_Solver( bsc->get_SolverName( 0 ) ) );
+ if( ! slvr ) {
+  delete bsc;
+  throw( std::runtime_error( "PrimalProximalHeur::new_aux_solver: the Solver"
+                             " in " + cfgfile + " is not a CDASolver" ) );
+  }
+
+ if( bsc->num_ComputeConfig() > 0 )
+  if( auto cc = bsc->get_SolverConfig( 0 ) )
+   slvr->set_ComputeConfig( cc );
+
+ delete bsc;
+ return( slvr );
+
+ }  // end( PrimalProximalHeur::new_aux_solver )
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::recover_primal( double & cost )
+{
+ // with no BlockSolverConfig for it there is no primal recovery
+ if( RecoveryBSC.empty() )
+  return( false );
+
+ // fix the proximal binaries at their rounded values; eNoMod keeps the
+ // fixing invisible to the Solver attached to f_Block, and it is undone
+ // below before anyone else can compute()
+ for( const auto & sbd : idx_to_var_sbi1 )
+  for( const auto & dv : sbd ) {
+   const auto pv = dv.second;
+   pv->set_value( std::round( pv->get_value() ) );
+   pv->is_fixed( true , eNoMod );
+   }
+
+ // solve the restricted problem with the recovery Solver, which sees the
+ // fixed binaries as bounds and enforces the coupling constraints
+ auto solve_restricted = [ & ]( const char * stage ) -> bool {
+  auto recovery = new_aux_solver( RecoveryBSC );
+
+  Index index = 0;
+
+ for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+  const auto chnl = sbi->open_channel();
+  const auto mp = Observer::make_par( eModBlck , chnl );
+  auto fobj = static_cast< Function * >(
+                  static_cast< p_FRO >( sbi->get_objective()
+                                        )->get_function() );
+
+  if( ! is_linear[ index ] ) {
+   auto qf = static_cast< p_DQF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
+    if( qf->get_num_active_var() > idx_in_obj )
+     #ifdef BIN_VARS
+      qf->modify_linear_coefficient( idx_in_obj , c1 , mp );
+     #else
+      qf->modify_term( idx_in_obj , c1 , c2 , mp );
+     #endif
+    }
+   }
+  else {
+   auto lf = static_cast< p_LF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    if( lf->get_num_active_var() > idx_in_obj )
+     lf->modify_coefficient( idx_in_obj , c1 , mp );
+    }
+   }
+
+  sbi->close_channel( chnl );
+  ++index;
+  }
+
+  recovery->set_Block( f_Block );
+
+  const auto rc = recovery->compute( true );
+  const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
+                  recovery->has_var_solution();
+  if( ok ) {
+   recovery->get_var_solution();  // the completion into the Block Variables
+
+   // evaluate the recovered solution on the pristine copies of the inner
+   // objectives: the live ones only had the true costs restored on the
+   // binary Variables, so their value is not the true cost of the solution
+   double value = 0;
+   Index idx = 0;
+   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+    if( is_linear[ idx ] ) {
+     Funct_sbi[ idx ].compute( true );
+     value += Funct_sbi[ idx ].get_value();
+     }
+    else {
+     Funct_sbi_quad[ idx ].compute( true );
+     value += Funct_sbi_quad[ idx ].get_value();
+     }
+    ++idx;
+    }
+   cost = value;
+   }
+
+  LOG_VERB( 2 ) {
+   *f_log << "  recover_primal[ " << stage << " ]: ";
+   if( ok )
+    *f_log << "cost = " << cost << std::endl;
+   else
+    *f_log << "infeasible" << std::endl;
+   }
+
+  delete recovery;
+  return( ok );
+  };
+
+ bool ok = solve_restricted( "full" );
+
+ if( ! ok ) {
+  // the fully-fixed point admits no feasible completion: relax the
+  // restriction one-sidedly, keeping only the binaries at 1 fixed, so
+  // more can be activated (e.g. more units committed to cover a demand
+  // the fixed set cannot); the problem remains a restriction of the
+  // original one, so any of its solutions still yields a valid bound.
+  // Note that with equality couplings this direction does not always
+  // help (an over-active set can be as infeasible as an under-active
+  // one), whence the last resort below.
+  for( const auto & sbd : idx_to_var_sbi1 )
+   for( const auto & dv : sbd )
+    if( dv.second->get_value() < 0.5 )
+     dv.second->is_fixed( false , eNoMod );
+
+  ok = solve_restricted( "ones" );
+  }
+
+ // un-fix the proximal binaries
+ for( const auto & sbd : idx_to_var_sbi1 )
+  for( const auto & dv : sbd )
+   dv.second->is_fixed( false , eNoMod );
+
+ if( ! ok )
+  // last resort: nothing fixed, i.e. the original problem within the
+  // recovery Solver's own budget; whatever incumbent it finds is still
+  // a valid bound, only no longer tied to the proximal point
+  ok = solve_restricted( "free" );
+
+ return( ok );
+
+ }  // end( PrimalProximalHeur::recover_primal )
 
 /*--------------------------------------------------------------------------*/
 
 void PrimalProximalHeur::add_penalty_terms( void )
 {
- // adding the penality terms to the (quadratic) objective functions of the 
- // sub-blocks using the static dictionaries 
+ // add the proximal penalty term to the (quadratic) inner objective Function
+ // of every sub-Block, using the dictionaries built in initialize(). The
+ // update is bundled inside an Observer channel so all the Modification land
+ // atomically as one GroupModification.
 
- Index pos = 0;
+ Index pos   = 0;
  Index index = 0;
- penalty = 0.0;
- index = 0;
 
  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
   const auto chnl = sbi->open_channel();
   const auto mp = Observer::make_par( eModBlck , chnl );
-  auto fobji = static_cast< p_DQF >( static_cast< p_FRO >(
-				  sbi->get_objective() )->get_function() );
+  auto fobj = static_cast< Function * >(
+                  static_cast< p_FRO >( sbi->get_objective()
+                                        )->get_function() );
 
-  for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
-   auto indexz = fobji->is_active( idx_to_var_sbi1[ index ][ ivar ].second );
-   if( fobji->get_num_active_var() > indexz ) {
-    auto addval1 = idx_to_var_sbi1[ index ][ ivar ].first;
-    auto addval2 = idx_to_var_sbi2[ index ][ ivar ].first;  
-    fobji->modify_term( indexz , addval1 - R * 2.0 * previous_sol[ pos ] ,
-			addval2 + R , mp );
+  if( ! is_linear[ index ] ) {
+   // quadratic inner objective: update both linear and (BIN_VARS off only)
+   // quadratic coefficients
+   auto qf = static_cast< p_DQF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
+    if( qf->get_num_active_var() > idx_in_obj ) {
+     #ifdef BIN_VARS
+      qf->modify_linear_coefficient(
+                              idx_in_obj ,
+                              c1 + R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
+                              mp );
+     #else
+      qf->modify_term( idx_in_obj ,
+                       c1 - R * 2.0 * previous_sol[ pos ] ,
+                       c2 + R ,
+                       mp );
+     #endif
+     }
+    else if( R > 0 )
+     #ifdef BIN_VARS
+      qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+                        R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
+                        0.0 ,
+                        mp );
+     #else
+      qf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+                        - R * 2.0 * previous_sol[ pos ] ,
+                        R ,
+                        mp );
+     #endif
+    ++pos;
     }
-   else
-    if( R > 0.0 )
-     fobji->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
-			  - R * 2.0 * previous_sol[ pos ] , R , mp );           
-   pos++;
+   }
+  else {
+   // linear inner objective: only the linear coefficient changes
+   auto lf = static_cast< p_LF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    if( lf->get_num_active_var() > idx_in_obj )
+     lf->modify_coefficient(
+                       idx_in_obj ,
+                       c1 + R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
+                       mp );
+    else if( R > 0 )
+     lf->add_variable( idx_to_var_sbi1[ index ][ ivar ].second ,
+                       R * ( 1.0 - 2.0 * previous_sol[ pos ] ) ,
+                       mp );
+    ++pos;
+    }
    }
 
   sbi->close_channel( chnl );
-  index += 1;
+  ++index;
   }
- }
+ }  // end( PrimalProximalHeur::add_penalty_terms )
 
 /*--------------------------------------------------------------------------*/
 
 void PrimalProximalHeur::remove_penalty_terms( void )
 {
- // removing the penality terms to the (quadratic) objective functions of the 
- // sub-blocks using the static dictionaries 
+ // restore the original linear (and quadratic, when BIN_VARS is undefined)
+ // coefficients of every sub-Block's inner objective Function, using the
+ // dictionaries built in initialize(). Bundled inside an Observer channel
+ // like add_penalty_terms().
 
- Index pos = 0;
  Index index = 0;
- double value_FUNCTION1 = 0.0;
 
  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
   const auto chnl = sbi->open_channel();
   const auto mp = Observer::make_par( eModBlck , chnl );
-  auto fobji = static_cast< p_DQF >( static_cast< p_FRO >(
-				  sbi->get_objective() )->get_function() );
+  auto fobj = static_cast< Function * >(
+                  static_cast< p_FRO >( sbi->get_objective()
+                                        )->get_function() );
 
-  for( Index ivar = 0 ; ivar < pos_id_sbi[index] ; ++ivar ) {
-   if( fobji->get_num_active_var() >
-       fobji->is_active(idx_to_var_sbi1[index][ivar].second)) {
-    auto indexz = fobji->is_active(idx_to_var_sbi1[index][ivar].second);
-    auto addval1 = idx_to_var_sbi1[index][ivar].first; 
-    auto addval2 = idx_to_var_sbi2[index][ivar].first; 
-    fobji->modify_term( indexz , addval1 , addval2, mp );
+  if( ! is_linear[ index ] ) {
+   auto qf = static_cast< p_DQF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
+    if( qf->get_num_active_var() > idx_in_obj )
+     #ifdef BIN_VARS
+      qf->modify_linear_coefficient( idx_in_obj , c1 , mp );
+     #else
+      qf->modify_term( idx_in_obj , c1 , c2 , mp );
+     #endif
     }
-   else {
-    fobji->add_variable( idx_to_var_sbi1[index][ivar].second ,
-			 idx_to_var_sbi1[index][ivar].first ,
-			 idx_to_var_sbi2[index][ivar].first , mp );
-    }
-   pos++;
    }
-  
-  // compute the corresponding the objective function value for the current 
-  // solution (use the original objective functions without penalty terms)
+  else {
+   auto lf = static_cast< p_LF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    if( lf->get_num_active_var() > idx_in_obj )
+     lf->modify_coefficient( idx_in_obj , c1 , mp );
+    }
+   }
 
-  Funct_sbi[index]->compute(true);
-  value_FUNCTION1 += Funct_sbi[index]->get_value();  
-  sbi->close_channel(chnl);
-  index += 1;
+  sbi->close_channel( chnl );
+  ++index;
   }
-
- if( f_log && ( logVerb >= 2 ) )
-  *f_log << "value_FUNCTION1 = " << value_FUNCTION1 << std::endl;
-
- value_FUNCTION = 0.0;
- index = 0;
-
- // compute the corresponding the objective function value for the current 
- // solution (use the original objective functions without penalty terms)
- // double check: value_FUNCTION == value_FUNCTION1
-
- for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-  auto fobji = static_cast< p_DQF >( static_cast< p_FRO >(
-				  sbi->get_objective() )->get_function() );
-  fobji->compute( true );
-  value_FUNCTION += fobji->get_value();
-  }
-
- if( f_log && ( logVerb >= 2 ) )
-  *f_log << "value_FUNCTION = " << value_FUNCTION << std::endl;
- }
+ }  // end( PrimalProximalHeur::remove_penalty_terms )
 
 /*--------------------------------------------------------------------------*/
 
@@ -633,12 +1172,12 @@ void PrimalProximalHeur::guts_of_destructor( void )
  for( auto & el : v_best_sol )
   delete el.first;
  v_best_sol.clear();
- idx_to_var_sbi2.clear();
+
  idx_to_var_sbi1.clear();
+ idx_to_var_sbi2.clear();
  Funct_sbi.clear();
- idx_to_var2.clear();
- idx_to_var1.clear();
- var_to_idx.clear();
+ Funct_sbi_quad.clear();
+ is_linear.clear();
  previous_sol.clear();
  pos_id_sbi.clear();
 

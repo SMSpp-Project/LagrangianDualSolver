@@ -30,6 +30,8 @@
 
 #include "FRowConstraint.h"
 
+#include "LinearFunction.h"
+
 #include "RBlockConfig.h"
 
 /*--------------------------------------------------------------------------*/
@@ -232,8 +234,14 @@ void LagrangianDualSolver::set_Block( Block * block )
      BCi = c;
    }
 
-  if( BCi )
-   BCi->apply( csbi );
+  if( BCi ) {
+   // always through a clone: apply() moves the individual Configuration out
+   // of the BlockConfig into the one it hands to the Block, which owns and
+   // destroys it, so the same BlockConfig could not be apply()-ed twice
+   auto cBCi = BCi->clone();
+   cBCi->apply( csbi );
+   delete cBCi;
+   }
 
   // now construct the LagBFunction; note that doing so may cause the
   // Objective of the inner Block (and therefore the Variable) to be
@@ -290,9 +298,13 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
   }
 
- // if a BlockConfig is present, apply() it
- if( f_BCfg )
-  f_BCfg->apply( LagrDual );
+ // if a BlockConfig is present, apply() it; as for the inner Block, always
+ // through a clone [see above]
+ if( f_BCfg ) {
+  auto cBCfg = f_BCfg->clone();
+  cBCfg->apply( LagrDual );
+  delete cBCfg;
+  }
 
  // check conditions on f_Block- - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -543,19 +555,53 @@ void LagrangianDualSolver::set_Block( Block * block )
  // pass the Lagrangian terms to the corresponding LagBFunction - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ // SparseLagPairs == 1: skip dual pairs whose Lagrangian term is empty.
+ // Since the loop walks the global Lambda index i in strictly increasing
+ // order (first static_cons static, then dynamic), the resulting dp's are
+ // appended in increasing global-i order; inner Solvers that need to map
+ // each LagBFunction's local "active" set into a global Lambda space can
+ // therefore expect that local-to-global lookup tables are monotonic.
+
  for( Index h = 0 ; h < f_nsb ; ++h ) {
-  v_dual_pair dp( NumVar );  // construct the dual pairs
+  v_dual_pair dp;
+  if( SparseLagPairs ) {
+   // pre-count to reserve; cheap O(NumVar) scan
+   Index nnz = 0;
+   for( Index i = 0 ; i < NumVar ; ++i )
+    if( ! LagTerms[ i ][ h ].empty() )
+     ++nnz;
+   dp.reserve( nnz );
 
-  Index i = 0;
-  for( ; i < static_cons ; ++i ) {
-   dp[ i ].first = & (*Ls)[ i ];
-   dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+   Index i = 0;
+   for( ; i < static_cons ; ++i ) {
+    if( LagTerms[ i ][ h ].empty() )
+     continue;
+    dp.emplace_back( & (*Ls)[ i ] ,
+                     new LinearFunction( std::move( LagTerms[ i ][ h ] ) ) );
+    }
+
+   auto Lit = Ld->begin();
+   for( ; i < NumVar ; ++i , ++Lit ) {
+    if( LagTerms[ i ][ h ].empty() )
+     continue;
+    dp.emplace_back( &( *Lit ) ,
+                     new LinearFunction( std::move( LagTerms[ i ][ h ] ) ) );
+    }
    }
+  else {
+   dp.resize( NumVar );
 
-  auto Lit = Ld->begin();
-  for( ; i < NumVar ; ++i ) {
-   dp[ i ].first = &( *Lit++ );
-   dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+   Index i = 0;
+   for( ; i < static_cons ; ++i ) {
+    dp[ i ].first = & (*Ls)[ i ];
+    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+    }
+
+   auto Lit = Ld->begin();
+   for( ; i < NumVar ; ++i ) {
+    dp[ i ].first = &( *Lit++ );
+    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+    }
    }
 
   // Since this LagBFunction is already part of an Objective (and, therefore,
@@ -590,15 +636,26 @@ void LagrangianDualSolver::set_Block( Block * block )
   auto c = Configuration::deserialize( LagBF_BSCfg );
   f_DBSCfg = dynamic_cast< BlockSolverConfig * >( c );
   if( ! f_DBSCfg ) {
-   delete c;
-   throw( std::invalid_argument(
-	   "LagrangianDualSolver: LagBF_BSCfg not a BlockSolverConfig" ) );
+   // also accept a "meta" BlockSolverConfig (a map from Block classname() to
+   // the BlockSolverConfig to use for it), dispatched per inner Block by
+   // classname() in default_BSCfg_for(): this lets a single str_LagBF_BSCfg
+   // configure inner Blocks of different types at once
+   f_DBSCfg_map = dynamic_cast< SimpleConfiguration<
+                   std::map< std::string , Configuration * > > * >( c );
+   if( ! f_DBSCfg_map ) {
+    delete c;
+    throw( std::invalid_argument(
+	    "LagrangianDualSolver: LagBF_BSCfg not a [meta]BlockSolverConfig" ) );
+    }
    }
   }
 
+ v_aBSCfg.assign( f_nsb , nullptr );
+
  Index iW2BSCfg = 0;  // index in W2BSCfg
  for( Index i = 0 ; i < f_nsb ; ++i ) {
-  auto BSCi = f_DBSCfg;
+  Block * csbi = v_LBF[ i ]->get_inner_block();
+  auto BSCi = default_BSCfg_for( csbi );
 
   if( ! WBSCfg.empty() ) {  // individual BlockSolverConfig provided
    Index h;                 // the index in WBSCfg
@@ -610,7 +667,7 @@ void LagrangianDualSolver::set_Block( Block * block )
      h = iW2BSCfg++;
     else
      h = WBSCfg.size();
- 
+
    if( ( h < WBSCfg.size() ) &&
        ( WBSCfg[ h ] >= 0 ) && ( WBSCfg[ h ] < int( v_Cfg.size() ) ) )
     if( auto c = dynamic_cast< BlockSolverConfig * >( v_Cfg[ WBSCfg[ h ] ] ) )
@@ -618,14 +675,13 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
 
   if( BSCi ) {
-   Block * csbi = v_LBF[ i ]->get_inner_block();
-   if( CloneCfg ) {
-    auto cBSCi = BSCi->clone();
-    cBSCi->apply( csbi );
-    delete cBSCi;
-    }
-   else
-    BSCi->apply( csbi );
+   // the same BlockSolverConfig is typically apply()-ed to many sub-Block,
+   // so a clone per sub-Block is kept, clear()-ed, as the object that
+   // un-does this very configuration [see v_aBSCfg]
+   auto cBSCi = BSCi->clone();
+   cBSCi->apply( csbi );
+   cBSCi->clear();
+   v_aBSCfg[ i ] = cBSCi;
    }
   }
 
@@ -642,15 +698,13 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
   }
 
- // if a BlockSolverConfig is present, apply() it
+ // if a BlockSolverConfig is present, apply() it; as for the sub-Block, the
+ // apply() is done through a clone that is then kept, clear()-ed, as the
+ // object that un-does this very configuration [see f_aBSCfg]
  if( f_BSCfg ) {
-  if( CloneCfg ) {
-   auto cBSC = f_BSCfg->clone();
-   cBSC->apply( LagrDual );
-   delete cBSC;
-   }
-  else
-   f_BSCfg->apply( LagrDual );
+  f_aBSCfg = f_BSCfg->clone();
+  f_aBSCfg->apply( LagrDual );
+  f_aBSCfg->clear();
   }
  
  #if CHECK_DS & 1
@@ -741,9 +795,6 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
     throw( std::logic_error( "changing NNMult with registered Block" ) );
    NNMult = bool( value );
    break;
-  case( int_LDSlv_CloneCfg ):
-   CloneCfg = bool( value );
-   break;
   case( int_InnerS_WVarSCfg ):
    WVarSCfg = value;
    break;
@@ -753,7 +804,13 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
   case( intPushCostToOwner ):
    PushCostToOwner = bool( value );
    set_PushCostToOwner();
-   break;   
+   break;
+  case( intSparseLagPairs ):
+   if( LagrDual )
+    throw( std::logic_error( "changing SparseLagPairs with registered "
+                              "Block" ) );
+   SparseLagPairs = bool( value );
+   break;
   default:
    InnerSolver->set_par(  int_par_lds( par ) , value );
   }
@@ -1000,9 +1057,20 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
  // for a specific sub-Block
  auto getsoli = [ this ] ( Index i ) -> void {
   Index szi = v_LBF[ i ]->get_int_par( C05Function::intGPMaxSz );
-  if( ! szi )
-   throw( std::invalid_argument(
-           "LagrangianDualSolver::get_var_solution: no Solution stored" ) );
+  if( ! szi ) {
+   // intGPMaxSz == 0 is the conventional flag set by the inner Solver
+   // when it does not need a global pool of linearizations for this
+   // LagBFunction (typically because it represents it inline rather
+   // than by cutting planes). In that case the inner Solver has
+   // already taken care of writing the primal optimal solution into
+   // v_LBF[ i ]'s inner Block via the InnerSolver->get_dual_solution()
+   // call above, and only the map_back_solution step remains, if the
+   // sub-Block was R3Block-copied.
+   if( iBCopy )
+    f_Block->get_nested_Block( i )->map_back_solution(
+                                  v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
+   return;
+   }
   auto & lc = v_LBF[ i ]->get_important_linearization_coefficients();
   if( lc.empty() )
    throw( std::invalid_argument(
@@ -1083,10 +1151,14 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   if( LSBb->get_registered_solvers().empty() )
    return;
 
-  // ask it to the Solver that was used to compute() the inner Block
+  // ask it to the Solver that was used to compute() the inner Block; note
+  // that the Solver may have no dual solution to offer (say, it solved the
+  // sub-Block as an integer MILP), in which case it is silently skipped
   auto rsp = LSBb->get_registered_solvers().begin();
   std::advance( rsp , v_LBF[ b ]->get_int_par( LagBFunction::intInnrSlvr ) );
   if( auto SBSb = dynamic_cast< CDASolver * >( *rsp ) ) {
+   if( ! SBSb->has_dual_solution() )
+    return;
    SBSb->get_dual_solution( cfg );
    if( iBCopy )  // the sub-Block is a copy
     f_Block->get_nested_Block( b )->map_back_solution( LSBb , nullptr , cfg );
@@ -1214,21 +1286,11 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
 
 void LagrangianDualSolver::clear_LD_BlockSolverConfig( bool keepcfg )
 {
- if( ! f_BSCfg )
-  return;
+ if( LagrDual && f_aBSCfg )  // un-do the configuration of the Lagrangian
+  f_aBSCfg->apply( LagrDual );  // Dual, i.e., remove the Solver it put there
 
- if( LagrDual ) {
-  if( keepcfg ) {
-   auto BSC = f_BSCfg->clone();
-   BSC->clear();
-   BSC->apply( LagrDual );
-   delete BSC;
-   }
-  else {
-   f_BSCfg->clear();
-   f_BSCfg->apply( LagrDual );
-   }
-  }
+ delete f_aBSCfg;
+ f_aBSCfg = nullptr;
 
  if( ! keepcfg ) {
   delete f_BSCfg;
@@ -1264,54 +1326,43 @@ void LagrangianDualSolver::clear_LD_BlockConfig( bool keepcfg )
 
 /*--------------------------------------------------------------------------*/
 
+BlockSolverConfig * LagrangianDualSolver::default_BSCfg_for( Block * inner )
+ const
+{
+ if( f_DBSCfg_map ) {
+  // exact classname() match wins; otherwise fall back to the reserved "*"
+  // catch-all entry (the BlockSolverConfig for "every other" inner Block), if
+  // any. This lets a single (meta) str_LagBF_BSCfg express "this Solver for the
+  // ThermalUnitBlock, that Solver for all the others", and compose the same way
+  // across nesting levels.
+  auto it = f_DBSCfg_map->f_value.find( inner->classname() );
+  if( it == f_DBSCfg_map->f_value.end() )
+   it = f_DBSCfg_map->f_value.find( "*" );
+  if( it != f_DBSCfg_map->f_value.end() )
+   return( dynamic_cast< BlockSolverConfig * >( it->second ) );
+  return( nullptr );
+  }
+ return( f_DBSCfg );
+
+ }  // end( LagrangianDualSolver::default_BSCfg_for )
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualSolver::clear_inner_BlockSolverConfig( void )
 {
- if( ! LagrDual )
-  return;
+ // each inner Block is un-configured by the very object that configured it
+ // [see v_aBSCfg]: no need to work out again which BlockSolverConfig applies
+ // to which sub-Block
+ if( LagrDual )
+  for( Index i = 0 ; i < v_aBSCfg.size() ; ++i )
+   if( v_aBSCfg[ i ] )
+    v_aBSCfg[ i ]->apply( v_LBF[ i ]->get_inner_block() );
 
- if( ( ! f_DBSCfg ) && ( v_Cfg.empty() || WBSCfg.empty() ) )
-  return;
+ for( auto BSCi : v_aBSCfg )
+  delete BSCi;
 
- Index iW2BSCfg = 0;  // index in W2BSCfg
- for( Index i = 0 ; i < f_nsb ; ++i ) {
-  // the default individual BlockSolverConfig
-  BlockSolverConfig * BSCi = f_DBSCfg;
+ v_aBSCfg.clear();
 
-  if( ! WBSCfg.empty() ) {  // individual BlockSolverConfig are provided
-   Index h;                 // the index in WBSCfg
-
-   if( W2BSCfg.empty() )    // in dense format
-    h = i;
-   else                     // in sparse format
-    if( ( iW2BSCfg < W2BSCfg.size() ) &&
-	( W2BSCfg[ iW2BSCfg ] == int( i ) ) )
-     h = iW2BSCfg++;
-    else
-     h = WBSCfg.size();
- 
-   if( ( h < WBSCfg.size() ) &&
-       ( WBSCfg[ h ] >= 0 ) && ( WBSCfg[ h ] < int( v_Cfg.size() ) ) )
-    if( auto c = dynamic_cast< BlockSolverConfig * >( v_Cfg[ WBSCfg[ h ] ] ) )
-     BSCi = c;
-   }
-
-  if( BSCi ) {  // if an individual BlockSolverConfig is specified
-   BSCi = BSCi->clone();                          // clone it
-   BSCi->clear();                                 // clear it
-   BSCi->apply( v_LBF[ i ]->get_inner_block() );  // apply it
-   delete BSCi;                                   // delete it
-   }
-
-  if( ! WBSCfg.empty() ) {
-   if( W2BSCfg.empty() ) {
-    if( i >= WBSCfg.size() )
-     break;
-    }
-   else
-    if( iW2BSCfg >= W2BSCfg.size() )
-     break;
-   }
-  }
  }  // end( LagrangianDualSolver::clear_inner_BlockSolverConfig )
 
 /*--------------------------------------------------------------------------*/
@@ -1711,6 +1762,7 @@ void LagrangianDualSolver::guts_of_destructor( void )
  cleanup_LagrDual();
 
  delete f_DBSCfg;
+ delete f_DBSCfg_map;  // mutually exclusive with f_DBSCfg (one is nullptr)
  delete f_DBCfg;
  for( auto Ci : v_Cfg )
   delete Ci;
@@ -2379,13 +2431,32 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 					     )->get_function()
 		       )->add_variables( std::move( objcf ) , mp );
 
-  // add the variables in the LagBFunctions
+  // add the variables in the LagBFunctions. With SparseLagPairs == 1 we
+  // skip dual pairs whose Lagrangian term is empty, mirroring the static
+  // sparse path in set_Block(). The new dual pairs cover a freshly-added
+  // range of dynamic Lambda multipliers (indices [ i .. NumVar )) and are
+  // appended in increasing global-index order, so the monotonicity of
+  // any local-to-global mapping the inner Solver may keep around for
+  // each LagBFunction is preserved across this incremental add.
+
   for( Index h = 0 ; h < f_nsb ; ++h ) {
    Lit = NLDLit;
-   v_dual_pair dp( NAddd );  // construct the dual pairs
-   for( Index i = 0 ; i < NAddd ; ++i ) {
-    dp[ i ].first = &( *Lit++ );
-    dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+   v_dual_pair dp;
+   if( SparseLagPairs ) {
+    dp.reserve( NAddd );
+    for( Index i = 0 ; i < NAddd ; ++i , ++Lit ) {
+     if( LagTerms[ i ][ h ].empty() )
+      continue;
+     dp.emplace_back( &( *Lit ) ,
+                      new LinearFunction( std::move( LagTerms[ i ][ h ] ) ) );
+     }
+    }
+   else {
+    dp.resize( NAddd );
+    for( Index i = 0 ; i < NAddd ; ++i ) {
+     dp[ i ].first = &( *Lit++ );
+     dp[ i ].second = new LinearFunction( std::move( LagTerms[ i ][ h ] ) );
+     }
     }
 
    v_LBF[ h ]->add_dual_pairs( std::move( dp ) );

@@ -7,11 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added 
+### Added
 
-### Changed 
+### Changed
 
-### Fixed 
+### Fixed
+
+## [0.3.0] - 2026-09-12
+
+### Changed
+
+- the first iteration of PrimalProximalHeur is not penalized, so that
+  the bound it produces is the one of the original problem: get_lb() /
+  get_ub() report it and it is what the accuracy the heuristic is asked
+  for is measured against. intUseWarmStartPSol asks for the previous
+  behaviour, i.e. that the primal solution of the warm start be the
+  proximal center of the first iteration
+
+- the parameters of PrimalProximalHeur named after the base Solver refer
+  to the heuristic itself: intMaxIter is the number of its iterations and
+  dblMaxTime the time it is given as a whole, out of which each call to
+  the inner Solver gets what is left; the inner Solver is given
+  intInnerMaxIter and dblInnerRelAcc (was dbl_LDSRelAcc), and the
+  configuration files of the Solver of the warm start and of the primal
+  recovery are strWarmStartBSC (empty, i.e. no warm start, by default)
+  and strRecoveryBSC
+
+- the trace of PrimalProximalHeur is compiled in and silent by default,
+  intLogVerb turning it on at runtime, rather than the other way around
+
+- the version of the module is the git tag of its repository, or the
+  VERSION.txt of a release tarball, and the shared library carries it: its
+  SONAME is major.minor while the major is 0, and it is installed with an
+  RPATH relative to itself, so that an installed tree keeps working wherever
+  it is moved
+
+### Fixed
+
+- the warm start of PrimalProximalHeur asked the auxiliary Solver for the
+  dual solution whatever happened to it: a relaxation stopped by the time
+  limit has none, and the query threw. What the Solver has is asked for,
+  and if the duals are not there the multipliers stay where set_Block()
+  put them, exactly as with no warm start
+
+- the package configuration file finds the libraries the module links, so that
+  a project using the installed module needs nothing more than find_package()
 
 ## [0.2.0] - 2025-12-12
 
@@ -82,7 +122,8 @@ Initial release
 
 - Initial release.
 
-[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.2.0...develop
+[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.3.0...develop
+[0.3.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.2.0...0.3.0
 [0.2.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.3...0.2.0
 [0.1.3]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.2...0.1.3
 [0.1.2]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.1...0.1.2
