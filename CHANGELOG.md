@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.4.0] - 2026-09-13
+
+### Changed
+
+- `intLogVerb` of `PrimalProximalHeur` is one composite value, v + 4 * w,
+  carrying the verbosity of the heuristic and that of its inner Solver
+
 ## [0.3.0] - 2026-09-12
 
 ### Changed
