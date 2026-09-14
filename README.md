@@ -92,6 +92,9 @@ the whole framework. What follows is about building it yourself.
 
 - [SMS++ core library](https://gitlab.com/smspp/smspp)
 
+- [SMS++ MILPSolver](https://gitlab.com/smspp/milpsolver), which
+  `PrimalProximalHeur` uses to warm-start the heuristic
+
 It's not a build requirement but you will need a SMS++ `Solver`
 capable of solving the Lagrangian Dual, such as
 [BundleSolver](https://gitlab.com/smspp/bundlesolver).
