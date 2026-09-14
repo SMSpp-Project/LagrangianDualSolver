@@ -176,7 +176,15 @@ void LagrangianDualSolver::set_Block( Block * block )
  // the sub-Block are before doing the checks
  // but at the very least children are required to exist - - - - - - - - - -
 
- const auto & sb = f_Block->get_nested_Blocks();
+ // decide the decomposition: which Block have their linking Constraint
+ // relaxed, and which ones become the components. With Recursive off this
+ // is what it has always been, the root relaxed and its children the
+ // components; with it on the descent goes as deep as the shape holds
+ v_relaxed.clear();
+ std::vector< Block * > sb;
+ if( ! decompose( f_Block , sb ) )
+  throw( std::invalid_argument( "LagrangianDualSolver: no sub-Block" ) );
+
  f_nsb = sb.size();
  if( ! f_nsb )
   throw( std::invalid_argument( "LagrangianDualSolver: no sub-Block" ) );
@@ -346,7 +354,9 @@ void LagrangianDualSolver::set_Block( Block * block )
  // meanwhile construct the static dictionaries
 
  // number of groups of static constraints
- auto scn = f_Block->get_static_constraints().size();
+ Index scn = 0;
+ for( auto rb : v_relaxed )
+  scn += rb->get_static_constraints().size();
 
  // resize the static constraints<-->Lagrangian-variables dictionaries
  scon_to_idx.resize( scn );
@@ -354,7 +364,8 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  {
   Index pos = 0;
-  for( const auto & el : f_Block->get_static_constraints() ) {
+  for( auto rb : v_relaxed )
+   for( const auto & el : rb->get_static_constraints() ) {
 
    // Single
    if( un_any_thing_0( FRowConstraint , el ,
@@ -420,7 +431,8 @@ void LagrangianDualSolver::set_Block( Block * block )
  std::sort( scon_to_idx.begin() , scon_to_idx.end() );
 
  // count and check the dynamic FRowConstraint- - - - - - - - - - - - - - - -
- for( const auto & el : f_Block->get_dynamic_constraints() ) {
+ for( auto rb : v_relaxed )
+  for( const auto & el : rb->get_dynamic_constraints() ) {
   auto count = un_any_thing_count_dynamic( FRowConstraint , el );
   if( count == Inf< std::size_t >() )
    throw( std::invalid_argument(
@@ -485,7 +497,8 @@ void LagrangianDualSolver::set_Block( Block * block )
    };
 
   // finally apply the lambda to all static constraints
-  for( const auto & el : f_Block->get_static_constraints() )
+  for( auto rb : v_relaxed )
+   for( const auto & el : rb->get_static_constraints() )
    un_any_const_static( el , scan , un_any_type< FRowConstraint >() );
   }
 
@@ -535,7 +548,8 @@ void LagrangianDualSolver::set_Block( Block * block )
    };
 
   // finally apply the lambda to all dynamic constraints
-  for( const auto & el : f_Block->get_dynamic_constraints() )
+  for( auto rb : v_relaxed )
+   for( const auto & el : rb->get_dynamic_constraints() )
    un_any_const_dynamic( el , scan , un_any_type< FRowConstraint >() );
   }
 
@@ -782,6 +796,44 @@ void LagrangianDualSolver::set_Block( Block * block )
 
 /*--------------------------------------------------------------------------*/
 
+bool LagrangianDualSolver::decompose( Block * b ,
+                                      std::vector< Block * > & component )
+{
+ const auto & sb = b->get_nested_Blocks();
+ if( sb.empty() )  // a leaf is not decomposable
+  return( false );
+
+ if( b != f_Block ) {
+  // the abstract representation is what the shape is read from, so it has
+  // to be there; note that this happens before the BlockConfig of the
+  // component are applied, hence a BlockConfig that changed whether a Block
+  // has Variable of its own would not be seen here
+  b->generate_abstract_variables();
+  b->generate_abstract_constraints();
+  b->generate_objective();
+
+  // the shape: everything of its own but the linking Constraint
+  if( ( ! b->get_static_variables().empty() ) ||
+      ( ! b->get_dynamic_variables().empty() ) )
+   return( false );
+
+  if( auto obj = b->get_objective() )
+   if( obj->get_num_active_var() != 0 )
+    return( false );
+  }
+
+ v_relaxed.push_back( b );
+
+ for( auto sbi : sb )
+  if( ( ! Recursive ) || ( ! decompose( sbi , component ) ) )
+   component.push_back( sbi );
+
+ return( true );
+
+ }  // end( LagrangianDualSolver::decompose )
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualSolver::set_par( idx_type par , int value )
 {
  switch( par ) {
@@ -800,6 +852,11 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
    break;
   case( int_InnerS_WDualSCfg ):
    WDualSCfg = value;
+   break;
+  case( intRecursive ):
+   if( LagrDual )
+    throw( std::logic_error( "changing Recursive with registered Block" ) );
+   Recursive = bool( value );
    break;
   case( intPushCostToOwner ):
    PushCostToOwner = bool( value );
@@ -1250,7 +1307,8 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
 
  if( NNMult ) {
   // get the static part
-  for( const auto & el : f_Block->get_static_constraints() )
+  for( auto rb : v_relaxed )
+   for( const auto & el : rb->get_static_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
      auto val = ( Lsit++ )->get_value();
      if( to_be_reversed( con ) )
@@ -1258,7 +1316,8 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
      con.set_dual( val );
      } , un_any_type< FRowConstraint >() );
   // get the dynamic part
-  for( const auto & el : f_Block->get_dynamic_constraints() )
+  for( auto rb : v_relaxed )
+   for( const auto & el : rb->get_dynamic_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
      auto val = ( Ldit++ )->get_value();
      if( to_be_reversed( con ) )
@@ -1268,12 +1327,14 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   }
  else {
   // get the static part
-  for( const auto & el : f_Block->get_static_constraints() )
+  for( auto rb : v_relaxed )
+   for( const auto & el : rb->get_static_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
                                con.set_dual( ( Lsit++ )->get_value() );
                                } , un_any_type< FRowConstraint >() );
   // get the dynamic part
-  for( const auto & el : f_Block->get_dynamic_constraints() )
+  for( auto rb : v_relaxed )
+   for( const auto & el : rb->get_dynamic_constraints() )
    un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
                                con.set_dual( ( Ldit++ )->get_value() );
                                } , un_any_type< FRowConstraint >() );

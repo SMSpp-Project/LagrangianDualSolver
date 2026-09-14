@@ -397,6 +397,26 @@ public:
   * cannot handle heterogeneous active sets, or for reproducing the
   * pre-Phase-A behavior for debugging). */
 
+ intRecursive ,
+ ///< decompose the descendants too, and not the children alone
+ /**< If nonzero, the decomposition does not stop at the children of the
+  * Block: a child that has the same shape the Block must have, i.e., no
+  * Variable and no Objective of its own and sub-Block of its own, is
+  * decomposed in turn, its linking Constraint being relaxed together with
+  * those of the Block and its own children taking its place as components.
+  * The descent goes on as deep as the shape holds, so that the components
+  * are the leaves of the decomposable part of the tree rather than the
+  * children of the root, and the multipliers are those of every level.
+  *
+  * The two things being compared are then the same dual solved in two ways:
+  * with this off, a child that is itself decomposable is one component, and
+  * whichever Solver is attached to it may solve its own Lagrangian dual,
+  * which gives a stronger bound at the price of a dual inside a dual; with
+  * this on, there is a single dual with all the multipliers of all the
+  * levels, whose bound is weaker but whose master is one instead of many.
+  * Which of the two is faster is a matter of the instance, hence the
+  * parameter. Default 0, i.e., the children are the components. */
+
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of int algorithmic parameters. */
@@ -526,6 +546,7 @@ public:
   WDualSCfg       = get_dflt_int_par( int_InnerS_WDualSCfg );
   PushCostToOwner = get_dflt_int_par( intPushCostToOwner );
   SparseLagPairs  = get_dflt_int_par( intSparseLagPairs );
+  Recursive       = get_dflt_int_par( intRecursive );
   ISName          = get_dflt_str_par( str_LDSlv_ISName );
   // all the other string parameters are empty by default, which corresponds
   // to f_BCfg == f_BSCfg == f_DBCfg == f_DBSCfg == nullptr
@@ -1539,6 +1560,7 @@ public:
     1 , // intPushCostToOwner
     1 , // intSparseLagPairs (default on; sparse path is bit-equivalent
         //                   to dense and unlocks DoEasy=1 in LDS)
+    0 , // intRecursive (default off: the children are the components)
    };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastLDSlvPar ) )
@@ -1612,6 +1634,7 @@ public:
    case( int_InnerS_WDualSCfg ): return( WDualSCfg );
    case( intPushCostToOwner ):   return( PushCostToOwner );
    case( intSparseLagPairs ):    return( SparseLagPairs );
+   case( intRecursive ):         return( Recursive );
    }
 
   return( InnerSolver->get_int_par( int_par_lds( par ) ) );
@@ -1680,7 +1703,8 @@ public:
    { "int_InnerS_WVarSCfg"  , int_InnerS_WVarSCfg } ,
    { "int_InnerS_WDualSCfg" , int_InnerS_WDualSCfg } ,
    { "intPushCostToOwner"   , intPushCostToOwner } ,
-   { "intSparseLagPairs"    , intSparseLagPairs }
+   { "intSparseLagPairs"    , intSparseLagPairs } ,
+   { "intRecursive"         , intRecursive }
    };
 
   const auto it = int_pars_map.find( name );
@@ -2088,6 +2112,9 @@ FRowConstraint * constraint_with_index( Index i ) {
  bool PushCostToOwner;  ///< how to set the same-named LagBFunction parameter
 
  bool SparseLagPairs;
+
+ /// true if the decomposable descendants are decomposed in turn
+ bool Recursive;
  ///< true if dual pairs with empty Lagrangian term are skipped in set_Block
 
  std::string ISName;  ///< classname of the inner Solver
@@ -2214,6 +2241,27 @@ FRowConstraint * constraint_with_index( Index i ) {
  typedef std::pair< FRowConstraint * , Index > const_int;
  typedef std::pair< Index , FRowConstraint * > int_const;
  typedef std::tuple< FRowConstraint * , Index , Index > con_int_int;
+
+ /// the Block whose linking Constraint are relaxed, the root first
+ /** The Block whose Constraint become Lagrangian terms, in the order they are
+  * visited: the Block this Solver is attached to, and, when the recursive
+  * decomposition is on, those of its descendants that are decomposed in turn.
+  * The dictionaries below are the concatenation, in this very order, of the
+  * groups of Constraint of each of them, hence any scan of the relaxed
+  * Constraint has to run over this vector rather than over the root alone. */
+
+ std::vector< Block * > v_relaxed;
+
+ /// the components of the decomposition, and the Block that are decomposed
+ /** Fills \p component with the Block that become the components of the
+  * decomposition, and v_relaxed with those whose linking Constraint are
+  * relaxed, \p b included. Returns false, having touched nothing, if \p b
+  * cannot be decomposed, i.e., if it has no sub-Block, or, unless it is the
+  * root, if it has Variable or a nonempty Objective of its own; the caller
+  * then makes \p b a component. With Recursive off the children of \p b are
+  * components whatever their shape. */
+
+ bool decompose( Block * b , std::vector< Block * > & component );
 
  std::vector< con_int_int > scon_to_idx; ///< from static constraint to index
  std::vector< int_const > idx_to_scon;   ///< from index to static constraint
