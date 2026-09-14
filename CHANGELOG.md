@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- makefile-c and makefile-s bring in MILPSolver, which PrimalProximalHeur
+  needs, rather than leaving $(MILPSINC) to the including makefile
+
 ## [0.4.0] - 2026-09-13
 
 ### Changed
