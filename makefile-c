@@ -36,8 +36,12 @@
 # *INC is the -I< include directories >
 
 # define input macros for SMS++ library makefile, then include it
-SMS++SDR = $(LgDSLVSDR)/../SMS++
-include $(SMS++SDR)/lib/makefile-inc
+# not necessary, MILPSolver does it already
+
+# define input macros for MILPSolver complete makefile, then include it;
+# PrimalProximalHeur needs it to warm-start the heuristic
+MILPSSDR = $(LgDSLVSDR)/../MILPSolver
+include $(MILPSSDR)/makefile-c
 
 # include the makefile requiring all external modules in input
 include $(LgDSLVSDR)/makefile
@@ -46,11 +50,11 @@ include $(LgDSLVSDR)/makefile
 
 # append external stuff defined in the other makefiles to LgDSLVOBJ,
 # LgDSLVINC and LgDSLVH, thus the := assignment has to be used (use GNU make)
-LgDSLVOBJ := $(LgDSLVOBJ) $(SMS++OBJ)
-LgDSLVINC := $(LgDSLVINC) $(SMS++INC)  
-LgDSLVH := $(LgDSLVH) $(SMS++H) 
+LgDSLVOBJ := $(LgDSLVOBJ) $(MILPSOBJ)
+LgDSLVINC := $(LgDSLVINC) $(MILPSINC)
+LgDSLVH := $(LgDSLVH) $(MILPSH)
 
-# external libraries for LagrangianDualSolver (those of SMS++)
-LgDSLVLIB  =  $(SMS++LIB) 
+# external libraries for LagrangianDualSolver (those of MILPSolver)
+LgDSLVLIB = $(MILPSLIB)
 
 ############################ End of makefile #################################

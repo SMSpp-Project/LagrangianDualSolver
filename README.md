@@ -71,9 +71,29 @@ These instructions will let you build `LagrangianDualSolver` and
 `PrimalProximalHeur`.
 
 
+The module also comes ready-made, in any of
+
+```sh
+sudo add-apt-repository ppa:smspp-project/smspp   # Ubuntu
+sudo apt install libsmspp-lds-dev
+
+conda install -c conda-forge smspp-project        # Linux, macOS, Windows
+
+brew tap SMSpp-Project/smspp                      # macOS, Linux
+brew install smspp
+
+vcpkg install "smspp[core,lds]"                   # from the sources
+```
+
+where apt and the port give the module alone, while conda and the tap carry
+the whole framework. What follows is about building it yourself.
+
 ### Requirements
 
 - [SMS++ core library](https://gitlab.com/smspp/smspp)
+
+- [SMS++ MILPSolver](https://gitlab.com/smspp/milpsolver), which
+  `PrimalProximalHeur` uses to warm-start the heuristic
 
 It's not a build requirement but you will need a SMS++ `Solver`
 capable of solving the Lagrangian Dual, such as
@@ -162,6 +182,10 @@ conduct, and the process for submitting merge requests to us.
   Università di Cagliari
 
 - **Luca Mencarelli**  
+  Dipartimento di Informatica  
+  Università di Pisa
+
+- **Donato Meoli**  
   Dipartimento di Informatica  
   Università di Pisa
 
