@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PrimalProximalHeur.h"
+#include "AbstractPath.h"
 #include "ChangeSolver.h"
 
 namespace SMSpp_di_unipi_it
@@ -21,6 +22,8 @@ namespace SMSpp_di_unipi_it
             eChgUB           ///< change upper bound of a variable
         };
         /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/
+
+        LagrangianChange() : f_type(eEmpty), v_data(), v_paths() {}
 
         // constructor
         LagrangianChange(int type, std::vector<double> value, std::vector<AbstractPath> paths) : f_type(type), v_data(std::move(value)), v_paths(std::move(paths)) {}
@@ -50,7 +53,7 @@ namespace SMSpp_di_unipi_it
             if (pg.isNull())
                 v_paths.clear();
             else
-                AbstractPath::deserialize(v_paths, pg);
+                v_paths = AbstractPath::vector_deserialize(pg);
         }
         /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
@@ -87,7 +90,7 @@ namespace SMSpp_di_unipi_it
                 // in this case constains AbstractPath contains only 2 element, the variable and the objective function
             case eChgObj:
             {
-                Variable *pv = nullptr;
+                ColVariable *pv = nullptr;
                 Function *fobj = nullptr;
                 if (v_paths.size() != 2)
                     throw std::invalid_argument(
@@ -97,11 +100,13 @@ namespace SMSpp_di_unipi_it
                     auto node_type = path.get_last_node(block).type;
 
                     if (node_type == 'V' || node_type == 'v')
-                        pv = path.get_element<Variable>(block);
+                        pv = path.get_element<ColVariable>(block);
                     else if (node_type == 'O')
                     {
-                        auto *obj = path.get_element<FRealObjective>(block);
-                        fobj = obj->get_function();
+                        auto *obj = dynamic_cast<FRealObjective *>(
+                            path.get_element<Objective>(block));
+                        if (obj)
+                            fobj = obj->get_function();
                     }
                 }
                 if (!pv || !fobj)
@@ -176,7 +181,7 @@ namespace SMSpp_di_unipi_it
             case eChgIntegrality:
             {
                 const bool new_integer = (v_data[0] != 0.0);
-                auto pv = v_paths[0].get_element<Variable>(block);
+                auto pv = v_paths[0].get_element<ColVariable>(block);
                 const bool old_integer = pv->is_integer();
 
                 pv->is_integer(new_integer, issueMod);
@@ -190,7 +195,7 @@ namespace SMSpp_di_unipi_it
             {
                 const auto fix_value = v_data[0];
 
-                auto pv = v_paths[0].get_element<Variable>(block);
+                auto pv = v_paths[0].get_element<ColVariable>(block);
                 const bool was_fixed = pv->is_fixed();
 
                 if (doUndo)
@@ -202,7 +207,7 @@ namespace SMSpp_di_unipi_it
             // v_paths constains the variable
             case eUnfixX:
             {
-                auto pv = v_paths[0].get_element<Variable>(block);
+                auto pv = v_paths[0].get_element<ColVariable>(block);
 
                 pv->is_fixed(false, issueMod);
 
@@ -213,7 +218,7 @@ namespace SMSpp_di_unipi_it
             // v_paths constains the variable, v_data[0] contains the new lower bound
             case eChgLB:
             {
-                auto pv = v_paths[0].get_element<Variable>(block);
+                auto pv = v_paths[0].get_element<ColVariable>(block);
                 const auto new_lb = v_data[0];
                 bool found = false;
                 for (Index i = 0; i < pv->get_num_active(); ++i)
@@ -238,45 +243,45 @@ namespace SMSpp_di_unipi_it
                 }
                 if (!found)
                 {
-                    if (doUndo)
-                        returnChange = new LagrangianChange(eChgLB, {pv->get_lb()}, std::vector<AbstractPath>{v_paths});
-                    // auto con = new LBConstraint(pv->get_block(), pv, new_lb);
-                    Block *blk = pv->get_block();
-                    Index idx = Inf<Index>();
+                    throw std::invalid_argument("LagrangianChange: eChgLB requires a variable with an existing BoxConstraint or LBConstraint");
+                    /*                     if (doUndo)
+                                            returnChange = new LagrangianChange(eChgLB, {pv->get_lb()}, std::vector<AbstractPath>{v_paths});
+                                        // auto con = new LBConstraint(pv->get_Block(), pv, new_lb);
+                                        Block *blk = pv->get_Block();
+                                        Index idx = Inf<Index>();
 
-                    auto &d_constraints = blk->get_dynamic_constraints(); // c_Vec_any &
+                                        auto &d_constraints = blk->get_dynamic_constraints(); // c_Vec_any &
 
-                    for (Index i = 0; i < d_constraints.size(); ++i)
-                    {
-                        if (d_constraints[i].type() == typeid(std::list<LBConstraint>))
-                        {
-                            idx = i;
-                            break;
-                        }
-                    }
+                                        for (Index i = 0; i < d_constraints.size(); ++i)
+                                        {
+                                            if (d_constraints[i].type() == typeid(std::list<LBConstraint>))
+                                            {
+                                                idx = i;
+                                                break;
+                                            }
+                                        }
 
-                    if (idx == Inf<Index>())
-                    {
-                        // nessun gruppo di LBConstraint dinamici: lo registriamo ora
-                        std::list<LBConstraint> empty_list;
-                        blk->set_dynamic_constraint(std::move(empty_list), "LBConstraint");
-                        idx = d_constraints.size() - 1;
-                    }
+                                        if (idx == Inf<Index>())
+                                        {
+                                            // nessun gruppo di LBConstraint dinamici: lo registriamo ora
+                                                throw new std::invalid_argument("No dynamic LBConstraint group found in block. Please register a dynamic LBConstraint group before applying LagrangianChange eChgLB.");
+                                        }
 
-                    auto *d_list = std::any_cast<std::list<LBConstraint>>(&d_constraints[idx]);
-                    // d_list è garantito non-nullptr qui, perché idx è stato appena
-                    // verificato/creato per contenere esattamente std::list<LBConstraint>
+                                        auto *d_list = boost::any_cast<std::list<LBConstraint>>(&d_constraints[idx]);
+                                        // d_list è garantito non-nullptr qui, perché idx è stato appena
+                                        // verificato/creato per contenere esattamente std::list<LBConstraint>
 
-                    std::list<LBConstraint> newlist;
-                    newlist.emplace_back(blk, pv, new_lb);
+                                        std::list<LBConstraint> newlist;
+                                        newlist.emplace_back(blk, pv, new_lb);
 
-                    blk->add_dynamic_constraints(*d_list, newlist, issueMod);
+                                        blk->add_dynamic_constraints(*d_list, newlist, issueMod);
+                     */
                 }
                 break;
             }
             case eChgUB:
             {
-                auto pv = v_paths[0].get_element<Variable>(block);
+                auto pv = v_paths[0].get_element<ColVariable>(block);
                 const auto new_ub = v_data[0];
                 bool found = false;
                 for (Index i = 0; i < pv->get_num_active(); ++i)
@@ -301,31 +306,30 @@ namespace SMSpp_di_unipi_it
                 }
                 if (!found)
                 {
-                    if (doUndo)
-                        returnChange = new LagrangianChange(eChgUB, {pv->get_ub()}, std::vector<AbstractPath>{v_paths});
-                    // auto con = new UBConstraint(pv->get_block(), pv, new_ub);
-                    auto blk = pv->get_block();
-                    Index idx = Inf<Index>();
-                    auto &d_constraints = blk->get_dynamic_constraints();
-                    for (Index i = 0; i < d_constraints.size(); ++i)
-                    {
-                        if (d_constraints[i].type() == typeid(std::list<UBConstraint>))
-                        {
-                            idx = i;
-                            break;
-                        }
-                    }
-                    if (idx == Inf<Index>())
-                    {
-                        // nessun gruppo di UBConstraint dinamici: lo registriamo ora
-                        std::list<UBConstraint> empty_list;
-                        blk->set_dynamic_constraint(std::move(empty_list), "UBConstraint");
-                        idx = d_constraints.size() - 1;
-                    }
-                    auto *d_list = std::any_cast<std::list<UBConstraint>>(&d_constraints[idx]);
-                    std::list<UBConstraint> newlist;
-                    newlist.emplace_back(blk, pv, new_ub);
-                    blk->add_dynamic_constraints(*d_list, std::move(newlist), issueMod);
+                    throw new std::invalid_argument("LagrangianChange: eChgUB requires a variable with an existing BoxConstraint or UBConstraint");
+                    /*                     if (doUndo)
+                                            returnChange = new LagrangianChange(eChgUB, {pv->get_ub()}, std::vector<AbstractPath>{v_paths});
+                                        // auto con = new UBConstraint(pv->get_Block(), pv, new_ub);
+                                        auto blk = pv->get_Block();
+                                        Index idx = Inf<Index>();
+                                        auto &d_constraints = blk->get_dynamic_constraints();
+                                        for (Index i = 0; i < d_constraints.size(); ++i)
+                                        {
+                                            if (d_constraints[i].type() == typeid(std::list<UBConstraint>))
+                                            {
+                                                idx = i;
+                                                break;
+                                            }
+                                        }
+                                        if (idx == Inf<Index>())
+                                        {
+                                            throw new std::invalid_argument("No dynamic UBConstraint group found in block. Please register a dynamic UBConstraint group before applying LagrangianChange eChgUB.");
+                                        }
+                                        auto *d_list = boost::any_cast<std::list<UBConstraint>>(&d_constraints[idx]);
+                                        std::list<UBConstraint> newlist;
+                                        newlist.emplace_back(blk, pv, new_ub);
+                                        blk->add_dynamic_constraints(*d_list, std::move(newlist), issueMod);
+                     */
                 }
                 break;
             }
@@ -353,9 +357,21 @@ namespace SMSpp_di_unipi_it
     /*---------------------------------------------------------------------------------*/
     /*----------------------LagrangianDualRelaxationSolver-----------------------------*/
     /*---------------------------------------------------------------------------------*/
-    class LagrangianDualRelaxationSolver : public RelaxationSolver, PrimalProximalHeur
+    class LagrangianDualRelaxationSolver : public RelaxationSolver, public PrimalProximalHeur
     {
     public:
+        /*--------------------------------------------------------------------------*/
+        /*------------------------- RESERVED NAMES / KEYS --------------------------*/
+        /*--------------------------------------------------------------------------*/
+        /// name of the Collection std::map<ColVariable *, Solution *>
+        static constexpr const char *str_VarToSol = "map_varToSol";
+
+        /// key (in map_varToSol) for the Collection of purged columns and their corresponding solutions
+        static constexpr const char *str_PurgedColumns = "purgedColumns";
+
+        /// type T of the Collection of purged columns and their corresponding solutions
+        using PurgedColumn = std::map<ColVariable *, std::vector<Solution *>>;
+
         /*-------------------------------------------------------------------------------------*/
         // Adding parameters for branching and applying changes to the master or subproblem
         //  TODO expand with new branching strategies, e.g. most fractional, pseudo-costs, strong branching, etc.
@@ -374,7 +390,6 @@ namespace SMSpp_di_unipi_it
             ApplyStrategy = intLastPPHPar, ///< strategy for applying the change to the master or subproblem
             BranchStrategy,                ///< branching strategy
             intLastLDRSPar                 ///< first allowed new int parameter for derived classes
-
         };
 
         void set_par(idx_type par, int val) override
@@ -427,14 +442,16 @@ namespace SMSpp_di_unipi_it
             return PrimalProximalHeur::int_par_str2idx(name);
         }
 
-        [[nodiscard]] std::string int_par_idx2str(idx_type par) const override
+        [[nodiscard]] const std::string &int_par_idx2str(idx_type par) const override
         {
+            static const std::string apply_strategy_name = "ApplyStrategy";
+            static const std::string branch_strategy_name = "BranchStrategy";
             switch (par)
             {
             case ApplyStrategy:
-                return "ApplyStrategy";
+                return apply_strategy_name;
             case BranchStrategy:
-                return "BranchStrategy";
+                return branch_strategy_name;
             default:
                 return PrimalProximalHeur::int_par_idx2str(par);
             }
@@ -449,9 +466,6 @@ namespace SMSpp_di_unipi_it
                                            applyStrategy(Master),
                                            map_varToLF()
         {
-            f_global_information->add_to_Universe<std::map<ColVariable *, std::vector<Solution *>>>("map_varToSol");
-            auto collection = f_global_information->get_from_Universe<std::map<ColVariable *, std::vector<Solution *>>>("map_varToSol");
-            collection->write("map_varToSol", std::map<ColVariable *, std::vector<Solution *>>{});
         }
 
         ~LagrangianDualRelaxationSolver() override
@@ -517,6 +531,24 @@ namespace SMSpp_di_unipi_it
             this->PrimalProximalHeur::get_var_solution(solc);
         }
 
+        Solution *get_Solution(Configuration *solc = nullptr) override
+        {
+            f_Block->lock(this);
+            this->LagrangianDualSolver::get_var_solution(solc);
+            auto solution = f_Block->get_Solution(solc);
+            f_Block->unlock(this);
+            return solution;
+        }
+
+        Solution *get_true_solution(Configuration *solc = nullptr) override
+        {
+            f_Block->lock(this);
+            get_true_var_solution(solc);
+            auto solution = f_Block->get_Solution(solc);
+            f_Block->unlock(this);
+            return solution;
+        }
+
         std::vector<Change *> branch() override
         {
             std::vector<Change *> changes;
@@ -576,7 +608,7 @@ namespace SMSpp_di_unipi_it
                 {
                     // Index found_pos = Inf<Index>();
                     double oldLB = pv->get_lb();
-                    if (map_varToLF.contains(pv) && map_varToLF[pv]->get_coefficent() == -1.0)
+                    if (map_varToLF.contains(pv) && map_varToLF[pv]->get_coefficient(0) == -1.0)
                     {
                         // trovata: aggiorna solo il termine costante (cioè "value")
                         auto *gi = map_varToLF[pv];
@@ -616,7 +648,7 @@ namespace SMSpp_di_unipi_it
                 case Master:
                 {
                     double oldUB = pv->get_ub();
-                    if (map_varToLF.contains(pv) && map_varToLF[pv]->get_coefficient() == 1.0)
+                    if (map_varToLF.contains(pv) && map_varToLF[pv]->get_coefficient(0) == 1.0)
                     {
                         // trovata: aggiorna solo il termine costante (cioè "value")
                         auto *gi = map_varToLF[pv];
@@ -671,27 +703,22 @@ namespace SMSpp_di_unipi_it
                             undoChange = new LagrangianChange(LagrangianChange::eUnfixX, {}, std::vector<AbstractPath>{c->get_paths()});
                         }
                     }
-                    if (!f_global_information)
-                        throw std::runtime_error("LagrangianDualRelaxationSolver::apply: global information not set");
-                    using PurgedColumn = std::map<ColVariable *, std::vector<Solution *>>;
+                    auto mvts = map_varToSol;
                     const auto handler_id = lbf->set_event_handler(LagBFunction::eColumnPurged,
                                                                    // TODO insert here lambda function
-                                                                   [lbf, pv, f_global_information = this->f_global_information]() -> int
+                                                                   [lbf, pv, mvts]() -> int
                                                                    {
                                                                        Solution *sol = lbf->release_current_purged_solution();
                                                                        if (!sol)
                                                                            throw std::logic_error("eColumnPurged called without a Solution");
-                                                                       auto collection = f_global_information->get_from_Universe<PurgedColumn>("map_varToSol");
-                                                                       if (!collection)
-                                                                       {
-                                                                           throw std::runtime_error("LagrangianDualRelaxationSolver::apply: map_varToSol not found in global information");
-                                                                       }
+                                                                       if (!mvts)
+                                                                           throw std::runtime_error("LagrangianDualRelaxationSolver::apply: map_varToSol not set in global information");
                                                                        // TODO controllare che sia giusta e funzioni
-                                                                       auto ok = collection->write_with("map_varToSol",
-                                                                                                        [pv, sol](PurgedColumn &map_varToSol)
-                                                                                                        {
-                                                                                                            map_varToSol[pv].push_back(sol);
-                                                                                                        });
+                                                                       auto ok = mvts->write_with(str_PurgedColumns,
+                                                                                                  [pv, sol](PurgedColumn &pc)
+                                                                                                  {
+                                                                                                      pc[pv].push_back(sol);
+                                                                                                  });
                                                                        // temporarly, check if it works correctly
                                                                        assert(ok);
                                                                        return ThinComputeInterface::eContinue;
@@ -722,23 +749,22 @@ namespace SMSpp_di_unipi_it
                     pv->is_fixed(false);
                     if (!f_global_information)
                         throw std::runtime_error("LagrangianDualRelaxationSolver::apply: global information not set");
-                    auto collection = f_global_information->get_from_Universe<std::map<ColVariable *, std::vector<Solution *>>>("map_varToSol");
 
-                    if (!collection)
+                    if (!map_varToSol)
                     {
                         // TODO capire se è sbagliato in quanto non ho rimosso colonne
                         throw std::runtime_error("LagrangianDualRelaxationSolver::apply: map_varToSol not found in global information");
                     }
                     std::vector<Solution *> pruned_solutions;
-                    const bool found = collection->read_with("map_varToSol",
-                                                             [pv, &pruned_solutions](const std::map<ColVariable *, std::vector<Solution *>> &map_varToSol)
-                                                             {
-                                                                 auto it = map_varToSol.find(pv);
-                                                                 if (it != map_varToSol.end())
-                                                                     pruned_solutions = it->second;
-                                                                 else
-                                                                     pruned_solutions.clear();
-                                                             });
+                    const bool found = map_varToSol->read_with(str_PurgedColumns,
+                                                               [pv, &pruned_solutions](const PurgedColumn &pc)
+                                                               {
+                                                                   auto it = pc.find(pv);
+                                                                   if (it != pc.end())
+                                                                       pruned_solutions = it->second;
+                                                                   else
+                                                                       pruned_solutions.clear();
+                                                               });
 
                     if (!found)
                         pruned_solutions.clear();
@@ -756,10 +782,30 @@ namespace SMSpp_di_unipi_it
             return undoChange;
         }
 
+        // TODO capire se ha senso
+        void set_global_information(GlobalInformation *gi) override
+        {
+            ChangeSolver::set_global_information(gi);
+            map_varToSol = nullptr;
+            if (!gi)
+                return;
+            if (!gi->exists("map_varToSol"))
+            {
+                gi->add_to_Universe<PurgedColumn>("map_varToSol");
+            }
+            map_varToSol = gi->get_from_Universe<PurgedColumn>(str_VarToSol);
+            if (map_varToSol && !map_varToSol->contains(str_PurgedColumns))
+            {
+                map_varToSol->write(str_PurgedColumns, PurgedColumn{});
+            }
+        }
+
     private:
         bool PPHdone = false;
         int branchingStrategy = mostFractional;
         int applyStrategy = Master;
         std::unordered_map<Variable *, LinearFunction *> map_varToLF;
+        std::shared_ptr<Collection<PurgedColumn>> map_varToSol = nullptr;
+        SMSpp_insert_in_factory_h; // insert LagrangianDualRelaxationSolver in the factory
     };
 }

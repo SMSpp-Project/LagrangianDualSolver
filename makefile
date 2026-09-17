@@ -40,7 +40,8 @@ LgDSLVOBJ = $(LgDSLVSDR)/obj/LagrangianDualSolver.o \
 LgDSLVINC = -I$(LgDSLVSDR)/include
 
 LgDSLVH   = $(LgDSLVSDR)/include/LagrangianDualSolver.h \
-	$(LgDSLVSDR)/include/PrimalProximalHeur.h
+	$(LgDSLVSDR)/include/PrimalProximalHeur.h \
+	$(LgDSLVSDR)/include/LagrangianDualRelaxationSolver.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
