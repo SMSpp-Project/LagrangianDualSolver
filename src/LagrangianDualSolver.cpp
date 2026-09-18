@@ -373,20 +373,14 @@ void LagrangianDualSolver::set_Block( Block * block )
    if( ! group )
     continue;
 
-   // the elements are visited in storage order, whatever the shape of the
-   // group; a new entry of the dictionaries is opened at each break of
-   // contiguity, since the addresses of two arrays of the same group say
-   // nothing about each other
-   if( ! group->for_each_as< FRowConstraint >(
-        [ & ]( FRowConstraint & con ) {
-         if( scon_to_idx.empty() ||
-             ( & con != std::get< 0 >( scon_to_idx.back() ) +
-                        std::get< 2 >( scon_to_idx.back() ) ) ) {
-          scon_to_idx.emplace_back( & con , NumVar , 0 );
-          idx_to_scon.emplace_back( NumVar , & con );
-          }
-         ++std::get< 2 >( scon_to_idx.back() );
-         ++NumVar;
+   // the group gives its elements one run of contiguous ones at a time,
+   // which is what the dictionaries record: the addresses of two arrays of
+   // the same group say nothing about each other
+   if( ! group->for_each_run_as< FRowConstraint >(
+        [ & ]( FRowConstraint * first , Index n ) {
+         scon_to_idx.emplace_back( first , NumVar , n );
+         idx_to_scon.emplace_back( NumVar , first );
+         NumVar += n;
          } ) )
     throw( std::invalid_argument(
      "LagrangianDualSolver: static constraint not a FRowConstraint" ) );
