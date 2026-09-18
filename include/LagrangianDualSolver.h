@@ -1780,9 +1780,10 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 6 > int_pars_str = {
+  static const std::array< std::string , 7 > int_pars_str = {
    "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_InnerS_WVarSCfg" ,
-   "int_InnerS_WDualSCfg" , "intPushCostToOwner" , "intSparseLagPairs" };
+   "int_InnerS_WDualSCfg" , "intPushCostToOwner" , "intSparseLagPairs" ,
+   "intRecursive" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
