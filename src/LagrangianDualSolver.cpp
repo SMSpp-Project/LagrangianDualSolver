@@ -324,11 +324,11 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  // the Block must not contain any variable- - - - - - - - - - - - - - - - -
     
- if( ! f_Block->get_static_variables().empty() )
+ if( ! f_Block->get_static_variable_groups().empty() )
   throw( std::invalid_argument(
 		    "LagrangianDualSolver: static Variable not allowed" ) );
     
- if( ! f_Block->get_dynamic_variables().empty() )
+ if( ! f_Block->get_dynamic_variable_groups().empty() )
   throw( std::invalid_argument(
 		   "LagrangianDualSolver: dynamic Variable not allowed" ) );
     
@@ -779,8 +779,8 @@ bool LagrangianDualSolver::decompose( Block * b ,
   b->generate_objective();
 
   // the shape: everything of its own but the linking Constraint
-  if( ( ! b->get_static_variables().empty() ) ||
-      ( ! b->get_dynamic_variables().empty() ) )
+  if( ( ! b->get_static_variable_groups().empty() ) ||
+      ( ! b->get_dynamic_variable_groups().empty() ) )
    return( false );
 
   if( auto obj = b->get_objective() )
