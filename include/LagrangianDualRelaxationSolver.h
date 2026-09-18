@@ -363,14 +363,14 @@ namespace SMSpp_di_unipi_it
         /*--------------------------------------------------------------------------*/
         /*------------------------- RESERVED NAMES / KEYS --------------------------*/
         /*--------------------------------------------------------------------------*/
-        /// name of the Collection std::map<ColVariable *, Solution *>
+        /// name of the Collection std::map<ColVariable *, gpool_el> that maps the variables to their corresponding solutions
         static constexpr const char *str_VarToSol = "map_varToSol";
 
         /// key (in map_varToSol) for the Collection of purged columns and their corresponding solutions
         static constexpr const char *str_PurgedColumns = "purgedColumns";
 
-        /// type T of the Collection of purged columns and their corresponding solutions
-        using PurgedColumn = std::map<ColVariable *, std::vector<Solution *>>;
+        /// type T of the Collection of purged columns
+        using PurgedColumn = std::map<ColVariable *, std::vector<LagBFunction::gpool_el>>;
 
         /*-------------------------------------------------------------------------------------*/
         // Adding parameters for branching and applying changes to the master or subproblem
@@ -391,6 +391,11 @@ namespace SMSpp_di_unipi_it
             BranchStrategy,                ///< branching strategy
             intLastLDRSPar                 ///< first allowed new int parameter for derived classes
         };
+
+        [[nodiscard]] idx_type int_par_first_is(void) const override
+        {
+            return (intLastLDRSPar);
+        }
 
         void set_par(idx_type par, int val) override
         {
@@ -687,6 +692,7 @@ namespace SMSpp_di_unipi_it
                 {
                 case Master:
                 {
+                    //possible to apply in the block, let's see
                     throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented yet for eFixX"));
                 }
                 case Subproblem:
@@ -708,16 +714,16 @@ namespace SMSpp_di_unipi_it
                                                                    // TODO insert here lambda function
                                                                    [lbf, pv, mvts]() -> int
                                                                    {
-                                                                       Solution *sol = lbf->release_current_purged_solution();
-                                                                       if (!sol)
+                                                                       auto el = lbf->release_current_purged_solution();
+                                                                       if (!el.sol)
                                                                            throw std::logic_error("eColumnPurged called without a Solution");
                                                                        if (!mvts)
                                                                            throw std::runtime_error("LagrangianDualRelaxationSolver::apply: map_varToSol not set in global information");
                                                                        // TODO controllare che sia giusta e funzioni
                                                                        auto ok = mvts->write_with(str_PurgedColumns,
-                                                                                                  [pv, sol](PurgedColumn &pc)
+                                                                                                  [pv, &el](PurgedColumn &pc)
                                                                                                   {
-                                                                                                      pc[pv].push_back(sol);
+                                                                                                      pc[pv].push_back(std::move(el));
                                                                                                   });
                                                                        // temporarly, check if it works correctly
                                                                        assert(ok);
@@ -755,7 +761,7 @@ namespace SMSpp_di_unipi_it
                         // TODO capire se è sbagliato in quanto non ho rimosso colonne
                         throw std::runtime_error("LagrangianDualRelaxationSolver::apply: map_varToSol not found in global information");
                     }
-                    std::vector<Solution *> pruned_solutions;
+                    std::vector<LagBFunction::gpool_el> pruned_solutions;
                     const bool found = map_varToSol->read_with(str_PurgedColumns,
                                                                [pv, &pruned_solutions](const PurgedColumn &pc)
                                                                {
@@ -768,7 +774,7 @@ namespace SMSpp_di_unipi_it
 
                     if (!found)
                         pruned_solutions.clear();
-                    lbf->restore_purged_solutions(pruned_solutions);
+                    lbf->restore_purged_solutions(std::move(pruned_solutions));
 
                     break;
                 }
