@@ -605,6 +605,13 @@ int PrimalProximalHeur::compute( bool changedvars )
      }
    }
 
+  // save the first *unpenalized* Lagrangian solution into the protected
+  // v_LagrInitSol vector: written once per compute(), at the same
+  // iteration that sets valid_bound above, and never touched again,
+  // unlike previous_sol/sol which are overwritten at every iteration
+  if( ! penalized )
+   v_LagrInitSol.assign( sol.begin() , sol.end() );
+
   // strip the proximal term from the inner objective(s)- - - - - - - - - - -
 
   LOG_VERB( 2 )
@@ -1155,6 +1162,7 @@ void PrimalProximalHeur::guts_of_destructor( void )
  Funct_sbi_quad.clear();
  is_linear.clear();
  previous_sol.clear();
+ v_LagrInitSol.clear();
  pos_id_sbi.clear();
 
  }  // end( PrimalProximalHeur::guts_of_destructor )
