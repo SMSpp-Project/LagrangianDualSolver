@@ -9,10 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `PrimalProximalHeur` gives a feasible solution when its relaxed Constraint
+  tie copies of a decision, x_a - x_b = 0, as the non-anticipativity ones
+  of a two-stage problem do: the copies are fixed to their mean, rounded if
+  integer, and the components, independent then, are solved alone with the
+  Solver of `strRecoveryBSC` by `intRecoveryThreads` threads
 ### Changed
 
 ### Fixed
 
+- `PrimalProximalHeur` looks for the BlockSolverConfig of its recovery after
+  the filename prefix of all Configuration, where it then opens it
 - with `intRecursive` the components are given back to their own fathers
   when the Solver is detached, rather than to the root, which is not the
   father of a component taken below it and made the detach read past the
