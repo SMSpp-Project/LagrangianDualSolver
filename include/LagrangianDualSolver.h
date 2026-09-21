@@ -2258,6 +2258,15 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  std::vector< Block * > v_relaxed;
 
+ /// the components of the decomposition, and the father of each of them
+ /** v_component[ i ] is the Block of the LagBFunction v_LBF[ i ] (the
+  * original one, if it is copied), and v_father[ i ] its father before the
+  * LagBFunction took it, to which it is given back; with Recursive on the
+  * father need not be f_Block. */
+
+ std::vector< Block * > v_component;
+ std::vector< Block * > v_father;
+
  /// the components of the decomposition, and the Block that are decomposed
  /** Fills \p component with the Block that become the components of the
   * decomposition, and v_relaxed with those whose linking Constraint are

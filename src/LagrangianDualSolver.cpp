@@ -189,6 +189,13 @@ void LagrangianDualSolver::set_Block( Block * block )
  if( ! f_nsb )
   throw( std::invalid_argument( "LagrangianDualSolver: no sub-Block" ) );
 
+ // the components and their fathers, the latter before the LagBFunction
+ // change them: with Recursive on a component need not be a child of f_Block
+ v_component = sb;
+ v_father.resize( f_nsb );
+ for( Index i = 0 ; i < f_nsb ; ++i )
+  v_father[ i ] = sb[ i ]->get_f_Block();
+
  // create the default BlockConfig
  if( ! LagBF_BCfg.empty() ) {
   auto c = Configuration::deserialize( LagBF_BCfg );
@@ -734,7 +741,7 @@ void LagrangianDualSolver::set_Block( Block * block )
   // Modification to it is immediately forwarded to the copy
   for( Index i = 0 ; i < f_nsb ; ++i ) {
    v_US[ i ] = new UpdateSolver( v_LBF[ i ]->get_inner_block() );
-   f_Block->get_nested_Block( i )->register_Solver( v_US[ i ] );
+   v_component[ i ]->register_Solver( v_US[ i ] );
    }
   }
  // else nothing need be done, because the forwarding of the Modification
@@ -1090,7 +1097,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
    // call above, and only the map_back_solution step remains, if the
    // sub-Block was R3Block-copied.
    if( iBCopy )
-    f_Block->get_nested_Block( i )->map_back_solution(
+    v_component[ i ]->map_back_solution(
                                   v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
    return;
    }
@@ -1126,7 +1133,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
 
   // if sub-Block is a copy, map_back the solution to the original
   if( iBCopy )
-    f_Block->get_nested_Block( i )->map_back_solution(
+    v_component[ i ]->map_back_solution(
 			    v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
   };
 
@@ -1184,7 +1191,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
     return;
    SBSb->get_dual_solution( cfg );
    if( iBCopy )  // the sub-Block is a copy
-    f_Block->get_nested_Block( b )->map_back_solution( LSBb , nullptr , cfg );
+    v_component[ b ]->map_back_solution( LSBb , nullptr , cfg );
    }
   };
  
@@ -1743,13 +1750,12 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
                        "LagrangianDualSolver: unable to lock the Block" ) );
 
   // remove the sub-Block from the LagBFunction, but do not delete them;
-  // rather,  re-attach them Block to their original father
-  const auto & sb = f_Block->get_nested_Blocks();
+  // rather, re-attach each of them to its original father
   for( Index i = 0 ; i < f_nsb ; ++i ) {
    v_LBF[ i ]->set_inner_block( nullptr , false );
    // reset the f_Block of the LagBFunction
    v_LBF[ i ]->set_f_Block( nullptr );
-   sb[ i ]->set_f_Block( f_Block );
+   v_component[ i ]->set_f_Block( v_father[ i ] );
    }
 
   if( ! owned )
@@ -1763,6 +1769,8 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  LagrDual = nullptr;
 
  v_LBF.clear();
+ v_component.clear();
+ v_father.clear();
 
  }  // end( LagrangianDualSolver::cleanup_LagrDual )
 
