@@ -443,6 +443,22 @@ class PrimalProximalHeur : public LagrangianDualSolver
   return( value );
   }
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the initial Lagrangian solution found by the first Lagrangian solve
+ /** Read-only access to the vector of values of the binary static
+  * Variables as produced by the first *unpenalized* Lagrangian Dual solve
+  * of the last compute() call, i.e., the same iteration that determines
+  * valid_bound (see the comments to v_LagrInitSol). The vector is filled
+  * once per compute() and never modified afterward, so it can be used as
+  * a fixed, protected initial solution, e.g. to warm-start another Solver
+  * or to diagnose the behaviour of compute(). Returns an empty vector if
+  * compute() has not been called yet. */
+
+ [[nodiscard]] const std::vector< double > &
+ get_Lagrangian_initial_solution( void ) const {
+  return( v_LagrInitSol );
+  }
+
 /** @} ---------------------------------------------------------------------*/
 /*------------------- METHODS FOR HANDLING THE PARAMETERS ------------------*/
 /*--------------------------------------------------------------------------*/
@@ -696,6 +712,17 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  std::vector< double > previous_sol;
  ///< value of each binary static Variable at the previous PPH iteration
+
+ std::vector< double > v_LagrInitSol;
+ ///< value of each binary static Variable produced by the first
+ ///< *unpenalized* Lagrangian Dual solve of compute(), i.e., the same
+ ///< iteration that sets valid_bound (penalized == false: either the very
+ ///< first iteration, or, with intUseWarmStartPSol, whichever later
+ ///< iteration is the first not penalized). Unlike previous_sol, which is
+ ///< overwritten at every PPH iteration, this vector is written once per
+ ///< compute() and never touched again: it is the "protected" (read-only,
+ ///< via get_Lagrangian_initial_solution()) initial Lagrangian solution
+ ///< used as the reference starting point of the heuristic.
 
  std::vector< LinearFunction > Funct_sbi;
  ///< copy of the (linear) inner objective Function of each sub-Block,

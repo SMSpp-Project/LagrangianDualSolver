@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- with `intRecursive` the components are given back to their own fathers
+  when the Solver is detached, rather than to the root, which is not the
+  father of a component taken below it and made the detach read past the
+  end of its sub-Block
 - makefile-c and makefile-s bring in MILPSolver, which PrimalProximalHeur
   needs, rather than leaving $(MILPSINC) to the including makefile
 

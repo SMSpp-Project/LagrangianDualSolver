@@ -197,6 +197,13 @@ void LagrangianDualSolver::set_Block( Block * block )
  if( ! f_nsb )
   throw( std::invalid_argument( "LagrangianDualSolver: no sub-Block" ) );
 
+ // the components and their fathers, the latter before the LagBFunction
+ // change them: with Recursive on a component need not be a child of f_Block
+ v_component = sb;
+ v_father.resize( f_nsb );
+ for( Index i = 0 ; i < f_nsb ; ++i )
+  v_father[ i ] = sb[ i ]->get_f_Block();
+
  // create the default BlockConfig
  if( ! LagBF_BCfg.empty() ) {
   auto c = Configuration::deserialize( LagBF_BCfg );
@@ -332,11 +339,11 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  // the Block must not contain any variable- - - - - - - - - - - - - - - - -
     
- if( ! f_Block->get_static_variables().empty() )
+ if( ! f_Block->get_static_variable_groups().empty() )
   throw( std::invalid_argument(
 		    "LagrangianDualSolver: static Variable not allowed" ) );
     
- if( ! f_Block->get_dynamic_variables().empty() )
+ if( ! f_Block->get_dynamic_variable_groups().empty() )
   throw( std::invalid_argument(
 		   "LagrangianDualSolver: dynamic Variable not allowed" ) );
     
@@ -361,75 +368,38 @@ void LagrangianDualSolver::set_Block( Block * block )
  // count and check the static FRowConstraint - - - - - - - - - - - - - - - -
  // meanwhile construct the static dictionaries
 
- // number of groups of static constraints
+ // number of runs of contiguous static constraints, an upper bound being
+ // the number of cells of the groups: a group of many arrays gives one run
+ // per array
  Index scn = 0;
  for( auto rb : v_relaxed )
-  scn += rb->get_static_constraints().size();
+  for( const auto & group : rb->get_static_constraint_groups() )
+   if( group )
+    scn += group->get_num_cells();
 
- // resize the static constraints<-->Lagrangian-variables dictionaries
- scon_to_idx.resize( scn );
- idx_to_scon.resize( scn );
+ // reserve the static constraints<-->Lagrangian-variables dictionaries
+ scon_to_idx.clear();
+ idx_to_scon.clear();
+ scon_to_idx.reserve( scn );
+ idx_to_scon.reserve( scn );
 
- {
-  Index pos = 0;
-  for( auto rb : v_relaxed )
-   for( const auto & el : rb->get_static_constraints() ) {
-
-   // Single
-   if( un_any_thing_0( FRowConstraint , el ,
-       {
-        scon_to_idx[ pos ] = con_int_int( & var , NumVar , 1 );
-        idx_to_scon[ pos++ ] = int_const( NumVar++ , & var );
-       } ) )
+ for( auto rb : v_relaxed )
+  for( const auto & group : rb->get_static_constraint_groups() ) {
+   if( ! group )
     continue;
 
-   // Vector
-   if( un_any_thing_1( FRowConstraint , el ,
-       {
-        scon_to_idx[ pos ] = con_int_int( var.data() , NumVar , var.size() );
-        idx_to_scon[ pos++ ] = int_const( NumVar , var.data() );
-        NumVar += var.size();
-       } ) )
-    continue;
-
-   // Vector of vector
-   if( un_any_thing_1( std::vector< FRowConstraint > , el ,
-       {
-        Index local_size = 0;
-        for( auto & subvec : var )
-          local_size += subvec.size();
-        scon_to_idx[ pos ] = con_int_int( var.front().data() , NumVar , local_size );
-        idx_to_scon[ pos++ ] = int_const( NumVar , var.front().data() );
-        NumVar += local_size;
-       } ) )
-    continue;
-
-   // Multiarray
-   if( un_any_thing_K( FRowConstraint , el ,
-       {
-        scon_to_idx[ pos ] = con_int_int( var.data() , NumVar , var.num_elements() );
-        idx_to_scon[ pos++ ] = int_const( NumVar , var.data() );
-        NumVar += var.num_elements();
-       } ) )
-    continue;
-
-   // Multiarray of vector
-   if( un_any_thing_K( std::vector< FRowConstraint > , el ,
-       {
-        Index local_size = 0;
-        auto it = var.data();
-        for( Index i = var.num_elements(); i-- ; ++it )
-          local_size += it->size();
-        scon_to_idx[ pos ] = con_int_int( var.data()->data() , NumVar , local_size );
-        idx_to_scon[ pos++ ] = int_const( NumVar , var.data()->data() );
-        NumVar += local_size;
-       } ) )
-    continue;
-
-   throw( std::invalid_argument(
-    "LagrangianDualSolver: static constraint not a FRowConstraint" ) );
-  }
- }
+   // the group gives its elements one run of contiguous ones at a time,
+   // which is what the dictionaries record: the addresses of two arrays of
+   // the same group say nothing about each other
+   if( ! group->for_each_run_as< FRowConstraint >(
+        [ & ]( FRowConstraint * first , Index n ) {
+         scon_to_idx.emplace_back( first , NumVar , n );
+         idx_to_scon.emplace_back( NumVar , first );
+         NumVar += n;
+         } ) )
+    throw( std::invalid_argument(
+     "LagrangianDualSolver: static constraint not a FRowConstraint" ) );
+   }
 
  static_cons = NumVar;
 
@@ -440,13 +410,14 @@ void LagrangianDualSolver::set_Block( Block * block )
 
  // count and check the dynamic FRowConstraint- - - - - - - - - - - - - - - -
  for( auto rb : v_relaxed )
-  for( const auto & el : rb->get_dynamic_constraints() ) {
-  auto count = un_any_thing_count_dynamic( FRowConstraint , el );
-  if( count == Inf< std::size_t >() )
-   throw( std::invalid_argument(
-     "LagrangianDualSolver: dynamic constraint not a FRowConstraint" ) );
-  NumVar += count;
- }
+  for( const auto & group : rb->get_dynamic_constraint_groups() ) {
+   if( ! group )
+    continue;
+   if( ! group->elements_are< FRowConstraint >() )
+    throw( std::invalid_argument(
+      "LagrangianDualSolver: dynamic constraint not a FRowConstraint" ) );
+   NumVar += group->get_num_elements();
+   }
 
  // create the static and dynamic Lagrangian variables- - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -506,8 +477,9 @@ void LagrangianDualSolver::set_Block( Block * block )
 
   // finally apply the lambda to all static constraints
   for( auto rb : v_relaxed )
-   for( const auto & el : rb->get_static_constraints() )
-   un_any_const_static( el , scan , un_any_type< FRowConstraint >() );
+   for( const auto & group : rb->get_static_constraint_groups() )
+    if( group )
+     group->for_each_as< FRowConstraint >( scan );
   }
 
  // scan all dynamic FRowConstraints- - - - - - - - - - - - - - - - - - - - -
@@ -557,8 +529,9 @@ void LagrangianDualSolver::set_Block( Block * block )
 
   // finally apply the lambda to all dynamic constraints
   for( auto rb : v_relaxed )
-   for( const auto & el : rb->get_dynamic_constraints() )
-   un_any_const_dynamic( el , scan , un_any_type< FRowConstraint >() );
+   for( const auto & group : rb->get_dynamic_constraint_groups() )
+    if( group )
+     group->for_each_as< FRowConstraint >( scan );
   }
 
  // sort the dynamic constraints-->Lagrangian-variables dictionary
@@ -776,7 +749,7 @@ void LagrangianDualSolver::set_Block( Block * block )
   // Modification to it is immediately forwarded to the copy
   for( Index i = 0 ; i < f_nsb ; ++i ) {
    v_US[ i ] = new UpdateSolver( v_LBF[ i ]->get_inner_block() );
-   f_Block->get_nested_Block( i )->register_Solver( v_US[ i ] );
+   v_component[ i ]->register_Solver( v_US[ i ] );
    }
   }
  // else nothing need be done, because the forwarding of the Modification
@@ -821,8 +794,8 @@ bool LagrangianDualSolver::decompose( Block * b ,
   b->generate_objective();
 
   // the shape: everything of its own but the linking Constraint
-  if( ( ! b->get_static_variables().empty() ) ||
-      ( ! b->get_dynamic_variables().empty() ) )
+  if( ( ! b->get_static_variable_groups().empty() ) ||
+      ( ! b->get_dynamic_variable_groups().empty() ) )
    return( false );
 
   if( auto obj = b->get_objective() )
@@ -1132,7 +1105,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
    // call above, and only the map_back_solution step remains, if the
    // sub-Block was R3Block-copied.
    if( iBCopy )
-    f_Block->get_nested_Block( i )->map_back_solution(
+    v_component[ i ]->map_back_solution(
                                   v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
    return;
    }
@@ -1168,7 +1141,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
 
   // if sub-Block is a copy, map_back the solution to the original
   if( iBCopy )
-    f_Block->get_nested_Block( i )->map_back_solution(
+    v_component[ i ]->map_back_solution(
 			    v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
   };
 
@@ -1226,7 +1199,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
     return;
    SBSb->get_dual_solution( cfg );
    if( iBCopy )  // the sub-Block is a copy
-    f_Block->get_nested_Block( b )->map_back_solution( LSBb , nullptr , cfg );
+    v_component[ b ]->map_back_solution( LSBb , nullptr , cfg );
    }
   };
  
@@ -1313,40 +1286,27 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
  auto Ldit = Ld->begin();
 
- if( NNMult ) {
-  // get the static part
-  for( auto rb : v_relaxed )
-   for( const auto & el : rb->get_static_constraints() )
-   un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-     auto val = ( Lsit++ )->get_value();
-     if( to_be_reversed( con ) )
+ // the Lagrangian variables come in the order in which the constraints were
+ // scanned, which is the storage order of the groups, so the same walk
+ // gives back the duals
+ auto write_duals = [ & ]( const Vec_Group & groups , auto & it ) {
+  for( const auto & group : groups ) {
+   if( ! group )
+    continue;
+   group->for_each_as< FRowConstraint >( [ & ]( FRowConstraint & con ) {
+     auto val = ( it++ )->get_value();
+     if( NNMult && to_be_reversed( con ) )
       val = - val;
      con.set_dual( val );
-     } , un_any_type< FRowConstraint >() );
-  // get the dynamic part
-  for( auto rb : v_relaxed )
-   for( const auto & el : rb->get_dynamic_constraints() )
-   un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-     auto val = ( Ldit++ )->get_value();
-     if( to_be_reversed( con ) )
-      val = - val;
-     con.set_dual( val );
-     } , un_any_type< FRowConstraint >() );
-  }
- else {
-  // get the static part
-  for( auto rb : v_relaxed )
-   for( const auto & el : rb->get_static_constraints() )
-   un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-                               con.set_dual( ( Lsit++ )->get_value() );
-                               } , un_any_type< FRowConstraint >() );
-  // get the dynamic part
-  for( auto rb : v_relaxed )
-   for( const auto & el : rb->get_dynamic_constraints() )
-   un_any_const_static( el , [ & ]( FRowConstraint & con ) -> void {
-                               con.set_dual( ( Ldit++ )->get_value() );
-                               } , un_any_type< FRowConstraint >() );
-  }
+     } );
+   }
+  };
+
+ for( auto rb : v_relaxed )
+  write_duals( rb->get_static_constraint_groups() , Lsit );
+
+ for( auto rb : v_relaxed )
+  write_duals( rb->get_dynamic_constraint_groups() , Ldit );
  }  // end( LagrangianDualSolver::get_dual_solution )
 
 /*--------------------------------------------------------------------------*/
@@ -1798,13 +1758,12 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
                        "LagrangianDualSolver: unable to lock the Block" ) );
 
   // remove the sub-Block from the LagBFunction, but do not delete them;
-  // rather,  re-attach them Block to their original father
-  const auto & sb = f_Block->get_nested_Blocks();
+  // rather, re-attach each of them to its original father
   for( Index i = 0 ; i < f_nsb ; ++i ) {
    v_LBF[ i ]->set_inner_block( nullptr , false );
    // reset the f_Block of the LagBFunction
    v_LBF[ i ]->set_f_Block( nullptr );
-   sb[ i ]->set_f_Block( f_Block );
+   v_component[ i ]->set_f_Block( v_father[ i ] );
    }
 
   if( ! owned )
@@ -1818,6 +1777,8 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  LagrDual = nullptr;
 
  v_LBF.clear();
+ v_component.clear();
+ v_father.clear();
 
  }  // end( LagrangianDualSolver::cleanup_LagrDual )
 

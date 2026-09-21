@@ -189,36 +189,13 @@ void PrimalProximalHeur::initialize( void )
    #endif
    };
 
-  // scan static Variables of sbi (Singles / Vectors / Multiarrays)
-  for( const auto & el : sbi->get_static_variables() ) {
-
-   // single ColVariable
-   if( un_any_thing_0( ColVariable , el , {
-                       if( is_binary( var ) )
-                        register_binvar( &var );
-                       } ) )
-    continue;
-
-   // vector of ColVariable
-   if( un_any_thing_1( ColVariable , el , {
-                       for( Index j = 0 ; j < var.size() ; ++j ) {
-                        const auto pv = var.data() + j;
-                        if( is_binary( *pv ) )
-                         register_binvar( pv );
-                        }
-                       } ) )
-    continue;
-
-   // multi-array of ColVariable
-   if( un_any_thing_K( ColVariable , el , {
-                       for( Index j = 0 ; j < var.num_elements() ; ++j ) {
-                        const auto pv = var.data() + j;
-                        if( is_binary( *pv ) )
-                         register_binvar( pv );
-                        }
-                       } ) )
-    continue;
-   }
+  // scan the static Variables of sbi, whatever the shape of their group
+  for( const auto & group : sbi->get_static_variable_groups() )
+   if( group )
+    group->for_each_as< ColVariable >( [ & ]( ColVariable & var ) {
+      if( is_binary( var ) )
+       register_binvar( & var );
+      } );
 
   pos_id_sbi[ index ] = pos_id;
   ++index;
@@ -462,23 +439,22 @@ int PrimalProximalHeur::compute( bool changedvars )
   // ran, so without this the warm start would not reach the inner Solver
 
   if( haveduals ) {
+   // the Lambda Variables follow the storage order of the groups, which is
+   // the order in which LagrangianDualSolver scanned the Constraint
+   auto read_duals = [ & ]( const Vec_Group & groups , auto & it ) {
+    for( const auto & group : groups )
+     if( group )
+      group->for_each_as< FRowConstraint >( [ & it ]( FRowConstraint & con ) {
+        ( it++ )->set_value( con.get_dual() ); } );
+    };
+
    auto Ls = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );
    auto Lsit = Ls->begin();
-   for( const auto & el : f_Block->get_static_constraints() )
-    un_any_const_static( el ,
-                         [ & Lsit ]( FRowConstraint & con ) {
-                          ( Lsit++ )->set_value( con.get_dual() );
-                          } ,
-                         un_any_type< FRowConstraint >() );
+   read_duals( f_Block->get_static_constraint_groups() , Lsit );
 
    auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
    auto Ldit = Ld->begin();
-   for( const auto & el : f_Block->get_dynamic_constraints() )
-    un_any_const_dynamic( el ,
-                          [ & Ldit ]( FRowConstraint & con ) {
-                           ( Ldit++ )->set_value( con.get_dual() );
-                           } ,
-                          un_any_type< FRowConstraint >() );
+   read_duals( f_Block->get_dynamic_constraint_groups() , Ldit );
    }
   }
 
@@ -628,6 +604,13 @@ int PrimalProximalHeur::compute( bool changedvars )
      ++kvar;
      }
    }
+
+  // save the first *unpenalized* Lagrangian solution into the protected
+  // v_LagrInitSol vector: written once per compute(), at the same
+  // iteration that sets valid_bound above, and never touched again,
+  // unlike previous_sol/sol which are overwritten at every iteration
+  if( ! penalized )
+   v_LagrInitSol.assign( sol.begin() , sol.end() );
 
   // strip the proximal term from the inner objective(s)- - - - - - - - - - -
 
@@ -1179,6 +1162,7 @@ void PrimalProximalHeur::guts_of_destructor( void )
  Funct_sbi_quad.clear();
  is_linear.clear();
  previous_sol.clear();
+ v_LagrInitSol.clear();
  pos_id_sbi.clear();
 
  }  // end( PrimalProximalHeur::guts_of_destructor )
