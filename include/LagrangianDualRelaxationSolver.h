@@ -466,7 +466,7 @@ namespace SMSpp_di_unipi_it
 
         LagrangianDualRelaxationSolver() : PrimalProximalHeur(),
                                            // RelaxationSolver(),
-                                           PPHdone(false),
+                                           //PPHdone(false),
                                            branchingStrategy(mostFractional),
                                            applyStrategy(Master),
                                            map_varToLF()
@@ -479,60 +479,60 @@ namespace SMSpp_di_unipi_it
 
         int compute(bool changedvars = true) override
         {
-            PPHdone = false;
-            int status = this->PrimalProximalHeur::LagrangianDualSolver::compute(changedvars);
+            //PPHdone = false;
+            int status = this->PrimalProximalHeur::compute(changedvars);
 
             return status;
         }
-
-        OFValue get_lb() override { return this->PrimalProximalHeur::LagrangianDualSolver::get_lb(); }
-        OFValue get_ub() override { return this->PrimalProximalHeur::LagrangianDualSolver::get_ub(); }
+        //TODO understand if it's correct, since we obtain the value from the primal solver
+        OFValue get_lb() override { return this->PrimalProximalHeur::get_lb(); }
+        OFValue get_ub() override { return this->PrimalProximalHeur::get_ub(); }
 
         OFValue get_true_lb() override
         {
-            if (!PPHdone)
+/*             if (!PPHdone)
             {
                 this->PrimalProximalHeur::compute();
                 PPHdone = true;
-            }
+            } */
             return this->PrimalProximalHeur::get_lb();
         }
         OFValue get_true_ub() override
         {
-            if (!PPHdone)
+/*             if (!PPHdone)
             {
                 this->PrimalProximalHeur::compute();
                 PPHdone = true;
-            }
+            } */
             return this->PrimalProximalHeur::get_ub();
         }
 
         bool has_true_var_solution() override
         {
-            if (!PPHdone)
+/*             if (!PPHdone)
             {
                 this->PrimalProximalHeur::compute();
                 PPHdone = true;
-            }
+            } */
             return this->PrimalProximalHeur::has_var_solution();
         }
         bool new_true_var_solution() override
         {
-            if (!PPHdone)
+/*             if (!PPHdone)
             {
                 this->PrimalProximalHeur::compute();
                 PPHdone = true;
-            }
+            } */
             return this->PrimalProximalHeur::new_var_solution();
         }
 
         void get_true_var_solution(Configuration *solc = nullptr) override
         {
-            if (!PPHdone)
+/*             if (!PPHdone)
             {
                 this->PrimalProximalHeur::compute();
                 PPHdone = true;
-            }
+            } */
             this->PrimalProximalHeur::get_var_solution(solc);
         }
 
@@ -577,6 +577,21 @@ namespace SMSpp_di_unipi_it
                         }
                     }
                 }
+                for (const auto &sbd : idx_to_var_sbi2) // for each subblock
+                {
+                    for (const auto &dv : sbd) // for each variable in the subblock
+                    {
+                        const auto pv = dv.second;
+                        double value = pv->get_value();
+                        double fractionality = std::abs(value - std::round(value));
+                        if (fractionality > bestCriterionValue)
+                        {
+                            bestCriterionValue = fractionality;
+                            mostFracVar = pv;
+                        }
+                    }
+                }
+
                 break;
             }
             default:
@@ -807,7 +822,7 @@ namespace SMSpp_di_unipi_it
         }
 
     private:
-        bool PPHdone = false;
+        //bool PPHdone = false;
         int branchingStrategy = mostFractional;
         int applyStrategy = Master;
         std::unordered_map<Variable *, LinearFunction *> map_varToLF;
