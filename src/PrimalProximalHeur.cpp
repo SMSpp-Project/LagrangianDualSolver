@@ -138,6 +138,9 @@ void PrimalProximalHeur::initialize( void )
  idx_to_var_sbi2.resize( n_sub );
  Funct_sbi.resize( n_sub );
  Funct_sbi_quad.resize( n_sub );
+ Funct_nested.resize( n_sub );
+ Funct_nested_quad.resize( n_sub );
+ Obj_nested.resize( n_sub );
  is_linear.resize( n_sub );
 
  Index index = 0;
@@ -156,6 +159,37 @@ void PrimalProximalHeur::initialize( void )
    is_linear[ index ] = true;
    Funct_sbi[ index ] = *static_cast< p_LF >( fobj );
    }
+
+  // and of the objectives of the Block nested into it, at any depth, which
+  // are part of its cost as well; a Function cannot be copy-constructed, so
+  // the copies are default-constructed first and then assigned
+  std::vector< p_LF > nested_lf;
+  std::vector< p_DQF > nested_qf;
+  Obj_nested[ index ].clear();
+  std::function< void( Block * ) > find_nested = [ & ]( Block * b ) {
+   for( auto nb : b->get_nested_Blocks() ) {
+    if( auto obj = dynamic_cast< RealObjective * >( nb->get_objective() ) ) {
+     auto fro = dynamic_cast< p_FRO >( obj );
+     auto fn = fro ? fro->get_function() : nullptr;
+     if( auto qf = dynamic_cast< p_DQF >( fn ) )
+      nested_qf.push_back( qf );
+     else if( auto lf = dynamic_cast< p_LF >( fn ) )
+      nested_lf.push_back( lf );
+     else
+      Obj_nested[ index ].push_back( obj );
+     }
+    find_nested( nb );
+    }
+   };
+  find_nested( sbi );
+  Funct_nested[ index ].clear();
+  Funct_nested[ index ].resize( nested_lf.size() );
+  for( Index i = 0 ; i < nested_lf.size() ; ++i )
+   Funct_nested[ index ][ i ] = *nested_lf[ i ];
+  Funct_nested_quad[ index ].clear();
+  Funct_nested_quad[ index ].resize( nested_qf.size() );
+  for( Index i = 0 ; i < nested_qf.size() ; ++i )
+   Funct_nested_quad[ index ][ i ] = *nested_qf[ i ];
 
   pos_id = 0;
 
@@ -993,18 +1027,8 @@ bool PrimalProximalHeur::recover_primal( double & cost )
    // objectives: the live ones only had the true costs restored on the
    // binary Variables, so their value is not the true cost of the solution
    double value = 0;
-   Index idx = 0;
-   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-    if( is_linear[ idx ] ) {
-     Funct_sbi[ idx ].compute( true );
-     value += Funct_sbi[ idx ].get_value();
-     }
-    else {
-     Funct_sbi_quad[ idx ].compute( true );
-     value += Funct_sbi_quad[ idx ].get_value();
-     }
-    ++idx;
-    }
+   for( Index idx = 0 ; idx < is_linear.size() ; ++idx )
+    value += subtree_value( idx );
    cost = value;
    }
 
@@ -1335,6 +1359,9 @@ void PrimalProximalHeur::guts_of_destructor( void )
  idx_to_var_sbi2.clear();
  Funct_sbi.clear();
  Funct_sbi_quad.clear();
+ Funct_nested.clear();
+ Funct_nested_quad.clear();
+ Obj_nested.clear();
  is_linear.clear();
  previous_sol.clear();
  v_LagrInitSol.clear();

@@ -439,17 +439,42 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( f_max ? - Inf< double >() : Inf< double >() );
 
   double value = 0;
-  Index idx = 0;
-  for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-   if( is_linear[ idx ] ) {
-    Funct_sbi[ idx ].compute( true );
-    value += Funct_sbi[ idx ].get_value();
-    }
-   else {
-    Funct_sbi_quad[ idx ].compute( true );
-    value += Funct_sbi_quad[ idx ].get_value();
-    }
-   ++idx;
+  for( Index idx = 0 ; idx < is_linear.size() ; ++idx )
+   value += subtree_value( idx );
+  return( value );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the original objective of the idx-th sub-Block and of its whole subtree
+ /** Returns the value, at the current values of the Variable, of the copy
+  * of the objective of the idx-th sub-Block of f_Block plus that of the
+  * copies of the objectives of all the Block nested into it, at any depth:
+  * the objective of a sub-Block is in general not all of its cost, part of
+  * which may be in its own nested Block. An objective of a nested Block
+  * that is neither a LinearFunction nor a DQuadFunction has no copy, and it
+  * is evaluated as it is. */
+
+ double subtree_value( Index idx ) {
+  double value = 0;
+  if( is_linear[ idx ] ) {
+   Funct_sbi[ idx ].compute( true );
+   value += Funct_sbi[ idx ].get_value();
+   }
+  else {
+   Funct_sbi_quad[ idx ].compute( true );
+   value += Funct_sbi_quad[ idx ].get_value();
+   }
+  for( auto & lf : Funct_nested[ idx ] ) {
+   lf.compute( true );
+   value += lf.get_value();
+   }
+  for( auto & qf : Funct_nested_quad[ idx ] ) {
+   qf.compute( true );
+   value += qf.get_value();
+   }
+  for( auto obj : Obj_nested[ idx ] ) {
+   obj->compute( true );
+   value += obj->value();
    }
   return( value );
   }
@@ -746,10 +771,22 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  std::vector< LinearFunction > Funct_sbi;
  ///< copy of the (linear) inner objective Function of each sub-Block,
- ///< used to evaluate the unpenalized objective via get_funct_value()
+ ///< used to evaluate the unpenalized objective [see subtree_value()]
 
  std::vector< DQuadFunction > Funct_sbi_quad;
  ///< copy of the (quadratic) inner objective Function of each sub-Block
+
+ std::vector< std::vector< LinearFunction > > Funct_nested;
+ ///< copies of the (linear) objective Function of the Block nested, at any
+ ///< depth, into each sub-Block [see subtree_value()]
+
+ std::vector< std::vector< DQuadFunction > > Funct_nested_quad;
+ ///< copies of the (quadratic) objective Function of the Block nested, at
+ ///< any depth, into each sub-Block
+
+ std::vector< std::vector< RealObjective * > > Obj_nested;
+ ///< the objectives of the Block nested into each sub-Block that have no
+ ///< copy, being neither linear nor quadratic, and are evaluated as they are
 
  std::vector< bool > is_linear;
  ///< flags telling whether each sub-Block's inner objective is linear

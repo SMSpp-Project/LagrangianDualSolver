@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `PrimalProximalHeur` counted, as the cost of a point, only the objectives
+  of the sub-Block of its Block and not those of the Block nested into them,
+  e.g., the HydroUnitBlock of a HydroSystemUnitBlock, so that the value it
+  reported was not that of the solution it gave; the objectives of the
+  whole subtree of each sub-Block are now copied and evaluated
+
 - `PrimalProximalHeur` looks for the BlockSolverConfig of its recovery after
   the filename prefix of all Configuration, where it then opens it
 - with `intRecursive` the components are given back to their own fathers
