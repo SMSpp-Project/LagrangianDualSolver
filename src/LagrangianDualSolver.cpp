@@ -24,8 +24,6 @@
 
 #include "BlockSolverConfig.h"
 
-#include "LagrangianDualRelaxationSolver.h"
-
 #include "LagrangianDualSolver.h"
 
 #include "FRealObjective.h"
@@ -140,11 +138,6 @@ static constexpr Index InINF = SMSpp_di_unipi_it::Inf< Index >();
 // register LagrangianDualSolver to the Solver factory
 
 SMSpp_insert_in_factory_cpp_0( LagrangianDualSolver );
-
-// register LagrangianDualRelaxationSolver to the Solver factory
-
-SMSpp_insert_in_factory_cpp_0( LagrangianDualRelaxationSolver );
-SMSpp_insert_in_factory_cpp_0( LagrangianChange );
 
 /*--------------------------------------------------------------------------*/
 /*-------------------- METHODS OF LagrangianDualSolver ---------------------*/
