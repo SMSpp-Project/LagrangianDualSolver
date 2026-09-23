@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- the list of the sub-Block this Solver is told to skip is handed to the
-  inner Solver as it is, every one of them being a sub-Block of the
-  Lagrangian dual or of one of its descendants
+- the list of the sub-Block this Solver is told to skip, which
+  `get_excluded_blocks()` gives, is handed to the inner Solver as it is: any
+  sub-Block excluded here is a sub-Block of the Lagrangian dual or of one of
+  its descendants, so the inner Solver has to skip it as well
 - `intRecursive`, with which the decomposition does not stop at the children
   of the Block: a child having the shape the Block must have, i.e., no
   Variable and no Objective of its own and sub-Block of its own, is
