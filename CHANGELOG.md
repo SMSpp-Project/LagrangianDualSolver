@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the list of the sub-Block this Solver is told to skip is handed to the
+  inner Solver as it is, every one of them being a sub-Block of the
+  Lagrangian dual or of one of its descendants
+- `intRecursive`, with which the decomposition does not stop at the children
+  of the Block: a child having the shape the Block must have, i.e., no
+  Variable and no Objective of its own and sub-Block of its own, is
+  decomposed in turn, its linking Constraint relaxed together with those of
+  the Block and its own children taking its place as components. The descent
+  goes on as deep as the shape holds, so that the components are the leaves
+  of the decomposable part of the tree and the multipliers those of every
+  level
 - `PrimalProximalHeur` gives a feasible solution when its relaxed Constraint
   tie copies of a decision, x_a - x_b = 0, as the non-anticipativity ones
   of a two-stage problem do: the copies are fixed to their mean, rounded if
@@ -16,8 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Solver of `strRecoveryBSC` by `intRecoveryThreads` threads
 ### Changed
 
+- the check that the Block has no Variable of its own asks it for its groups,
+  and the dictionaries of the relaxed Constraint are filled one run at a
+  time, the vectors of `boost::any` they used to read not being there any
+  more
+- whoever links the module keeps it: the classes of a module register
+  themselves in the factory from a static initialiser, and a linker that
+  drops what looks unused takes the registration away with it, so the target
+  now tells whoever links it to keep the symbol that forces the module in,
+  and on ELF, where naming the symbol is not enough, the library as a whole
 ### Fixed
 
+- `int_par_idx2str()` names `intRecursive` too, the array of the names having
+  stopped one short of the parameters and answered with the name of another
+  one
 - `PrimalProximalHeur` counted, as the cost of a point, only the objectives
   of the sub-Block of its Block and not those of the Block nested into them,
   e.g., the HydroUnitBlock of a HydroSystemUnitBlock, so that the value it
