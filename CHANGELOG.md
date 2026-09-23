@@ -149,7 +149,8 @@ Initial release
 
 - Initial release.
 
-[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.3.0...develop
+[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.4.0...develop
+[0.4.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.3.0...0.4.0
 [0.3.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.2.0...0.3.0
 [0.2.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.3...0.2.0
 [0.1.3]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.2...0.1.3
