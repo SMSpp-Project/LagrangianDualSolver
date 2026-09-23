@@ -2089,6 +2089,14 @@ FRowConstraint * constraint_with_index( Index i ) {
  bool to_be_reversed( const FRowConstraint & con );
 
 /*--------------------------------------------------------------------------*/
+/* The Lagrangian multiplier corresponding to the current dual of the
+ * FRowConstraint con, i.e., the dual changed sign if con is reversed [see
+ * to_be_reversed()]: the inverse of what get_dual_solution() does, so that
+ * the duals it writes are read back as the same multipliers. */
+
+ double dual2mult( const FRowConstraint & con );
+
+/*--------------------------------------------------------------------------*/
 
  double constr2val( const FRowConstraint & con , ColVariable & lvar );
 

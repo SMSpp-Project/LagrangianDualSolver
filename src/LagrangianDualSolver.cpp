@@ -443,8 +443,8 @@ void LagrangianDualSolver::set_Block( Block * block )
   auto scan = [ & ]( FRowConstraint & con ) -> void {
    // initialize the value of the Lagrangian variable with the current dual
    // solution of the FRowConstraint, for the odd chance that someone has
-   // already put there a meaningful value
-   Lit->set_value( con.get_dual() );
+   // already put there a meaningful value (say, a warm start)
+   Lit->set_value( dual2mult( con ) );
    
    // check the LHS/RHS
    auto lhs = con.get_lhs();
@@ -491,8 +491,8 @@ void LagrangianDualSolver::set_Block( Block * block )
   auto scan = [ & ]( FRowConstraint & con ) -> void {
    // initialize the value of the Lagrangian variable with the current dual
    // solution of the FRowConstraint, for the odd chance that someone has
-   // already put there a meaningful value
-   Lit->set_value( con.get_dual() );
+   // already put there a meaningful value (say, a warm start)
+   Lit->set_value( dual2mult( con ) );
 
    // first write the dictionaries
    *( dc2iit++ ) = std::make_pair( &con , i++ );
@@ -1529,6 +1529,14 @@ bool LagrangianDualSolver::to_be_reversed( const FRowConstraint & con )
    return( true );
 
  return( false );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double LagrangianDualSolver::dual2mult( const FRowConstraint & con )
+{
+ return( ( NNMult && to_be_reversed( con ) ) ? - con.get_dual()
+                                             : con.get_dual() );
  }
 
 /*--------------------------------------------------------------------------*/

@@ -510,8 +510,8 @@ int PrimalProximalHeur::compute( bool changedvars )
    auto read_duals = [ & ]( const Vec_Group & groups , auto & it ) {
     for( const auto & group : groups )
      if( group )
-      group->for_each_as< FRowConstraint >( [ & it ]( FRowConstraint & con ) {
-        ( it++ )->set_value( con.get_dual() ); } );
+      group->for_each_as< FRowConstraint >( [ & ]( FRowConstraint & con ) {
+        ( it++ )->set_value( dual2mult( con ) ); } );
     };
 
    auto Ls = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );

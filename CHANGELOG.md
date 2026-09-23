@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reported was not that of the solution it gave; the objectives of the
   whole subtree of each sub-Block are now copied and evaluated
 
+- the initial multipliers of a relaxed Constraint that is reversed (a >=
+  one in a minimization, with `int_LDSlv_NNMult`) were read from its dual
+  without changing its sign, while `get_dual_solution()` writes them with
+  the sign changed, so that a warm start, and that of `PrimalProximalHeur`
+  from the duals of the relaxation, gave these multipliers the wrong sign;
+  they are now read back as the multipliers that were written
+
 - `PrimalProximalHeur` looks for the BlockSolverConfig of its recovery after
   the filename prefix of all Configuration, where it then opens it
 - with `intRecursive` the components are given back to their own fathers
