@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and on ELF, where naming the symbol is not enough, the library as a whole
 ### Fixed
 
+- `PrimalProximalHeur` records a recovered point only if it is one: a point
+  is discarded when its value beats the bound the Lagrangian Dual gives, no
+  feasible point being able to do that, and when it violates the rows of the
+  Block by more than a relative 1e-6. The branch that had none of these
+  checks is the one without static binary Variable to put the proximal term
+  on, where the heuristic skips its loop altogether and records whatever the
+  consensus recovery leaves in the Block; on a unit commitment instance
+  translated from PyPSA it reported an upper bound below its own lower bound
+  and handed over a point violating the dualised rows by 5781, which the
+  scaling of the rows of the master problem made visible by moving the
+  trajectory. Note that `Block::is_feasible()` is not the question here,
+  passing as it does over the relaxed Constraint, which are exactly the ones
+  a recovered point can violate
+
 - `int_par_idx2str()` names `intRecursive` too, the array of the names having
   stopped one short of the parameters and answered with the name of another
   one
