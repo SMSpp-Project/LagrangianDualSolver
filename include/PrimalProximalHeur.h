@@ -857,6 +857,17 @@ class PrimalProximalHeur : public LagrangianDualSolver
  bool recover_primal( double & cost );
 
 /*--------------------------------------------------------------------------*/
+ /// whether what recover_primal() has left in f_Block can be recorded
+ /** Checks that the point the recovery has left in f_Block is worth
+  * recording as a solution, which means that it is feasible and that its
+  * value is not better than the bound the Lagrangian Dual gives, no
+  * feasible point being able to beat it. A point that is not is discarded
+  * rather than handed over, since whoever asks the solver for a solution
+  * takes it as feasible and its value as a bound. */
+
+ bool is_recovered_feasible( double value );
+
+/*--------------------------------------------------------------------------*/
 
  void add_penalty_terms( void );
 

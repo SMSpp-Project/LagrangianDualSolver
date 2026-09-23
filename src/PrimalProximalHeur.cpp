@@ -339,8 +339,8 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( LagrangianDualSolver::has_var_solution() )
    LagrangianDualSolver::get_var_solution();
 
-  double cost;
-  if( consensus_recovery( cost ) ) {
+    double cost;
+  if( consensus_recovery( cost ) && is_recovered_feasible( cost ) ) {
    for( auto & s : v_best_sol )
     delete s.first;
    v_best_sol.clear();
@@ -630,7 +630,7 @@ int PrimalProximalHeur::compute( bool changedvars )
        *f_log << "  (event) IS_FEASIBLE_SOL: " << value_FUNCTION
               << std::endl;
       double rec_cost;
-      if( recover_primal( rec_cost ) )
+      if( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) )
        record_feasible( rec_cost );
       }
      else LOG_VERB( 2 )
@@ -743,7 +743,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    LOG_VERB( 2 )
     *f_log << "  IS_FEASIBLE_SOL" << std::endl;
    double rec_cost;
-   if( recover_primal( rec_cost ) )
+   if( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) )
     record_feasible( rec_cost );
    }
   else LOG_VERB( 2 )
@@ -805,7 +805,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  // bound. If the restricted problem is infeasible the point is discarded.
  {
   double rec_cost;
-  if( recover_primal( rec_cost ) )
+  if( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) )
    record_feasible( rec_cost );
   }
 
@@ -952,6 +952,68 @@ CDASolver * PrimalProximalHeur::new_aux_solver( const std::string & cfgname )
  return( slvr );
 
  }  // end( PrimalProximalHeur::new_aux_solver )
+
+/*--------------------------------------------------------------------------*/
+
+// what a recovered point may violate a row of the Block by, in relative
+// terms: past this it is not a point of the original problem, whatever its
+// cost says, and handing it over would call a bound what is not one
+static constexpr double kRecViol = 1e-6;
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::is_recovered_feasible( double value )
+{
+ /* What the recovery leaves in the Block is the optimum of a restriction of
+  * the original problem, hence a feasible point with its true cost: this
+  * checks that it is one before it is recorded, since a point that is not
+  * would be handed over as a solution and its cost taken as a bound. Two
+  * things say that it is not: the value, which for a feasible point cannot
+  * be better than the bound the dual gives, and the Block itself, whose
+  * Constraint include the ones the Lagrangian relaxation dualises. */
+
+  // the bound the Lagrangian Dual gives is the lower one when minimizing and
+ // the upper one when maximizing, the other one being the best feasible
+ // value found so far [see get_lb() and get_ub()]
+ const auto bound = f_max ? get_ub() : get_lb();
+ if( std::isfinite( bound ) ) {
+  const auto slack = std::abs( bound ) * 1e-9;
+  if( f_max ? ( value > bound + slack ) : ( value < bound - slack ) ) {
+   LOG_VERB( 2 )
+    *f_log << "  the recovered point is worth " << value
+           << ", past the bound " << bound << ": discarded" << std::endl;
+   return( false );
+   }
+  }
+
+  /* is_feasible() is not the question here: the Constraint the Lagrangian
+  * Dual dualises are relaxed, and it passes over them, which is exactly
+  * where a recovered point can be wrong. The rows of the Block are
+  * therefore measured one by one, as whoever checks a reconstruction does,
+  * and the largest relative violation decides. */
+
+ double viol = 0;
+ auto see = [ & viol ]( FRowConstraint & cnst ) {
+  if( const auto ret = cnst.compute() ;
+      ( ret <= FRowConstraint::kUnEval ) || ( ret > FRowConstraint::kOK ) ) {
+   viol = Inf< double >();
+   return;
+   }
+  viol = std::max( viol , double( cnst.rel_viol() ) );
+  };
+
+ f_Block->for_each_constraint_group( [ & see ]( const BaseGroup & group ) {
+   group.for_each_as< FRowConstraint >( see ); } );
+
+    if( viol > kRecViol ) {
+  LOG_VERB( 2 )
+   *f_log << "  the recovered point violates the rows of the Block by "
+          << viol << ": discarded" << std::endl;
+  return( false );
+  }
+
+ return( true );
+ }
 
 /*--------------------------------------------------------------------------*/
 
