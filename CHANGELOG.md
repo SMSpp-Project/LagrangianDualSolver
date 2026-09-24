@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_excluded_blocks()` gives, is handed to the inner Solver as it is: any
   sub-Block excluded here is a sub-Block of the Lagrangian dual or of one of
   its descendants, so the inner Solver has to skip it as well
+
 - `intRecursive`, with which the decomposition does not stop at the children
   of the Block: a child having the shape the Block must have, i.e., no
   Variable and no Objective of its own and sub-Block of its own, is
@@ -21,22 +22,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   goes on as deep as the shape holds, so that the components are the leaves
   of the decomposable part of the tree and the multipliers those of every
   level
+
 - `PrimalProximalHeur` gives a feasible solution when its relaxed Constraint
   tie copies of a decision, x_a - x_b = 0, as the non-anticipativity ones
   of a two-stage problem do: the copies are fixed to their mean, rounded if
   integer, and the components, independent then, are solved alone with the
   Solver of `strRecoveryBSC` by `intRecoveryThreads` threads
+
 ### Changed
 
 - the check that the Block has no Variable of its own asks it for its groups,
   and the dictionaries of the relaxed Constraint are filled one run at a
   time, the vectors of `boost::any` they used to read not being there any
   more
+
 - whoever links the module keeps it: the classes of a module register
   themselves in the factory from a static initialiser, and a linker that
   drops what looks unused takes the registration away with it, so the target
   now tells whoever links it to keep the symbol that forces the module in,
   and on ELF, where naming the symbol is not enough, the library as a whole
+
 ### Fixed
 
 - `PrimalProximalHeur` records a recovered point only if it is one: a point
@@ -56,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `int_par_idx2str()` names `intRecursive` too, the array of the names having
   stopped one short of the parameters and answered with the name of another
   one
+
 - `PrimalProximalHeur` counted, as the cost of a point, only the objectives
   of the sub-Block of its Block and not those of the Block nested into them,
   e.g., the HydroUnitBlock of a HydroSystemUnitBlock, so that the value it
@@ -71,10 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `PrimalProximalHeur` looks for the BlockSolverConfig of its recovery after
   the filename prefix of all Configuration, where it then opens it
+
 - with `intRecursive` the components are given back to their own fathers
   when the Solver is detached, rather than to the root, which is not the
   father of a component taken below it and made the detach read past the
   end of its sub-Block
+
 - makefile-c and makefile-s bring in MILPSolver, which PrimalProximalHeur
   needs, rather than leaving $(MILPSINC) to the including makefile
 
@@ -127,7 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2025-12-12
 
-### Added 
+### Added
 
 - [huge] PrimalProximalHeur Lagrangian-based math-heuristic
 
@@ -135,13 +143,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Configuration for get\_[var/dual]\_solution() of the InnerSolver can now be set
 
-### Changed 
+### Changed
 
 - [big] managing of intPushCostToOwner parameter of LagBFunction
 
 - adapted to new un\_any\_count thing
 
-### Fixed 
+### Fixed
 
 - added missing parameter initialization
 
@@ -151,17 +159,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - right solver called in get\_dual\_solution()
 
-- avoided static vectors prone to static initialization fiasco 
+- avoided static vectors prone to static initialization fiasco
 
 - a bunch of stupid bugs
 
 ## [0.1.3] - 2024-02-28
 
-### Changed 
+### Changed
 
 - adapted to new CMake / makefile organisation
 
-### Fixed 
+### Fixed
 
 - exploiting the new "father of LagBFunction" mechanism to make Modification
   from sub-Bloch to reach their original father (instead of UpdateSolver)
@@ -170,7 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.2] - 2022-06-28
 
-### Fixed 
+### Fixed
 
 - locking the Solver inside compute()
 
@@ -180,11 +188,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Minor point release to avoid the master branch to become too stale:
 
+### Changed
+
 - significant improvements in handling Configurations
 
-- fixed a number of issues (get_lb/ub exchanged, computation of solutions)
-
 - Lagrangian variables now initialized with dual variables from the FRowConstraint
+
+### Fixed
+
+- fixed a number of issues (get_lb/ub exchanged, computation of solutions)
 
 ## [0.1.0] - 2021-05-02
 
