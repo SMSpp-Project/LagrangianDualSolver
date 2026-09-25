@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - WarmStartCfg.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - -  WarmStartCfg.txt - - - - - - - - - - - - - -
 #
 # BlockSolverConfig used by PrimalProximalHeur to instantiate the warm-start
 # Solver via the factory. The Solver solves the LP relaxation of f_Block to
@@ -73,10 +73,10 @@ NumericFocus    3 # without it the QCP barrier with QCPDual stops SUBOPTIMAL
 # pointer to the "extra" Configuration
 * # [none]
 
-# end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of ComputeConfig  - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of BlockSolverConfig  - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - END WarmStartCfg.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - -  END WarmStartCfg.txt - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

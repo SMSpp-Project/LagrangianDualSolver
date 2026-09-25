@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - RecoveryCfg.txt- - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - RecoveryCfg.txt - - - - - - - - - - - - - - -
 #
 # BlockSolverConfig used by PrimalProximalHeur to instantiate the primal
 # recovery Solver via the factory. With the binary variables driven by the
@@ -7,8 +7,6 @@
 # restricted problem on f_Block, enforcing the coupling constraints that a
 # Lagrangian point in general violates: its optimum is a genuinely feasible
 # completion of the integer point, hence a valid bound.
-#
-#   Donato Meoli
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -73,10 +71,10 @@ dblMaxTime 60     # max running time (seconds): the restricted problem is
 # pointer to the "extra" Configuration
 * # [none]
 
-# end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of ComputeConfig  - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of BlockSolverConfig  - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - END RecoveryCfg.txt- - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END RecoveryCfg.txt - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
