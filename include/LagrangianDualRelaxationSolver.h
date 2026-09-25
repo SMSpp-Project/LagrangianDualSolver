@@ -6,64 +6,55 @@
 
 namespace SMSpp_di_unipi_it
 {
-    class LagrangianChange : public Change
+
+    /// LagrangianChange is a change that accept as a block only a LagrangianDualBlock
+
+    class LagrangianChange : public AbstractChange
     {
     public:
         enum LagrangianChangeType
         {
-            eEmpty = 0,      ///< empty change, used for initialization
-            eChgObj,         ///< change objective coefficient of a variable
-            eChgSense,       ///< change sense of the objective
-            eChgIntegrality, ///< change integrality of a variable
-            eFixX,           ///< fix a variable to a value
-            eUnfixX,         ///< unfix a variable
-            eChgLB,          ///< change lower bound of a variable
-            eChgUB           ///< change upper bound of a variable
+            eDeleteUB = eLastACTtype, ///< rimuove il vincolo di UB da f_Block
+            eDeleteLB,                ///< rimuove il vincolo di LB da f_Block
+            eLastLagrangianChangeType ///< primo valore libero per le classi derivate
         };
-        /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/
 
-        // constructor
-        LagrangianChange() : f_type(eEmpty), v_data(), v_paths() {}
+        LagrangianChange() : AbstractChange() {}
 
-        LagrangianChange(int type, std::vector<double> value, std::vector<AbstractPath> paths)
-            : f_type(type), v_data(std::move(value)), v_paths(std::move(paths)) {}
+        LagrangianChange(int type, std::vector<double> value,
+                         std::vector<AbstractPath> paths)
+            : AbstractChange(static_cast<AbstractChange::AbstractChangeType>(type), std::move(value), std::move(paths)) {}
 
-        // decostructor
         ~LagrangianChange() = default;
-
-        /*-------------------- PUBLIC METHODS OF THE CLASS -------------------------*/
-        /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-
-        void deserialize(const netCDF::NcGroup &group) override;
-
-        /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-
-        void serialize(netCDF::NcGroup &group) const override;
-
-        /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
         Change *apply(Block *block, bool doUndo = false,
                       ModParam issueMod = eNoBlck,
-                      ModParam issueAMod = eNoBlck) override;
-
-        // getter
-        [[nodiscard]] int get_type() const { return f_type; }
-        [[nodiscard]] const std::vector<double> &get_data() const { return v_data; }
-        [[nodiscard]] const std::vector<AbstractPath> &get_paths() const { return v_paths; }
-
-    protected:
-        int f_type;                        ///< type of the change
-        std::vector<double> v_data;        ///< value of the change
-        std::vector<AbstractPath> v_paths; ///< vector of abstract path (variables and constraints) involved in the change
+                      ModParam issueAMod = eNoBlck) override
+        {
+            if (!dynamic_cast<AbstractBlock *>(block))
+                throw std::invalid_argument(
+                    "LagrangianChange::apply: block is not an AbstractBlock");
+            switch (f_type)
+            {
+            case eDeleteUB:
+            case eDeleteLB:
+                throw std::invalid_argument(
+                    "LagrangianChange::apply: eDeleteUB/eDeleteLB richiedono lo stato "
+                    "interno del solver e vanno applicati tramite "
+                    "LagrangianDualRelaxationSolver::apply(), non genericamente");
+            default:
+                return AbstractChange::apply(block, doUndo, issueMod, issueAMod);
+            }
+        }
 
     private:
         SMSpp_insert_in_factory_h;
-    }; // end of class LagrangianChange
-
+    };
     /*---------------------------------------------------------------------------------*/
     /*----------------------LagrangianDualRelaxationSolver-----------------------------*/
     /*---------------------------------------------------------------------------------*/
-    class LagrangianDualRelaxationSolver : public RelaxationSolver, public PrimalProximalHeur
+    class LagrangianDualRelaxationSolver : public RelaxationSolver,
+                                           public PrimalProximalHeur
     {
     public:
         // "import" basic types from Block
@@ -77,6 +68,9 @@ namespace SMSpp_di_unipi_it
 
         /// key (in map_varToSol) for the Collection of purged columns and their corresponding solutions
         static constexpr const char *str_PurgedColumns = "purgedColumns";
+
+        /// name of the group of dynamic constraint
+        static constexpr const char *str_BranchBounds = "BranchBounds";
 
         /// type T of the Collection of purged columns
         using PurgedColumn = std::map<ColVariable *, std::vector<LagBFunction::gpool_el>>;
@@ -134,6 +128,14 @@ namespace SMSpp_di_unipi_it
         bool has_true_var_solution() override;
         bool new_true_var_solution() override;
 
+        void set_Block(Block *block) override
+        {
+            PrimalProximalHeur::set_Block(block);
+            std::list<FRowConstraint> emptyList = {};
+            if (LagrDual && !LagrDual->get_dynamic_constraint<FRowConstraint>(str_BranchBounds))
+                LagrDual->add_dynamic_constraint(emptyList, std::string(str_BranchBounds));
+        }
+
         void get_true_var_solution(Configuration *solc = nullptr) override;
 
         Solution *get_Solution(Configuration *solc = nullptr) override;
@@ -151,8 +153,14 @@ namespace SMSpp_di_unipi_it
         // bool PPHdone = false;
         int branchingStrategy = mostFractional;
         int applyStrategy = Master;
-        std::unordered_map<Variable *, LinearFunction *> map_varToLF;
+        // map the (p)variable to a pair, the first one containig the UB (+1) linear function and the second one containing the LB (-1) linear function
+        std::unordered_map<Variable *, std::pair<LinearFunction *, LinearFunction *>> map_varToLF;
         std::shared_ptr<Collection<PurgedColumn>> map_varToSol = nullptr;
+        std::map<ColVariable *, AbstractPath> map_varToPath;
+
+        // Remove bound from the LagrangianDualBlock, can return doUndo
+        Change *removeBound(ColVariable *pv, bool isLB, bool doUndo,
+                            const std::vector<AbstractPath> &paths);
 
         SMSpp_insert_in_factory_h; // insert LagrangianDualRelaxationSolver in the factory
     };

@@ -6,321 +6,6 @@ using Index = Block::Index;
 using OFValue = Solver::OFValue;
 
 /*---------------------------------------------------------------------------------*/
-/*-------------------------------- LagrangianChange --------------------------------*/
-/*---------------------------------------------------------------------------------*/
-
-void LagrangianChange::deserialize(const netCDF::NcGroup &group)
-{
-    auto ftype = group.getAtt("LagrangianChange_type");
-    if (ftype.isNull())
-        throw std::invalid_argument("LagrangianChange_type attribute not found in netCDF group");
-    ftype.getValues(&f_type);
-    // read data
-    netCDF::NcDim ni = group.getDim("dim");
-    netCDF::NcVar data = group.getVar("Data");
-    if (data.isNull())
-        v_data.clear();
-    else
-    {
-        v_data.resize(ni.getSize());
-        data.getVar(v_data.data());
-    }
-    // read AbstractPath
-    auto pg = group.getGroup("VariablesPath");
-    if (pg.isNull())
-        v_paths.clear();
-    else
-        v_paths = AbstractPath::vector_deserialize(pg);
-}
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-
-void LagrangianChange::serialize(netCDF::NcGroup &group) const
-{
-
-    // always call the method of the base class first
-    Change::serialize(group);
-
-    group.putAtt("LagrangianChange_type", netCDF::NcInt(), f_type);
-
-    netCDF::NcDim ni = group.addDim("dim", v_data.size());
-    (group.addVar("Data",
-                  netCDF::NcDouble(), ni))
-        .putVar(v_data.data());
-    if (!v_paths.empty())
-    {
-        auto pg = group.addGroup("VariablesPath");
-        AbstractPath::serialize(v_paths, pg);
-    }
-}
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-
-Change *LagrangianChange::apply(Block *block, bool doUndo,
-                                ModParam issueMod,
-                                ModParam issueAMod)
-{
-    Change *returnChange = nullptr;
-    switch (f_type)
-    {
-    case eEmpty:
-        throw std::invalid_argument("LagrangianChange: empty change cannot be applied");
-        // Change Obj require in data[0] index, data[1] new coefficient, data[2] new quadratic coefficient (if quadratic)
-        // in this case constains AbstractPath contains only 2 element, the variable and the objective function
-    case eChgObj:
-    {
-        ColVariable *pv = nullptr;
-        Function *fobj = nullptr;
-        if (v_paths.size() != 2)
-            throw std::invalid_argument(
-                "LagrangianChange: eChgObj requires 2 AbstractPath elements (variable and objective function)");
-        for (const auto &path : v_paths)
-        {
-            auto node_type = path.get_last_node(block).type;
-
-            if (node_type == 'V' || node_type == 'v')
-                pv = path.get_element<ColVariable>(block);
-            else if (node_type == 'O')
-            {
-                auto *obj = dynamic_cast<FRealObjective *>(
-                    path.get_element<Objective>(block));
-                if (obj)
-                    fobj = obj->get_function();
-            }
-        }
-        if (!pv || !fobj)
-            throw std::invalid_argument(
-                "LagrangianChange: eChgObj requires a variable and an objective function in AbstractPath");
-
-        // --- Quadratic Case -----------------------------------------------
-        if (auto qf = dynamic_cast<DQuadFunction *>(fobj))
-        {
-            if (v_data.size() != 2)
-                throw std::invalid_argument(
-                    "LagrangianChange: eChgObj on quadratic objective needs 2 values");
-
-            auto pos = qf->is_active(pv);
-            const auto new_c1 = v_data[0];
-            const auto new_c2 = v_data[1];
-
-            double old_c1 = 0.0, old_c2 = 0.0;
-            if (pos < qf->get_num_active_var())
-            {
-                old_c1 = qf->get_linear_coefficient(pos);
-                old_c2 = qf->get_quadratic_coefficient(pos);
-                qf->modify_term(pos, new_c1, new_c2, issueMod);
-            }
-            else
-                qf->add_variable(pv, new_c1, new_c2, issueMod);
-
-            if (doUndo)
-                returnChange = (new LagrangianChange(eChgObj,
-                                                     {old_c1, old_c2}, std::vector<AbstractPath>{v_paths}));
-        }
-
-        // --- Linear Case -----------------------------------------------
-        else if (auto lf = dynamic_cast<LinearFunction *>(fobj))
-        {
-            if (v_data.size() != 1)
-                throw std::invalid_argument(
-                    "LagrangianChange: eChgObj on linear objective needs 1 value");
-
-            const auto new_c1 = v_data[0];
-            auto pos = lf->is_active(pv);
-
-            const double old_c1 = (pos < lf->get_num_active_var())
-                                      ? lf->get_coefficient(pos)
-                                      : 0.0;
-
-            if (pos < lf->get_num_active_var())
-                lf->modify_coefficient(pos, new_c1, issueMod);
-            else
-                lf->add_variable(pv, new_c1, issueMod);
-
-            if (doUndo)
-                returnChange = (new LagrangianChange(eChgObj, {old_c1}, std::vector<AbstractPath>{v_paths}));
-        }
-        else
-            throw std::invalid_argument(
-                "LagrangianChange: objective Function type not supported");
-        break;
-    }
-
-    // v_paths contains only the objective function, and v_data[0] contains the new sense
-    case eChgSense:
-    {
-        // apply change to the block
-        auto obj = v_paths[0].get_element<Objective>(block);
-        if (doUndo)
-            returnChange = new LagrangianChange(eChgSense, std::vector<double>{static_cast<double>(block->get_objective()->get_sense())}, std::vector<AbstractPath>{v_paths});
-        obj->set_sense(static_cast<int>(v_data[0]));
-        break;
-    }
-    // v_paths constains the variable, v_data[0] contains the the new integrality
-    case eChgIntegrality:
-    {
-        const bool new_integer = (v_data[0] != 0.0);
-        auto pv = v_paths[0].get_element<ColVariable>(block);
-        const bool old_integer = pv->is_integer();
-
-        pv->is_integer(new_integer, issueMod);
-        if (doUndo)
-            returnChange = new LagrangianChange(eChgIntegrality,
-                                                {old_integer ? 1.0 : 0.0}, std::vector<AbstractPath>{v_paths});
-        break;
-    }
-    // v_paths constains the variable, v_data[0] contains the new fixed value
-    case eFixX:
-    {
-        const auto fix_value = v_data[0];
-
-        auto pv = v_paths[0].get_element<ColVariable>(block);
-        const bool was_fixed = pv->is_fixed();
-
-        if (doUndo)
-            returnChange = was_fixed ? new LagrangianChange(eFixX, {pv->get_value()}, std::vector<AbstractPath>{v_paths}) : new LagrangianChange(eUnfixX, {}, std::vector<AbstractPath>{v_paths});
-        pv->set_value(fix_value);
-        pv->is_fixed(true, issueMod);
-        break;
-    }
-    // v_paths constains the variable
-    case eUnfixX:
-    {
-        auto pv = v_paths[0].get_element<ColVariable>(block);
-
-        pv->is_fixed(false, issueMod);
-
-        if (doUndo)
-            returnChange = new LagrangianChange(eFixX, {pv->get_value()}, std::vector<AbstractPath>{v_paths});
-        break;
-    }
-    // v_paths constains the variable, v_data[0] contains the new lower bound
-    case eChgLB:
-    {
-        auto pv = v_paths[0].get_element<ColVariable>(block);
-        const auto new_lb = v_data[0];
-        bool found = false;
-        for (Index i = 0; i < pv->get_num_active(); ++i)
-        {
-            auto *dep = pv->get_active(i);
-            if (auto *c = dynamic_cast<BoxConstraint *>(dep))
-            {
-                if (doUndo)
-                    returnChange = new LagrangianChange(eChgLB, {c->get_lhs()}, std::vector<AbstractPath>{v_paths});
-                c->set_lhs(new_lb, issueMod);
-                found = true;
-                break;
-            }
-            else if (auto *c = dynamic_cast<LBConstraint *>(dep))
-            {
-                if (doUndo)
-                    returnChange = new LagrangianChange(eChgLB, {c->get_lhs()}, std::vector<AbstractPath>{v_paths});
-                c->set_lhs(new_lb, issueMod);
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-        {
-            throw std::invalid_argument("LagrangianChange: eChgLB requires a variable with an existing BoxConstraint or LBConstraint");
-            /*                     if (doUndo)
-                                    returnChange = new LagrangianChange(eChgLB, {pv->get_lb()}, std::vector<AbstractPath>{v_paths});
-                                // auto con = new LBConstraint(pv->get_Block(), pv, new_lb);
-                                Block *blk = pv->get_Block();
-                                Index idx = Inf<Index>();
-
-                                auto &d_constraints = blk->get_dynamic_constraints(); // c_Vec_any &
-
-                                for (Index i = 0; i < d_constraints.size(); ++i)
-                                {
-                                    if (d_constraints[i].type() == typeid(std::list<LBConstraint>))
-                                    {
-                                        idx = i;
-                                        break;
-                                    }
-                                }
-
-                                if (idx == Inf<Index>())
-                                {
-                                    // nessun gruppo di LBConstraint dinamici: lo registriamo ora
-                                        throw std::invalid_argument("No dynamic LBConstraint group found in block. Please register a dynamic LBConstraint group before applying LagrangianChange eChgLB.");
-                                }
-
-                                auto *d_list = boost::any_cast<std::list<LBConstraint>>(&d_constraints[idx]);
-                                // d_list è garantito non-nullptr qui, perché idx è stato appena
-                                // verificato/creato per contenere esattamente std::list<LBConstraint>
-
-                                std::list<LBConstraint> newlist;
-                                newlist.emplace_back(blk, pv, new_lb);
-
-                                blk->add_dynamic_constraints(*d_list, newlist, issueMod);
-             */
-        }
-        break;
-    }
-    case eChgUB:
-    {
-        auto pv = v_paths[0].get_element<ColVariable>(block);
-        const auto new_ub = v_data[0];
-        bool found = false;
-        for (Index i = 0; i < pv->get_num_active(); ++i)
-        {
-            auto *dep = pv->get_active(i);
-            if (auto *c = dynamic_cast<BoxConstraint *>(dep))
-            {
-                if (doUndo)
-                    returnChange = new LagrangianChange(eChgUB, {c->get_rhs()}, std::vector<AbstractPath>{v_paths});
-                c->set_rhs(new_ub, issueMod);
-                found = true;
-                break;
-            }
-            else if (auto *c = dynamic_cast<UBConstraint *>(dep))
-            {
-                if (doUndo)
-                    returnChange = new LagrangianChange(eChgUB, {c->get_rhs()}, std::vector<AbstractPath>{v_paths});
-                c->set_rhs(new_ub, issueMod);
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-        {
-            throw std::invalid_argument("LagrangianChange: eChgUB requires a variable with an existing BoxConstraint or UBConstraint");
-            /*                     if (doUndo)
-                                    returnChange = new LagrangianChange(eChgUB, {pv->get_ub()}, std::vector<AbstractPath>{v_paths});
-                                // auto con = new UBConstraint(pv->get_Block(), pv, new_ub);
-                                auto blk = pv->get_Block();
-                                Index idx = Inf<Index>();
-                                auto &d_constraints = blk->get_dynamic_constraints();
-                                for (Index i = 0; i < d_constraints.size(); ++i)
-                                {
-                                    if (d_constraints[i].type() == typeid(std::list<UBConstraint>))
-                                    {
-                                        idx = i;
-                                        break;
-                                    }
-                                }
-                                if (idx == Inf<Index>())
-                                {
-                                    throw std::invalid_argument("No dynamic UBConstraint group found in block. Please register a dynamic UBConstraint group before applying LagrangianChange eChgUB.");
-                                }
-                                auto *d_list = boost::any_cast<std::list<UBConstraint>>(&d_constraints[idx]);
-                                std::list<UBConstraint> newlist;
-                                newlist.emplace_back(blk, pv, new_ub);
-                                blk->add_dynamic_constraints(*d_list, std::move(newlist), issueMod);
-             */
-        }
-        break;
-    }
-    default:
-    {
-        throw std::invalid_argument("LagrangianChange: unknown change type");
-    }
-    }
-    return returnChange;
-}
-
-/*---------------------------------------------------------------------------------*/
 /*----------------------LagrangianDualRelaxationSolver-----------------------------*/
 /*---------------------------------------------------------------------------------*/
 
@@ -400,7 +85,8 @@ LagrangianDualRelaxationSolver::LagrangianDualRelaxationSolver()
       // PPHdone(false),
       branchingStrategy(mostFractional),
       applyStrategy(Master),
-      map_varToLF()
+      map_varToLF(),
+      map_varToPath()
 {
 }
 
@@ -540,14 +226,14 @@ std::vector<Change *> LagrangianDualRelaxationSolver::branch()
     switch (applyStrategy)
     {
     case Master:
-        changes.push_back(new LagrangianChange(LagrangianChange::eChgUB, {std::floor(branchValue)}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
-        changes.push_back(new LagrangianChange(LagrangianChange::eChgLB, {std::ceil(branchValue)}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
+        changes.push_back(new LagrangianChange(AbstractChange::eChgUB, {std::floor(branchValue)}, std::vector<AbstractPath>{AbstractPath(mostFracVar, LagrDual)}));
+        changes.push_back(new LagrangianChange(AbstractChange::eChgLB, {std::ceil(branchValue)}, std::vector<AbstractPath>{AbstractPath(mostFracVar, LagrDual)}));
         return changes;
     case Subproblem:
-        changes.push_back(new LagrangianChange(LagrangianChange::eFixX, {std::floor(branchValue)}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
-        changes.push_back(new LagrangianChange(LagrangianChange::eFixX, {std::ceil(branchValue)}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
-        // changes.push_back(new LagrangianChange(LagrangianChange::eFixX, {1}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
-        // changes.push_back(new LagrangianChange(LagrangianChange::eFixX, {0}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
+        changes.push_back(new LagrangianChange(AbstractChange::eFixX, {std::floor(branchValue)}, std::vector<AbstractPath>{AbstractPath(mostFracVar, LagrDual)}));
+        changes.push_back(new LagrangianChange(AbstractChange::eFixX, {std::ceil(branchValue)}, std::vector<AbstractPath>{AbstractPath(mostFracVar, LagrDual)}));
+        // changes.push_back(new LagrangianChange(AbstractChange::eFixX, {1}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
+        // changes.push_back(new LagrangianChange(AbstractChange::eFixX, {0}, std::vector<AbstractPath>{AbstractPath(mostFracVar, this->f_Block)}));
 
         return changes;
     default:
@@ -563,11 +249,11 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
     auto c = dynamic_cast<LagrangianChange *>(change);
     if (!c)
         throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: change is not a LagrangianChange"));
-    auto pv = c->get_paths()[0].get_element<ColVariable>(this->f_Block);
+    auto pv = c->get_paths()[0].get_element<ColVariable>(LagrDual);
     if (!pv)
         throw(std::invalid_argument("LagrangianDualRelaxationSolver::apply: variable not found in block"));
     auto lbf = v_LBF[Block2Index(pv->get_Block())];
-    if (c->get_type() == LagrangianChange::eChgLB)
+    if (c->get_type() == AbstractChange::eChgLB)
     {
         auto value = c->get_data()[0];
 
@@ -577,26 +263,41 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
         {
             // Index found_pos = Inf<Index>();
             double oldLB = pv->get_lb();
-            if (map_varToLF.contains(pv) && map_varToLF[pv]->get_coefficient(0) == -1.0)
+            if (map_varToLF.contains(pv) && map_varToLF[pv].second != nullptr /*&& map_varToLF[pv].second->get_coefficient(0) == -1.0*/)
             {
                 // trovata: aggiorna solo il termine costante (cioè "value")
-                auto *gi = map_varToLF[pv];
+                auto *gi = map_varToLF[pv].second;
                 oldLB = gi->get_constant_term();
                 gi->set_constant_term(value);
+                if (doUndo)
+                {
+                    undoChange = new LagrangianChange(AbstractChange::eChgLB, {oldLB}, std::vector<AbstractPath>{c->get_paths()});
+                }
             }
             else
             {
                 // g(x) = value -x = -1*x + value
                 auto *g = new LinearFunction(LinearFunction::v_coeff_pair{{pv, -1.0}}, //-1 coefficent
                                              value);                                   // constant term
-                ColVariable *y = new ColVariable();
-                y->is_positive(true);
-                lbf->add_dual_pairs(LagBFunction::v_dual_pair{{y, g}});
-                map_varToLF[pv] = g;
-            }
-            if (doUndo)
-            {
-                undoChange = new LagrangianChange(LagrangianChange::eChgLB, {oldLB}, std::vector<AbstractPath>{c->get_paths()});
+
+                std::list<FRowConstraint> cons_list;
+                cons_list.emplace_back(LagrDual, -Inf<RowConstraint::RHSValue>(), 0, g);
+
+                auto *group = LagrDual->get_dynamic_constraint<FRowConstraint>(str_BranchBounds);
+                if (!group)
+                    throw std::runtime_error("group BranchBounds not found in block");
+
+                LagrDual->add_dynamic_constraints(*group, cons_list); // plurale: aggiunge al gruppo esistente
+
+                if (group->empty())
+                    throw std::runtime_error("Invalid BranchBounds group");
+
+                map_varToLF[pv].second = static_cast<LinearFunction *>(group->back().get_function());
+
+                if (doUndo)
+                {
+                    undoChange = new LagrangianChange(LagrangianChange::eDeleteLB, {}, std::vector<AbstractPath>{c->get_paths()});
+                }
             }
             break;
         }
@@ -608,7 +309,7 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
             throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
         }
     }
-    else if (c->get_type() == LagrangianChange::eChgUB)
+    else if (c->get_type() == AbstractChange::eChgUB)
     {
         auto value = c->get_data()[0];
 
@@ -617,27 +318,41 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
         case Master:
         {
             double oldUB = pv->get_ub();
-            if (map_varToLF.contains(pv) && map_varToLF[pv]->get_coefficient(0) == 1.0)
+            if (map_varToLF.contains(pv) && map_varToLF[pv].first != nullptr /* && map_varToLF[pv].first->get_coefficient(0) == 1.0 */)
             {
                 // trovata: aggiorna solo il termine costante (cioè "value")
-                auto *gi = map_varToLF[pv];
+                auto *gi = map_varToLF[pv].first;
                 oldUB = gi->get_constant_term() * -1.0; // store the old upper bound
                 gi->set_constant_term(-value);
+                if (doUndo)
+                {
+                    undoChange = new LagrangianChange(AbstractChange::eChgUB, {oldUB}, std::vector<AbstractPath>{c->get_paths()});
+                }
             }
             else
             {
                 // g(x) = x - value = 1*x - value
 
                 auto *g = new LinearFunction(LinearFunction::v_coeff_pair{{pv, 1.0}}, // 1 coefficent
-                                             -value);                                 // constant term
-                ColVariable *y = new ColVariable();
-                y->is_positive(true);
-                lbf->add_dual_pairs(LagBFunction::v_dual_pair{{y, g}});
-                map_varToLF[pv] = g;
-            }
-            if (doUndo)
-            {
-                undoChange = new LagrangianChange(LagrangianChange::eChgUB, {oldUB}, std::vector<AbstractPath>{c->get_paths()});
+                                             -value);
+                // constant term
+                std::list<FRowConstraint> cons_list;
+                cons_list.emplace_back(LagrDual, -Inf<RowConstraint::RHSValue>(), 0, g);
+
+                auto *group = LagrDual->get_dynamic_constraint<FRowConstraint>(str_BranchBounds);
+                if (!group)
+                    throw std::runtime_error("group BranchBounds not found in block");
+
+                LagrDual->add_dynamic_constraints(*group, cons_list); // plurale: aggiunge al gruppo esistente
+
+                if (group->empty())
+                    throw std::runtime_error("Invalid BranchBounds group");
+
+                map_varToLF[pv].first = static_cast<LinearFunction *>(group->back().get_function());
+                if (doUndo)
+                {
+                    undoChange = new LagrangianChange(LagrangianChange::eDeleteUB, {}, std::vector<AbstractPath>{c->get_paths()});
+                }
             }
             break;
         }
@@ -649,7 +364,7 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
             throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
         }
     }
-    else if (c->get_type() == LagrangianChange::eFixX)
+    else if (c->get_type() == AbstractChange::eFixX)
     {
         auto value = c->get_data()[0];
         switch (applyStrategy)
@@ -666,11 +381,11 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
             {
                 if (pv->is_fixed())
                 {
-                    undoChange = new LagrangianChange(LagrangianChange::eFixX, {pv->get_value()}, std::vector<AbstractPath>{c->get_paths()});
+                    undoChange = new LagrangianChange(AbstractChange::eFixX, {pv->get_value()}, std::vector<AbstractPath>{c->get_paths()});
                 }
                 else
                 {
-                    undoChange = new LagrangianChange(LagrangianChange::eUnfixX, {}, std::vector<AbstractPath>{c->get_paths()});
+                    undoChange = new LagrangianChange(AbstractChange::eUnfixX, {}, std::vector<AbstractPath>{c->get_paths()});
                 }
             }
             auto mvts = map_varToSol;
@@ -702,7 +417,7 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
             throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
         }
     }
-    else if (c->get_type() == LagrangianChange::eUnfixX)
+    else if (c->get_type() == AbstractChange::eUnfixX)
     {
         switch (applyStrategy)
         {
@@ -714,7 +429,7 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
         {
             if (doUndo)
             {
-                undoChange = new LagrangianChange(LagrangianChange::eFixX, {pv->get_value()}, std::vector<AbstractPath>{c->get_paths()});
+                undoChange = new LagrangianChange(AbstractChange::eFixX, {pv->get_value()}, std::vector<AbstractPath>{c->get_paths()});
             }
             pv->is_fixed(false);
             if (!f_global_information)
@@ -746,6 +461,12 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
             throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
         }
     }
+    else if (c->get_type() == LagrangianChange::eDeleteUB)
+    {
+    }
+    else if (c->get_type() == LagrangianChange::eDeleteLB)
+    {
+    }
     else
         undoChange = c->apply(this->f_Block, doUndo);
 
@@ -769,6 +490,47 @@ void LagrangianDualRelaxationSolver::set_global_information(GlobalInformation *g
         map_varToSol->write(str_PurgedColumns, PurgedColumn{});
     }
 }
+
+// nel .cpp
+Change *LagrangianDualRelaxationSolver::removeBound(
+    ColVariable *pv, bool isLB, bool doUndo,
+    const std::vector<AbstractPath> &paths)
+{
+    auto &slot = isLB ? map_varToLF[pv].second : map_varToLF[pv].first;
+
+    if (!slot)
+        throw std::logic_error(
+            "LagrangianDualRelaxationSolver::removeBound: no activate constraint");
+
+    auto *con = dynamic_cast<FRowConstraint *>(slot->get_Observer());
+    if (!con)
+        throw std::logic_error(
+            "LagrangianDualRelaxationSolver::removeBound: Observer is not a FRowConstraint");
+
+    Change *undoChange = nullptr;
+    if (doUndo)
+    {
+        double oldValue = isLB ? slot->get_constant_term()
+                               : -slot->get_constant_term();
+        undoChange = new LagrangianChange(
+            isLB ? AbstractChange::eChgLB : AbstractChange::eChgUB,
+            {oldValue}, paths);
+    }
+
+    auto *group = LagrDual->get_dynamic_constraint<FRowConstraint>(str_BranchBounds);
+    auto it = std::find_if(group->begin(), group->end(),
+                           [con](const FRowConstraint &c2)
+                           { return &c2 == con; });
+    if (it == group->end())
+        throw std::logic_error(
+            "LagrangianDualRelaxationSolver::removeBound: constraint not found in the group");
+
+    LagrDual->remove_dynamic_constraint(*group, it);
+
+    slot = nullptr;
+    return undoChange;
+}
+
 // register LagrangianDualRelaxationSolver to the Solver factory
 
 SMSpp_insert_in_factory_cpp_0(LagrangianDualRelaxationSolver);
