@@ -536,6 +536,7 @@ public:
  /// constructor: ensure every field is initialized
 
  LagrangianDualSolver( void ) : CDASolver() , NumVar( 0 ) , f_nsb( 0 ) ,
+  f_status( kUnEval ) ,
   f_max( false ) , LagrDual( nullptr ) , f_BCfg( nullptr ) ,
   f_BSCfg( nullptr ) ,  f_DBCfg( nullptr ) , f_DBSCfg( nullptr ) ,
   f_DBSCfg_map( nullptr ) , static_cons( 0 ) {
@@ -1292,6 +1293,12 @@ public:
 /*--------------------------------------------------------------------------*/
 
  bool has_var_solution( void ) override {
+  // after a failed compute() the inner Solver may still have a dual
+  // solution, e.g., the multipliers of the master problem of a bundle, but
+  // the linearizations the primal one is made of are missing for the
+  // component whose evaluation failed
+  if( ( f_status == kError ) || ( f_status == kBlockLocked ) )
+   return( false );
   return( InnerSolver->has_dual_solution() );
   }
 
@@ -2162,6 +2169,8 @@ FRowConstraint * constraint_with_index( Index i ) {
  Index NumVar;      ///< (current) number of variables
 
  Index f_nsb;       ///< number of sub-Block
+
+ int f_status;      ///< the value returned by the last compute()
 
  bool f_max;        ///< true if (B) was a max problem, false otherwise
 

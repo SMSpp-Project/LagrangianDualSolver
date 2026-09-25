@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `has_var_solution()` answers false after a `compute()` that returned
+  `kError` or `kBlockLocked`: it asked the inner Solver whether it had a
+  dual solution, which a bundle has (the multipliers of its master problem)
+  also when the evaluation of a component failed, and the caller that
+  believed it had `get_var_solution()` throw "no coefficients stored" on the
+  component whose linearizations were never computed
+
 - `PrimalProximalHeur` records a recovered point only if it is one: a point
   is discarded when its value beats the bound the Lagrangian Dual gives, no
   feasible point being able to do that, and when it violates the rows of the

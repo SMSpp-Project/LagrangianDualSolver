@@ -1057,6 +1057,8 @@ int LagrangianDualSolver::compute( bool changedvars )
   if( res == kInfeasible )
    res = kUnbounded;
 
+ f_status = res;
+
  unlock();  // unlock the mutex
 
  return( res );
