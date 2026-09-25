@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a change to a relaxed constraint, such as a coefficient rewritten by the
+  scaling of a unit, reaches the right Lagrangian term also when
+  `intSparseLagPairs` is on (the default): each `LagBFunction` then holds only
+  the dual pairs of the constraints its sub-Block appears in, numbered among
+  themselves, while the term was looked up by the index of the constraint
+  among all the relaxed ones, which rewrote the wrong term or crashed; the
+  term is now found through its multiplier, and a sub-Block that enters a
+  relaxed constraint for the first time gets the dual pair it lacked
+
 - `has_var_solution()` answers false after a `compute()` that returned
   `kError` or `kBlockLocked`: it asked the inner Solver whether it had a
   dual solution, which a bundle has (the multipliers of its master problem)

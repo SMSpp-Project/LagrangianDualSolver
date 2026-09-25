@@ -1840,38 +1840,6 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
  if( v_mod_tmp.empty() )  // no Modification coming directly from f_Block
   return;                 // all done
 
- // the Lagrangian variable of the pos-th relaxed constraint, the static ones
- // first and then the dynamic ones
- const auto multiplier = [ this ]( Index pos ) -> ColVariable * {
-  if( pos < static_cons )
-   return( & ( *LagrDual->get_static_variable_v< ColVariable >(
-					      "Lambda_s" ) )[ pos ] );
-  return( & *std::next( LagrDual->get_dynamic_variable< ColVariable >(
-					      "Lambda_d" )->begin() ,
-			pos - static_cons ) );
-  };
-
- // the Lagrangian term of the pos-th relaxed constraint in the h-th
- // LagBFunction, nullptr if it has none; the dual pairs of a LagBFunction
- // are numbered among themselves, and with SparseLagPairs it only has
- // those whose term was nonempty, so the pair is found through its
- // Lagrangian variable
- const auto lagrangian_term = [ & ]( Index h , Index pos ) -> p_LF {
-  const auto i = SparseLagPairs ? v_LBF[ h ]->is_active( multiplier( pos ) )
-                                : pos;
-  if( i == Inf< Index >() )
-   return( nullptr );
-  return( static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( i ) ) );
-  };
-
- // the same, when the term is known to be there because some ColVariable of
- // the sub-Block is already in the constraint
- const auto existing_term = [ & ]( Index h , Index pos ) -> p_LF {
-  const auto lfh = lagrangian_term( h , pos );
-  assert( lfh );
-  return( lfh );
-  };
-
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 1st loop: only consider addition and deletion of (dynamic) FRowConstraint
  // Only consider addition and removal of constraints; changes to existing
@@ -2124,15 +2092,10 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     if( ! chnls[ h ] )
      chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
 
-    if( const auto lfh = lagrangian_term( h , pos ) )
-     lfh->add_variables( std::move( split[ h ] ) ,
-			 Observer::make_par( eModBlck , chnls[ h ] ) );
-    else  // the first ColVariable of this sub-Block in the constraint
-     v_LBF[ h ]->add_dual_pairs( v_dual_pair( { dual_pair(
-				  multiplier( pos ) ,
-				  new LinearFunction( std::move( split[ h ] ) )
-				  ) } ) ,
-				 Observer::make_par( eModBlck , chnls[ h ] ) );
+    static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos )
+			 )->add_variables( std::move( split[ h ] ) ,
+					   Observer::make_par( eModBlck ,
+							       chnls[ h ] ) );
     }
    }  // end( C05FunctionModVarsAddd )
 
@@ -2177,7 +2140,8 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    for( Index i = 0 ; i < tmod->vars().size() ; ++i ) {
     auto bidx = blckidx[ i ];
     split[ bidx ][ cntr[ bidx ]++ ] =
-     existing_term( bidx , pos )->is_active( tmod->vars()[ i ] );
+     static_cast< p_LF >( v_LBF[ bidx ]->get_Lagrangian_term( pos )
+			  )->is_active( tmod->vars()[ i ] );
     }
 
    // now call remove_variables() for all the appropriate LinearFunction
@@ -2188,7 +2152,8 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     if( ! chnls[ h ] )
      chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
 
-    existing_term( h , pos )->remove_variables( std::move( split[ h ] ) ,
+    static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos )
+			 )->remove_variables( std::move( split[ h ] ) ,
 					      false ,
 					      Observer::make_par( eModBlck ,
 								  chnls[ h ] )
@@ -2237,7 +2202,8 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     auto bidx = blckidx[ i ];
     auto tc = cntr[ bidx ]++;
     split[ bidx ][ tc ] =
-     existing_term( bidx , pos )->is_active( tmod->vars()[ i ] );
+     static_cast< p_LF >( v_LBF[ bidx ]->get_Lagrangian_term( pos )
+			  )->is_active( tmod->vars()[ i ] );
     delta[ bidx ][ tc ] = tmod->delta()[ i ];
     }
 
@@ -2255,7 +2221,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     if( ! chnls[ h ] )
      chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
 
-    auto lfh = existing_term( h , pos );
+    auto lfh = static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos ) );
     auto & vcp = lfh->get_v_var();
     for( Index i = 0 ; i < cntr[ h ] ; ++i )
      delta[ h ][ i ] += vcp[ split[ h ][ i ] ].second;
