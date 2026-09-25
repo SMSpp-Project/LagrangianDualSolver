@@ -59,7 +59,19 @@
 
 #include <chrono>
 
+#include <atomic>
+
 #include <cmath>
+
+#include <exception>
+
+#include <functional>
+
+#include <mutex>
+
+#include <thread>
+
+#include <unordered_map>
 
 #include <filesystem>
 
@@ -126,6 +138,9 @@ void PrimalProximalHeur::initialize( void )
  idx_to_var_sbi2.resize( n_sub );
  Funct_sbi.resize( n_sub );
  Funct_sbi_quad.resize( n_sub );
+ Funct_nested.resize( n_sub );
+ Funct_nested_quad.resize( n_sub );
+ Obj_nested.resize( n_sub );
  is_linear.resize( n_sub );
 
  Index index = 0;
@@ -144,6 +159,37 @@ void PrimalProximalHeur::initialize( void )
    is_linear[ index ] = true;
    Funct_sbi[ index ] = *static_cast< p_LF >( fobj );
    }
+
+  // and of the objectives of the Block nested into it, at any depth, which
+  // are part of its cost as well; a Function cannot be copy-constructed, so
+  // the copies are default-constructed first and then assigned
+  std::vector< p_LF > nested_lf;
+  std::vector< p_DQF > nested_qf;
+  Obj_nested[ index ].clear();
+  std::function< void( Block * ) > find_nested = [ & ]( Block * b ) {
+   for( auto nb : b->get_nested_Blocks() ) {
+    if( auto obj = dynamic_cast< RealObjective * >( nb->get_objective() ) ) {
+     auto fro = dynamic_cast< p_FRO >( obj );
+     auto fn = fro ? fro->get_function() : nullptr;
+     if( auto qf = dynamic_cast< p_DQF >( fn ) )
+      nested_qf.push_back( qf );
+     else if( auto lf = dynamic_cast< p_LF >( fn ) )
+      nested_lf.push_back( lf );
+     else
+      Obj_nested[ index ].push_back( obj );
+     }
+    find_nested( nb );
+    }
+   };
+  find_nested( sbi );
+  Funct_nested[ index ].clear();
+  Funct_nested[ index ].resize( nested_lf.size() );
+  for( Index i = 0 ; i < nested_lf.size() ; ++i )
+   Funct_nested[ index ][ i ] = *nested_lf[ i ];
+  Funct_nested_quad[ index ].clear();
+  Funct_nested_quad[ index ].resize( nested_qf.size() );
+  for( Index i = 0 ; i < nested_qf.size() ; ++i )
+   Funct_nested_quad[ index ][ i ] = *nested_qf[ i ];
 
   pos_id = 0;
 
@@ -215,6 +261,7 @@ void PrimalProximalHeur::set_par( idx_type par , int value )
   case( intMaxIter ):    maxIter = value; break;
   case( intMaxSol ):     f_MaxSol = value; break;
   case( intUseWarmStartPSol ): UseWSPSol = value; break;
+  case( intRecoveryThreads ): RecThreads = value; break;
   case( intInnerMaxIter ):
    InnerSolver->set_par( intMaxIter , value ); break;
   case( intLogVerb ):
@@ -281,9 +328,28 @@ bool PrimalProximalHeur::gap_closed( void ) const
 int PrimalProximalHeur::compute( bool changedvars )
 {
  // no static binary Variable to apply the proximal penalty to: PPH has
- // nothing to add over the inner Lagrangian Dual, fall back to it
- if( NumStatVar == 0 )
-  return( LagrangianDualSolver::compute( changedvars ) );
+ // nothing to add over the inner Lagrangian Dual, which is solved as it is;
+ // its primal solution is then the point the consensus recovery starts
+ // from, if the relaxed Constraint tie copies of a decision
+ if( NumStatVar == 0 ) {
+  const auto res = LagrangianDualSolver::compute( changedvars );
+  if( res >= kError )
+   return( res );
+
+  if( LagrangianDualSolver::has_var_solution() )
+   LagrangianDualSolver::get_var_solution();
+
+    double cost;
+  if( consensus_recovery( cost ) && is_recovered_feasible( cost ) ) {
+   for( auto & s : v_best_sol )
+    delete s.first;
+   v_best_sol.clear();
+   v_best_sol.emplace_back( f_Block->get_Solution( nullptr , false ) , cost );
+   best_bound = worst_bound = cost;
+   }
+
+  return( res );
+  }
 
  lock();  // lock the Solver mutex
 
@@ -444,8 +510,8 @@ int PrimalProximalHeur::compute( bool changedvars )
    auto read_duals = [ & ]( const Vec_Group & groups , auto & it ) {
     for( const auto & group : groups )
      if( group )
-      group->for_each_as< FRowConstraint >( [ & it ]( FRowConstraint & con ) {
-        ( it++ )->set_value( con.get_dual() ); } );
+      group->for_each_as< FRowConstraint >( [ & ]( FRowConstraint & con ) {
+        ( it++ )->set_value( dual2mult( con ) ); } );
     };
 
    auto Ls = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );
@@ -564,7 +630,7 @@ int PrimalProximalHeur::compute( bool changedvars )
        *f_log << "  (event) IS_FEASIBLE_SOL: " << value_FUNCTION
               << std::endl;
       double rec_cost;
-      if( recover_primal( rec_cost ) )
+      if( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) )
        record_feasible( rec_cost );
       }
      else LOG_VERB( 2 )
@@ -677,7 +743,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    LOG_VERB( 2 )
     *f_log << "  IS_FEASIBLE_SOL" << std::endl;
    double rec_cost;
-   if( recover_primal( rec_cost ) )
+   if( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) )
     record_feasible( rec_cost );
    }
   else LOG_VERB( 2 )
@@ -739,7 +805,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  // bound. If the restricted problem is infeasible the point is discarded.
  {
   double rec_cost;
-  if( recover_primal( rec_cost ) )
+  if( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) )
    record_feasible( rec_cost );
   }
 
@@ -847,13 +913,17 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
 
 CDASolver * PrimalProximalHeur::new_aux_solver( const std::string & cfgname )
 {
- // the file is looked for where it is given and, failing that, next to
- // this source file: __FILE__ is baked in at compile time and points to
+ // the file is looked for where it is given, i.e., after the filename
+ // prefix of all Configuration if it is relative, which is where
+ // Configuration::deserialize() opens it, and failing that next to this
+ // source file: __FILE__ is baked in at compile time and points to
  // LagrangianDualSolver/src/<this>.cpp, so the sibling
  // LagrangianDualSolver/<cfgname> is reachable regardless of the process
  // working directory
  std::string cfgfile = cfgname;
- if( ! std::filesystem::exists( cfgfile ) )
+ if( ! std::filesystem::exists(
+        std::filesystem::path( cfgname ).is_absolute() ? cfgname
+        : Configuration::get_filename_prefix() + cfgname ) )
   cfgfile = ( std::filesystem::path( __FILE__ ).parent_path().parent_path()
               / cfgname ).string();
 
@@ -882,6 +952,68 @@ CDASolver * PrimalProximalHeur::new_aux_solver( const std::string & cfgname )
  return( slvr );
 
  }  // end( PrimalProximalHeur::new_aux_solver )
+
+/*--------------------------------------------------------------------------*/
+
+// what a recovered point may violate a row of the Block by, in relative
+// terms: past this it is not a point of the original problem, whatever its
+// cost says, and handing it over would call a bound what is not one
+static constexpr double kRecViol = 1e-6;
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::is_recovered_feasible( double value )
+{
+ /* What the recovery leaves in the Block is the optimum of a restriction of
+  * the original problem, hence a feasible point with its true cost: this
+  * checks that it is one before it is recorded, since a point that is not
+  * would be handed over as a solution and its cost taken as a bound. Two
+  * things say that it is not: the value, which for a feasible point cannot
+  * be better than the bound the dual gives, and the Block itself, whose
+  * Constraint include the ones the Lagrangian relaxation dualises. */
+
+  // the bound the Lagrangian Dual gives is the lower one when minimizing and
+ // the upper one when maximizing, the other one being the best feasible
+ // value found so far [see get_lb() and get_ub()]
+ const auto bound = f_max ? get_ub() : get_lb();
+ if( std::isfinite( bound ) ) {
+  const auto slack = std::abs( bound ) * 1e-9;
+  if( f_max ? ( value > bound + slack ) : ( value < bound - slack ) ) {
+   LOG_VERB( 2 )
+    *f_log << "  the recovered point is worth " << value
+           << ", past the bound " << bound << ": discarded" << std::endl;
+   return( false );
+   }
+  }
+
+  /* is_feasible() is not the question here: the Constraint the Lagrangian
+  * Dual dualises are relaxed, and it passes over them, which is exactly
+  * where a recovered point can be wrong. The rows of the Block are
+  * therefore measured one by one, as whoever checks a reconstruction does,
+  * and the largest relative violation decides. */
+
+ double viol = 0;
+ auto see = [ & viol ]( FRowConstraint & cnst ) {
+  if( const auto ret = cnst.compute() ;
+      ( ret <= FRowConstraint::kUnEval ) || ( ret > FRowConstraint::kOK ) ) {
+   viol = Inf< double >();
+   return;
+   }
+  viol = std::max( viol , double( cnst.rel_viol() ) );
+  };
+
+ f_Block->for_each_constraint_group( [ & see ]( const BaseGroup & group ) {
+   group.for_each_as< FRowConstraint >( see ); } );
+
+    if( viol > kRecViol ) {
+  LOG_VERB( 2 )
+   *f_log << "  the recovered point violates the rows of the Block by "
+          << viol << ": discarded" << std::endl;
+  return( false );
+  }
+
+ return( true );
+ }
 
 /*--------------------------------------------------------------------------*/
 
@@ -957,18 +1089,8 @@ bool PrimalProximalHeur::recover_primal( double & cost )
    // objectives: the live ones only had the true costs restored on the
    // binary Variables, so their value is not the true cost of the solution
    double value = 0;
-   Index idx = 0;
-   for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-    if( is_linear[ idx ] ) {
-     Funct_sbi[ idx ].compute( true );
-     value += Funct_sbi[ idx ].get_value();
-     }
-    else {
-     Funct_sbi_quad[ idx ].compute( true );
-     value += Funct_sbi_quad[ idx ].get_value();
-     }
-    ++idx;
-    }
+   for( Index idx = 0 ; idx < is_linear.size() ; ++idx )
+    value += subtree_value( idx );
    cost = value;
    }
 
@@ -1017,6 +1139,145 @@ bool PrimalProximalHeur::recover_primal( double & cost )
  return( ok );
 
  }  // end( PrimalProximalHeur::recover_primal )
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::consensus_recovery( double & cost )
+{
+ if( RecoveryBSC.empty() )
+  return( false );
+
+ // the Variable tied by a relaxed x_a - x_b = 0, grouped by those Constraint
+ std::unordered_map< ColVariable * , ColVariable * > parent;
+ std::function< ColVariable * ( ColVariable * ) > find =
+  [ & ]( ColVariable * v ) -> ColVariable * {
+   auto it = parent.find( v );
+   if( it == parent.end() ) {
+    parent[ v ] = v;
+    return( v );
+    }
+   if( it->second == v )
+    return( v );
+   auto root = find( it->second );
+   parent[ v ] = root;
+   return( root );
+   };
+
+ for( auto rb : v_relaxed )
+  for( const auto & group : rb->get_static_constraint_groups() ) {
+   if( ! group )
+    continue;
+   group->for_each_run_as< FRowConstraint >(
+    [ & ]( FRowConstraint * first , Index n ) {
+     for( Index k = 0 ; k < n ; ++k ) {
+      const auto & c = first[ k ];
+      if( ( c.get_lhs() != 0 ) || ( c.get_rhs() != 0 ) )
+       continue;
+      auto lf = dynamic_cast< LinearFunction * >( c.get_function() );
+      if( ( ! lf ) || ( lf->get_num_active_var() != 2 ) )
+       continue;
+      const auto & vv = lf->get_v_var();
+      if( vv[ 0 ].second != - vv[ 1 ].second )
+       continue;
+      auto a = find( vv[ 0 ].first );
+      auto b = find( vv[ 1 ].first );
+      if( a != b )
+       parent[ a ] = b;
+      }
+     } );
+   }
+
+ if( parent.empty() )
+  return( false );
+
+ // each group is fixed to its mean, rounded if its Variable are integer
+ std::unordered_map< ColVariable * , std::vector< ColVariable * > > groups;
+ for( const auto & vp : parent )
+  groups[ find( vp.first ) ].push_back( vp.first );
+
+ std::vector< std::pair< ColVariable * , bool > > fixed;
+ for( const auto & g : groups ) {
+  double mean = 0;
+  bool integer = false;
+  for( auto v : g.second ) {
+   mean += v->get_value();
+   integer = integer || v->is_integer();
+   }
+  mean /= g.second.size();
+  if( integer )
+   mean = std::round( mean );
+  for( auto v : g.second ) {
+   fixed.emplace_back( v , v->is_fixed() );
+   v->set_value( mean );
+   v->is_fixed( true , eNoMod );
+   }
+  }
+
+ // the components are independent now: each is solved alone, by RecThreads
+ // threads, and its value is the one of its whole subtree
+ const auto & sbs = f_Block->get_nested_Blocks();
+ const Index K = sbs.size();
+ std::vector< double > value( K , 0 );
+ std::vector< char > solved( K , 0 );
+
+ auto one = [ & ]( Index k ) {
+  auto recovery = new_aux_solver( RecoveryBSC );
+  recovery->set_Block( sbs[ k ] );
+  const auto rc = recovery->compute( true );
+  if( ( rc >= kOK ) && ( rc < kError ) && recovery->has_var_solution() ) {
+   recovery->get_var_solution();
+   value[ k ] = recovery->get_ub();
+   solved[ k ] = 1;
+   }
+  delete recovery;
+  };
+
+ const Index nt = std::min( Index( std::max( RecThreads , 1 ) ) , K );
+ std::atomic< Index > next( 0 );
+ std::exception_ptr error;
+ std::mutex error_mutex;
+ auto worker = [ & ]( void ) {
+  for( Index k ; ( k = next++ ) < K ; )
+   try {
+    one( k );
+    }
+   catch( ... ) {
+    std::lock_guard< std::mutex > guard( error_mutex );
+    if( ! error )
+     error = std::current_exception();
+    next = K;
+    return;
+    }
+  };
+
+ std::vector< std::thread > pool;
+ for( Index th = 1 ; th < nt ; ++th )
+  pool.emplace_back( worker );
+ worker();
+ for( auto & th : pool )
+  th.join();
+
+ for( auto & [ v , was ] : fixed )
+  if( ! was )
+   v->is_fixed( false , eNoMod );
+
+ if( error )
+  std::rethrow_exception( error );
+
+ cost = 0;
+ for( Index k = 0 ; k < K ; ++k ) {
+  if( ! solved[ k ] )
+   return( false );
+  cost += value[ k ];
+  }
+
+ LOG_VERB( 2 )
+  *f_log << "  consensus_recovery: " << groups.size() << " decisions , "
+         << K << " components , cost = " << cost << std::endl;
+
+ return( true );
+
+ }  // end( PrimalProximalHeur::consensus_recovery )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1160,6 +1421,9 @@ void PrimalProximalHeur::guts_of_destructor( void )
  idx_to_var_sbi2.clear();
  Funct_sbi.clear();
  Funct_sbi_quad.clear();
+ Funct_nested.clear();
+ Funct_nested_quad.clear();
+ Obj_nested.clear();
  is_linear.clear();
  previous_sol.clear();
  v_LagrInitSol.clear();
