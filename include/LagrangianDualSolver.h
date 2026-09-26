@@ -412,14 +412,17 @@ public:
   * are the leaves of the decomposable part of the tree rather than the
   * children of the root, and the multipliers are those of every level.
   *
-  * The two things being compared are then the same dual solved in two ways:
-  * with this off, a child that is itself decomposable is one component, and
-  * whichever Solver is attached to it may solve its own Lagrangian dual,
-  * which gives a stronger bound at the price of a dual inside a dual; with
-  * this on, there is a single dual with all the multipliers of all the
-  * levels, whose bound is weaker but whose master is one instead of many.
-  * Which of the two is faster is a matter of the instance, hence the
-  * parameter. Default 0, i.e., the children are the components. */
+  * With this off, a child that is itself decomposable is one component,
+  * solved by whichever Solver is attached to it. If that Solver is exact
+  * (e.g., a :MILPSolver), the bound is that of the dual of the children,
+  * which is at least as strong as the one given with this on; if it is a
+  * LagrangianDualSolver in turn, the two settings solve the same dual in
+  * two ways and give the same bound, i.e., that of the convexified
+  * relaxation w.r.t. the leaves: a dual inside a dual with this off, and a
+  * single dual with all the multipliers of all the levels, and one master
+  * instead of many, with this on. Which of the two is faster is a matter of
+  * the instance, hence the parameter. Default 0, i.e., the children are the
+  * components. */
 
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
