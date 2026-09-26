@@ -2763,7 +2763,11 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
      }
     }
 
-   v_LBF[ h ]->add_dual_pairs( std::move( dp ) );
+   // the Modification this issues goes in the channel with the one of the
+   // objective above: they are one change of the Lagrangian Dual, and whoever
+   // observes it has to see them together [cf. the removal branch, and the
+   // branch that adds a Variable to a constraint that is already there]
+   v_LBF[ h ]->add_dual_pairs( std::move( dp ) , mp );
    }
 
   LagrDual->close_channel( chnl );  // close the channel

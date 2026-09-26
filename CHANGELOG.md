@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- when a linking constraint grows, the Modification the added dual pairs of
+  every `LagBFunction` issue go in the channel the branch opens, as the one
+  of the objective of the Lagrangian Dual already did: they are one change
+  of the Lagrangian Dual and whoever observes it has to see them together,
+  which is what the branch that removes them, and the one that adds a
+  Variable to a constraint that is already there, do
+
 - the components that `vstr_LDSl_NoEasy` names are given to the inner Solver
   before it is attached to the Lagrangian Dual, which is when
   `BundleSolver` reads `vintNoEasy`, and a later change of the parameter
