@@ -1094,13 +1094,16 @@ int LagrangianDualSolver::compute( bool changedvars )
   throw( std::runtime_error(
                        "LagrangianDualSolver: unable to lock the Block" ) );
 
+ // the components are held for as long as the inner Solver runs, and
+ // already while the outstanding Modification are processed: those of the
+ // Variable of a component find the component through the Lagrangian Dual
+ // [see Block2Index()], which is its father only while it is held
+ ComponentHold hold( *this );
+
  process_outstanding_Modification();
 
  if( ! owned )
   f_Block->unlock( f_id );
-
- // the components are held for as long as the inner Solver runs
- ComponentHold hold( *this );
 
  /* This is no longer needed, since these Modification happen when
     f_play_dumb == true in the inner LagBFunction

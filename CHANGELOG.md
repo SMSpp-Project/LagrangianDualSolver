@@ -55,6 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `compute()` holds the components before it processes the outstanding
+  Modification, not after: those of the Variable of a component look for it
+  through the Lagrangian Dual, which is its father only while it is held,
+  and threw "Variable belonging to wrong Block"
+
 - a `NBModification` of a sub-Block no longer empties the list of the
   Modification waiting to be processed: the Lagrangian dual discards it
   anyway, its `LagBFunction` taking care of it, while the list lost the
