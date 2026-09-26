@@ -1258,6 +1258,20 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
 
 /*--------------------------------------------------------------------------*/
 
+CDASolver * LagrangianDualSolver::component_solver( Index b ) const
+{
+ const auto & slvs = v_LBF[ b ]->get_nested_Block( 0 )->
+                                               get_registered_solvers();
+ const Index i = v_LBF[ b ]->get_int_par( LagBFunction::intInnrSlvr );
+ if( i >= slvs.size() )
+  return( nullptr );
+
+ return( dynamic_cast< CDASolver * >( *std::next( slvs.begin() , i ) ) );
+
+ }  // end( LagrangianDualSolver::component_solver )
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualSolver::get_dual_solution( Configuration * solc )
 {
  if( ! LagrDual )
@@ -1282,21 +1296,32 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  // this function.
  auto lcfg = [ this ]( Index b , Configuration * cfg ) {
   auto LSBb = v_LBF[ b ]->get_nested_Block( 0 );
-  if( LSBb->get_registered_solvers().empty() )
+
+  // ask it to the Solver that was used to compute() the inner Block; if it
+  // has no dual solution now, typically because the Objective of the
+  // component has been put back after compute(), the component is solved
+  // again at the multipliers of the solution, which is where its duals
+  // belong; a Solver that has no dual solution to offer anyway (say, it
+  // solved the sub-Block as an integer MILP) is skipped, leaving the
+  // Constraint of the component with the dual value they had
+  auto SBSb = component_solver( b );
+  if( ! SBSb )
    return;
 
-  // ask it to the Solver that was used to compute() the inner Block; note
-  // that the Solver may have no dual solution to offer (say, it solved the
-  // sub-Block as an integer MILP), in which case it is silently skipped
-  auto rsp = LSBb->get_registered_solvers().begin();
-  std::advance( rsp , v_LBF[ b ]->get_int_par( LagBFunction::intInnrSlvr ) );
-  if( auto SBSb = dynamic_cast< CDASolver * >( *rsp ) ) {
-   if( ! SBSb->has_dual_solution() )
-    return;
+  bool again = false;
+  if( ! SBSb->has_dual_solution() ) {
+   v_LBF[ b ]->compute( true );
+   again = true;
+   }
+
+  if( SBSb->has_dual_solution() ) {
    SBSb->get_dual_solution( cfg );
    if( iBCopy )  // the sub-Block is a copy
     v_component[ b ]->map_back_solution( LSBb , nullptr , cfg );
    }
+
+  if( again && ( ! iBCopy ) )
+   v_LBF[ b ]->cleanup_inner_objective();
   };
  
  // if solc == nullptr get the dual solutions of all sub-Block (those of the

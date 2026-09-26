@@ -1359,6 +1359,13 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
+ /** The dual solution of the Block is that of the relaxed Constraint, which
+  * the inner Solver gives, and that of the Constraint inside each component,
+  * which only the Solver of the component can give [see
+  * get_dual_solution()]: a component whose Solver has none (say, a dynamic
+  * programming, or a MILP) leaves its Constraint with whatever dual value
+  * they had, which who reads them has to check. */
+
  bool has_dual_solution( void ) override {
   return( InnerSolver->has_var_solution() );
   }
@@ -2438,6 +2445,11 @@ FRowConstraint * constraint_with_index( Index i ) {
   * component. */
 
  Index component_of( const Block * b ) const;
+
+ /// the Solver that the LagBFunction of the b-th component uses, if any
+ /** nullptr if it is not a CDASolver, or if there is none. */
+
+ CDASolver * component_solver( Index b ) const;
 
  /// holds the components for the lifetime of the object
  /** hold_components() in the constructor and release_components() in the

@@ -55,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `get_dual_solution()` asks the dual solution of a component to the Solver
+  its LagBFunction uses, and if that Solver has none at the moment (its
+  Objective having been put back after `compute()`) the component is solved
+  again at the multipliers of the solution, where its duals belong; a
+  component whose Solver cannot give duals at all (e.g., a dynamic
+  programming) leaves its Constraint as they are, which a reader such as a
+  `BendersBFunction` has to check
+
 - when a linking constraint grows, the Modification the added dual pairs of
   every `LagBFunction` issue go in the channel the branch opens, as the one
   of the objective of the Lagrangian Dual already did: they are one change
