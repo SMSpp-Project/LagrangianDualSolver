@@ -789,6 +789,10 @@ void LagrangianDualSolver::set_Block( Block * block )
   release_components();
   }
 
+ // the components are known now: those that vstr_LDSl_NoEasy names by
+ // classname() can be given to the inner Solver
+ pass_NoEasy();
+
  // and now, finally, all is done
 
  }  // end( LagrangianDualSolver::set_Block )
@@ -896,6 +900,7 @@ void LagrangianDualSolver::set_par( idx_type par , std::string && value )
      throw( std::logic_error( ISName + " not a CDASolver" ) );
      }
     register_inner_Solver();
+    pass_NoEasy();
     }
    break;
    }
@@ -939,8 +944,19 @@ void LagrangianDualSolver::set_par( idx_type par ,
    std::sort( WhichPushCost.begin() , WhichPushCost.end() );
    set_PushCostToOwner();
    break;
-  default:
-   InnerSolver->set_par( vint_par_lds( par ) , std::move( value ) );
+  default: {
+   const auto ipar = vint_par_lds( par );
+   // the vintNoEasy of the inner Solver is kept, as vstr_LDSl_NoEasy adds
+   // to it, and the two are given together
+   if( InnerSolver->vint_par_idx2str( ipar ) == "vintNoEasy" ) {
+    NoEasyIdx = value;
+    if( ! NoEasyCls.empty() ) {
+     pass_NoEasy();
+     break;
+     }
+    }
+   InnerSolver->set_par( ipar , std::move( value ) );
+   }
   }
  }
 
@@ -958,9 +974,43 @@ void LagrangianDualSolver::set_par( idx_type par ,
    for( Index i = 0 ; i < v_Cfg.size() ; ++i )
     v_Cfg[ i ] = Configuration::deserialize( FCfg[ i ] );
    break;
+  case( vstr_LDSl_NoEasy ):
+   NoEasyCls = std::move( value );
+   pass_NoEasy();
+   break;
+  case( vstr_LDSl_VarSol ):
+   VarSolCls = std::move( value );
+   break;
+  case( vstr_LDSl_DualSol ):
+   DualSolCls = std::move( value );
+   break;
   default:
    InnerSolver->set_par( vstr_par_lds( par ) , std::move( value ) );
   }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::pass_NoEasy( void )
+{
+ if( NoEasyCls.empty() || ( ! InnerSolver ) || v_component.empty() )
+  return;
+
+ const auto idx = InnerSolver->vint_par_str2idx( "vintNoEasy" );
+ if( idx == Inf< idx_type >() )
+  throw( std::invalid_argument( "LagrangianDualSolver::pass_NoEasy: the "
+				"inner Solver " + ISName + " has no "
+				"vintNoEasy, which vstr_LDSl_NoEasy needs" ) );
+
+ std::vector< int > hard( NoEasyIdx );
+ for( Index i = 0 ; i < v_component.size() ; ++i )
+  if( std::find( NoEasyCls.begin() , NoEasyCls.end() ,
+		 v_component[ i ]->classname() ) != NoEasyCls.end() )
+   hard.push_back( int( i ) );
+
+ std::sort( hard.begin() , hard.end() );
+ hard.erase( std::unique( hard.begin() , hard.end() ) , hard.end() );
+ InnerSolver->set_par( idx , std::move( hard ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1183,7 +1233,10 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
   }
  else
   for( Index i = 0 ; i < f_nsb ; ++i )
-   getsoli( i );
+   if( VarSolCls.empty() ||
+       ( std::find( VarSolCls.begin() , VarSolCls.end() ,
+		    v_component[ i ]->classname() ) != VarSolCls.end() ) )
+    getsoli( i );
  
  }  // end( LagrangianDualSolver::get_var_solution )
 
@@ -1230,12 +1283,15 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
    }
   };
  
- // if solc == nullptr get the dual solutions of all sub-Block with nullptr
- // Configuration- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if solc == nullptr get the dual solutions of all sub-Block (those of the
+ // classes in vstr_LDSl_DualSol, if any) with nullptr Configuration - - - -
 
  if( ! solc ) {
   for( Index i = 0 ; i < f_nsb ; ++i )
-   lcfg( i , nullptr );
+   if( DualSolCls.empty() ||
+       ( std::find( DualSolCls.begin() , DualSolCls.end() ,
+		    v_component[ i ]->classname() ) != DualSolCls.end() ) )
+    lcfg( i , nullptr );
 
   goto get_duals;  // then go to also get those of the relaxed constraints
   }

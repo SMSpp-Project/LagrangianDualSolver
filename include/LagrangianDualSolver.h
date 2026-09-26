@@ -525,6 +525,15 @@ public:
   vstr_LDSl_Cfg = vstrLastParCDAS ,
   ///< parameter for "the cache of Configurations"
 
+  vstr_LDSl_NoEasy ,
+  ///< the classname() of the components that are never "easy"
+
+  vstr_LDSl_VarSol ,
+  ///< the classname() of the components get_var_solution() deals with
+
+  vstr_LDSl_DualSol ,
+  ///< the classname() of the components get_dual_solution() deals with
+
   vstrLastLDSlvPar  ///< first allowed new vector-of-string parameter
                     /**< Convenience value for easily allow derived classes
 		     * to extend the set of vector-of-string parameters. */
@@ -872,7 +881,28 @@ public:
   *   or any other Configuration, whose elements can then be used for
   *   various purposes; see all times where vstr_LDSl_Cfg is mentioned, such
   *   as str_LagBF_BCfg, str_LDBlck_BCfg, str_LagBF_BSCfg and
-  *   str_LDBlck_BSCfg. */
+  *   str_LDBlck_BSCfg.
+  *
+  * - vstr_LDSl_NoEasy [empty]: the classname() of the components that the
+  *   inner Solver must not treat as "easy". Every component, i.e., sub-Block
+  *   of the Lagrangian Dual, whose classname() is in the vector is added to
+  *   the vintNoEasy parameter of the inner Solver (see BundleSolver), which
+  *   wants their indices instead, together with those that vintNoEasy may
+  *   already give. This lets one configuration file say "these units are
+  *   hard" for instances whose components are numbered differently, as
+  *   str_LagBF_BSCfg does for their BlockSolverConfig. An inner Solver
+  *   without vintNoEasy is an error, unless the vector is empty.
+  *
+  * - vstr_LDSl_VarSol [empty]: if non-empty(), the classname() of the
+  *   components whose variable solution get_var_solution() constructs when
+  *   it is called with solc == nullptr, the others being skipped; this is
+  *   the by-class form of the SimpleConfiguration< std::vector< int > > it
+  *   may be given, which names them by index.
+  *
+  * - vstr_LDSl_DualSol [empty]: if non-empty(), the classname() of the
+  *   components whose dual solution get_dual_solution() writes when it is
+  *   called with solc == nullptr, the others being skipped; the dual
+  *   solution of the relaxed constraints is written anyway. */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
@@ -1370,7 +1400,8 @@ public:
   * is found anywhere in solc->value.
   *
   * If solc == nullptr, the variable solution is constructed for all the
-  * sub-Block. */
+  * sub-Block, or only for those whose classname() is in vstr_LDSl_VarSol
+  * if this is not empty. */
 
  void get_var_solution( Configuration * solc = nullptr ) override;
 
@@ -1404,8 +1435,9 @@ public:
   * The \p solc Configuration controls which of these pieces is written:
   *
   * - If \p solc is nullptr, then both the dual solution of the relaxed
-  *   constraints in the father Block and that of all the sub-Block is
-  *   written; the calls to get_dual_solution() of the Solver of the
+  *   constraints in the father Block and that of all the sub-Block (only of
+  *   those whose classname() is in vstr_LDSl_DualSol, if this is not empty)
+  *   is written; the calls to get_dual_solution() of the Solver of the
   *   sub-Block happen with nullptr Configuration (meaning, all of it).
   *
   * - If \p solc is not nullptr, then it can be:
@@ -1643,7 +1675,8 @@ public:
  [[nodiscard]] const std::vector< std::string > & get_dflt_vstr_par(
 					     idx_type par ) const override {
   static const std::vector< std::string > _empty;
-  if( par == vstr_LDSl_Cfg )
+  if( ( par == vstr_LDSl_Cfg ) || ( par == vstr_LDSl_NoEasy ) ||
+      ( par == vstr_LDSl_VarSol ) || ( par == vstr_LDSl_DualSol ) )
    return( _empty );
   else
   return( InnerSolver->get_dflt_vstr_par( vstr_par_lds( par ) ) );
@@ -1714,6 +1747,12 @@ public:
   const override  {
   if( par == vstr_LDSl_Cfg )
    return( FCfg );
+  if( par == vstr_LDSl_NoEasy )
+   return( NoEasyCls );
+  if( par == vstr_LDSl_VarSol )
+   return( VarSolCls );
+  if( par == vstr_LDSl_DualSol )
+   return( DualSolCls );
 
   return( InnerSolver->get_vstr_par( vstr_par_lds( par ) ) );
   }
@@ -1797,6 +1836,12 @@ public:
   const override {
   if( name == "vstr_LDSl_Cfg" )
    return( vstr_LDSl_Cfg );
+  if( name == "vstr_LDSl_NoEasy" )
+   return( vstr_LDSl_NoEasy );
+  if( name == "vstr_LDSl_VarSol" )
+   return( vstr_LDSl_VarSol );
+  if( name == "vstr_LDSl_DualSol" )
+   return( vstr_LDSl_DualSol );
 
   return( vstr_par_is( InnerSolver->vstr_par_str2idx( name ) ) );
   }
@@ -1863,8 +1908,17 @@ public:
  [[nodiscard]] const std::string & vstr_par_idx2str( idx_type idx )
   const override {
   static const std::string _vstr_LDSl_Cfg = "vstr_LDSl_Cfg";
+  static const std::string _vstr_LDSl_NoEasy = "vstr_LDSl_NoEasy";
+  static const std::string _vstr_LDSl_VarSol = "vstr_LDSl_VarSol";
+  static const std::string _vstr_LDSl_DualSol = "vstr_LDSl_DualSol";
   if( idx == vstr_LDSl_Cfg )
    return( _vstr_LDSl_Cfg );
+  if( idx == vstr_LDSl_NoEasy )
+   return( _vstr_LDSl_NoEasy );
+  if( idx == vstr_LDSl_VarSol )
+   return( _vstr_LDSl_VarSol );
+  if( idx == vstr_LDSl_DualSol )
+   return( _vstr_LDSl_DualSol );
 
   return( InnerSolver->vstr_par_idx2str( vstr_par_lds( idx ) ) );
   }
@@ -1974,6 +2028,15 @@ public:
    LagrDual->unregister_Solver( InnerSolver );
    }
   }
+
+/*--------------------------------------------------------------------------*/
+ /// gives the inner Solver the components that are never "easy"
+ /** The components whose classname() is in vstr_LDSl_NoEasy, together with
+  * the vintNoEasy given to the inner Solver (if any), become its vintNoEasy;
+  * nothing is done while vstr_LDSl_NoEasy is empty, or the components or the
+  * inner Solver are not there yet. */
+
+ void pass_NoEasy( void );
 
 /*--------------------------------------------------------------------------*/
 
@@ -2181,6 +2244,18 @@ FRowConstraint * constraint_with_index( Index i ) {
  ///< for which sub-Block change PushCostToOwner
 
  std::vector< std::string > FCfg;  ///< filenames for Configurations
+
+ std::vector< std::string > NoEasyCls;
+ ///< the classname() of the components that are never "easy"
+
+ std::vector< int > NoEasyIdx;
+ ///< the vintNoEasy given to the inner Solver, to which NoEasyCls adds
+
+ std::vector< std::string > VarSolCls;
+ ///< the classname() of the components get_var_solution() deals with
+
+ std::vector< std::string > DualSolCls;
+ ///< the classname() of the components get_dual_solution() deals with
  
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 

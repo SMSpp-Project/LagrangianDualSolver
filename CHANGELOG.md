@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vstr_LDSl_NoEasy`, the classname() of the components that the inner
+  Solver must never treat as easy: the index of each component of one of
+  those classes is added to the `vintNoEasy` of the inner Solver, together
+  with those given there directly, so that a configuration names the hard
+  components of any instance without knowing their position
+
+- `vstr_LDSl_VarSol` and `vstr_LDSl_DualSol`, the classname() of the
+  components whose primal and dual solution `get_var_solution()` and
+  `get_dual_solution()` deal with when they are given no Configuration,
+  the by-class form of the index-based Configurations they take
+
 - the list of the sub-Block this Solver is told to skip, which
   `get_excluded_blocks()` gives, is handed to the inner Solver as it is: any
   sub-Block excluded here is a sub-Block of the Lagrangian dual or of one of
