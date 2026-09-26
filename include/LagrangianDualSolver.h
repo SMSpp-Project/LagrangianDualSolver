@@ -1294,7 +1294,11 @@ public:
   * Solver through the original father, and not the LagBFunction, which would
   * translate it: it is kept aside and handed to the LagBFunction (or to
   * whoever holds the component, see v_held) when the component is taken
-  * again. Any other Modification is queued as by the base class. */
+  * again. A NBModification of a sub-Block is not queued at all: it only
+  * concerns that sub-Block, which its LagBFunction takes care of, and
+  * queued it would empty the list, losing the changes to the relaxed
+  * constraints issued before it. Any other Modification is queued as by the
+  * base class. */
 
  void add_Modification( sp_Mod & mod ) override;
 

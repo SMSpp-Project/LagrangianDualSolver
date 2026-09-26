@@ -55,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a `NBModification` of a sub-Block no longer empties the list of the
+  Modification waiting to be processed: the Lagrangian dual discards it
+  anyway, its `LagBFunction` taking care of it, while the list lost the
+  changes of the coefficients of the relaxed constraints issued before it.
+  An `InvestmentFunction` that scaled the units of a stage and then removed
+  its cuts left the Lagrangian dual with the old coefficients, above the
+  integer optimum
+
 - several LagrangianDualSolver (a PrimalProximalHeur included) attached to
   the same Block work together: with `int_LDSlv_iBCopy 0` each of them
   evicted the sub-Block into its own LagBFunction when it was attached and

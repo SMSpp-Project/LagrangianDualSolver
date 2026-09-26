@@ -1906,6 +1906,14 @@ void LagrangianDualSolver::add_Modification( sp_Mod & mod )
    }
   }
 
+ // a NBModification of a sub-Block concerns that sub-Block only, which its
+ // LagBFunction takes care of, and it is discarded when the list is
+ // processed [see flatten_Modification_list()]: queued, it would empty the
+ // list, losing the changes to the relaxed constraints issued before it
+ if( std::dynamic_pointer_cast< const NBModification >( mod ) &&
+     ( mod->get_Block() != f_Block ) )
+  return;
+
  CDASolver::add_Modification( mod );
 
  }  // end( LagrangianDualSolver::add_Modification )
