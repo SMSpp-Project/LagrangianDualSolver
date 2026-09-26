@@ -2451,6 +2451,36 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  CDASolver * component_solver( Index b ) const;
 
+ /// unlocks the components that f_Block, locked by this Solver, has locked
+ /** A component stays among the sub-Block of its father while it is held,
+  * hence locking f_Block locks it too. If f_Block stays locked by this
+  * Solver while the inner Solver runs, as it does when whoever called
+  * compute() had locked it and given its own id to this Solver, the
+  * LagBFunction of a component, which locks it with its own id, could not:
+  * the components locked by this Solver are unlocked for the lifetime of the
+  * object, and locked again after, since unlocking f_Block unlocks them. */
+
+ class ComponentUnlock {
+  public:
+  explicit ComponentUnlock( LagrangianDualSolver & lds ) : f_lds( lds ) {
+   if( lds.f_id && lds.f_Block->is_owned_by( lds.f_id ) )
+    for( auto c : lds.v_component )
+     if( c->is_owned_by( lds.f_id ) ) {
+      c->unlock( lds.f_id );
+      f_unlocked.push_back( c );
+      }
+   }
+  ~ComponentUnlock() {
+   for( auto c : f_unlocked )
+    c->lock( f_lds.f_id );
+   }
+  ComponentUnlock( const ComponentUnlock & ) = delete;
+  ComponentUnlock & operator=( const ComponentUnlock & ) = delete;
+  private:
+  LagrangianDualSolver & f_lds;
+  std::vector< Block * > f_unlocked;
+  };
+
  /// holds the components for the lifetime of the object
  /** hold_components() in the constructor and release_components() in the
   * destructor, so that an exception does not leave them held. */

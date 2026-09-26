@@ -55,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `compute()`, `get_var_solution()` and `get_dual_solution()` unlock the
+  components that the Block, locked by the LagrangianDualSolver itself,
+  keeps locked with it, and lock them again after: when whoever calls
+  `compute()` has locked the Block and given its own id to the Solver, as
+  the `InvestmentFunction` does, the LagBFunction of a component, which
+  locks it with its own id, could not, and the inner Solver returned
+  `kError` at the first evaluation
+
 - `get_dual_solution()` asks the dual solution of a component to the Solver
   its LagBFunction uses, and if that Solver has none at the moment (its
   Objective having been put back after `compute()`) the component is solved

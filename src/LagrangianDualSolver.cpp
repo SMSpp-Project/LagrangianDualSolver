@@ -1131,6 +1131,8 @@ int LagrangianDualSolver::compute( bool changedvars )
    us->inhibit_Modification( true );
    */
 
+ ComponentUnlock unlocked( *this );  // for the LagBFunction to lock them
+
  auto res = InnerSolver->compute( changedvars );
 
  // if iBCopy == false, bring back the inner Block to its original objective
@@ -1171,6 +1173,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
 
  ComponentHold hold( *this );
+ ComponentUnlock unlocked( *this );
 
  // pick up the proper Configuration for get_dual_solution(), if any
  Configuration * dcfg = nullptr;
@@ -1279,6 +1282,7 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
 
  ComponentHold hold( *this );
+ ComponentUnlock unlocked( *this );
 
  // pick up the proper Configuration for get_var_solution(), if any
  Configuration * cfg = nullptr;
