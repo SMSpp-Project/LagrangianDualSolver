@@ -789,10 +789,6 @@ void LagrangianDualSolver::set_Block( Block * block )
   release_components();
   }
 
- // the components are known now: those that vstr_LDSl_NoEasy names by
- // classname() can be given to the inner Solver
- pass_NoEasy();
-
  // and now, finally, all is done
 
  }  // end( LagrangianDualSolver::set_Block )
@@ -900,7 +896,6 @@ void LagrangianDualSolver::set_par( idx_type par , std::string && value )
      throw( std::logic_error( ISName + " not a CDASolver" ) );
      }
     register_inner_Solver();
-    pass_NoEasy();
     }
    break;
    }
@@ -996,9 +991,27 @@ void LagrangianDualSolver::pass_NoEasy( void )
  if( NoEasyCls.empty() || ( ! InnerSolver ) || v_component.empty() )
   return;
 
+ // attached already, the inner Solver has read its vintNoEasy: it is
+ // attached again, register_inner_Solver() giving it the new one first
+ if( LagrDual && ( InnerSolver->get_Block() == LagrDual ) ) {
+  ComponentHold hold( *this );  // the inner Solver looks at the components
+  unregister_inner_Solver();
+  register_inner_Solver();
+  }
+ else
+  set_NoEasy();
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::set_NoEasy( void )
+{
+ if( NoEasyCls.empty() || ( ! InnerSolver ) || v_component.empty() )
+  return;
+
  const auto idx = InnerSolver->vint_par_str2idx( "vintNoEasy" );
  if( idx == Inf< idx_type >() )
-  throw( std::invalid_argument( "LagrangianDualSolver::pass_NoEasy: the "
+  throw( std::invalid_argument( "LagrangianDualSolver::set_NoEasy: the "
 				"inner Solver " + ISName + " has no "
 				"vintNoEasy, which vstr_LDSl_NoEasy needs" ) );
 

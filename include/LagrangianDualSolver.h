@@ -2024,6 +2024,9 @@ public:
   // of its descendants, so the inner Solver needs to skip it as well
   if( ! get_excluded_blocks().empty() )
    InnerSolver->set_excluded_blocks( & get_excluded_blocks() );
+  // the inner Solver reads which components are never "easy" when it is
+  // attached to the Lagrangian Dual, so they are given to it first
+  set_NoEasy();
   LagrDual->register_Solver( InnerSolver );
   }
 
@@ -2041,7 +2044,18 @@ public:
  /** The components whose classname() is in vstr_LDSl_NoEasy, together with
   * the vintNoEasy given to the inner Solver (if any), become its vintNoEasy;
   * nothing is done while vstr_LDSl_NoEasy is empty, or the components or the
-  * inner Solver are not there yet. */
+  * inner Solver are not there yet. The inner Solver reads vintNoEasy when it
+  * is attached to the Lagrangian Dual (see BundleSolver::set_Block()), which
+  * is why register_inner_Solver() calls this first. */
+
+ void set_NoEasy( void );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// gives the inner Solver the components that are never "easy", now
+ /** As set_NoEasy(), but if the inner Solver is already attached to the
+  * Lagrangian Dual it is attached again, so that the new vintNoEasy is read;
+  * this is what a change of vstr_LDSl_NoEasy, or of the vintNoEasy it adds
+  * to, after the Lagrangian Dual has been formed requires. */
 
  void pass_NoEasy( void );
 

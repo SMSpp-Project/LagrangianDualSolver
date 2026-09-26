@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the components that `vstr_LDSl_NoEasy` names are given to the inner Solver
+  before it is attached to the Lagrangian Dual, which is when
+  `BundleSolver` reads `vintNoEasy`, and a later change of the parameter
+  attaches it again: they were given after, and a component the parameter
+  named hard, such as a `HydroSystemUnitBlock` solved as an LP, was treated
+  as easy
+
 - `compute()` holds the components before it processes the outstanding
   Modification, not after: those of the Variable of a component look for it
   through the Lagrangian Dual, which is its father only while it is held,
