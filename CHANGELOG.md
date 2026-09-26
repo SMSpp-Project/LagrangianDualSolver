@@ -44,6 +44,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- several LagrangianDualSolver (a PrimalProximalHeur included) attached to
+  the same Block work together: with `int_LDSlv_iBCopy 0` each of them
+  evicted the sub-Block into its own LagBFunction when it was attached and
+  kept them there, so that the one attached later found them in the tree of
+  the first ("Variable belonging to wrong Block") or took them from it, and
+  the BlockSolverConfig of its LagBFunction, applied in differential mode,
+  replaced the inner Solver of the first on the same sub-Block, the first
+  then computing its bound with the Solver of the second. The components are
+  now held only within compute(), get_var_solution() and get_dual_solution()
+  (the Modification they issue meanwhile are handed to the LagBFunction when
+  they are held again), the BlockSolverConfig of the LagBFunction is applied
+  in additive mode, and each LagBFunction is told the position of the inner
+  Solver its configuration has registered (`intInnrSlvr`). On a TSSB of
+  thermal units the dual of the scenarios, the nested and the recursive
+  dual and the PrimalProximalHeur now give the bound each gives alone,
+  whatever the others attached and their order
+
 - on macOS a program linking the module lost the classes the module
   registers in the factories when the linker dropped the library, as it
   does under `-dead_strip_dylibs`, which conda sets: the target now asks the

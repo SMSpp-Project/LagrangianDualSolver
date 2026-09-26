@@ -665,10 +665,22 @@ void LagrangianDualSolver::set_Block( Block * block )
    // the same BlockSolverConfig is typically apply()-ed to many sub-Block,
    // so a clone per sub-Block is kept, clear()-ed, as the object that
    // un-does this very configuration [see v_aBSCfg]
+   //
+   // the clone is apply()-ed in additive mode: the Solver it names are
+   // registered in addition to those the sub-Block already has, which may
+   // belong to another Solver attached to the same Block (say, the inner
+   // Solver of another LagrangianDualSolver), and which a differential or
+   // setting apply() would reconfigure or replace; the inner Solver of the
+   // LagBFunction is then the first one this very configuration registers
+   const auto nslv = csbi->get_registered_solvers().size();
    auto cBSCi = BSCi->clone();
+   cBSCi->set_diff( BlockSolverConfig::eAddMode );
    cBSCi->apply( csbi );
    cBSCi->clear();
    v_aBSCfg[ i ] = cBSCi;
+
+   if( csbi->get_registered_solvers().size() > nslv )
+    v_LBF[ i ]->set_par( LagBFunction::intInnrSlvr , int( nslv ) );
    }
   }
 
@@ -761,7 +773,21 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
    */
 
- // release the Block- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // give the components back to their fathers- - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // the LagBFunction have taken the components from their fathers; they are
+ // given back until compute() needs them, so that the Block is whole for any
+ // other Solver attached to it [see v_held]
+
+ if( ! iBCopy ) {
+  f_comp_index.clear();
+  for( Index i = 0 ; i < f_nsb ; ++i )
+   f_comp_index[ v_component[ i ] ] = i;
+  v_held.assign( f_nsb , nullptr );
+  v_missed.assign( f_nsb , Lst_sp_Mod() );
+  f_held = 1;
+  release_components();
+  }
 
  // and now, finally, all is done
 
@@ -1023,6 +1049,9 @@ int LagrangianDualSolver::compute( bool changedvars )
  if( ! owned )
   f_Block->unlock( f_id );
 
+ // the components are held for as long as the inner Solver runs
+ ComponentHold hold( *this );
+
  /* This is no longer needed, since these Modification happen when
     f_play_dumb == true in the inner LagBFunction
 
@@ -1074,6 +1103,8 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
  if( ! LagrDual )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
+
+ ComponentHold hold( *this );
 
  // pick up the proper Configuration for get_dual_solution(), if any
  Configuration * dcfg = nullptr;
@@ -1163,6 +1194,8 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  if( ! LagrDual )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
+
+ ComponentHold hold( *this );
 
  // pick up the proper Configuration for get_var_solution(), if any
  Configuration * cfg = nullptr;
@@ -1736,6 +1769,17 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  if( ! LagrDual )  // nothing to be cleaned up
   return;          // all done
 
+ // the dismantling below starts from the components held, as they were
+ // when the Lagrangian Dual was formed; once it is done they are with their
+ // fathers for good, hence nothing is held any longer
+ if( ! v_held.empty() ) {
+  hold_components();
+  v_held.clear();
+  v_missed.clear();
+  f_comp_index.clear();
+  f_held = 0;
+  }
+
  // first detach the inner Solver
  unregister_inner_Solver();
 
@@ -1783,6 +1827,120 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  v_father.clear();
 
  }  // end( LagrangianDualSolver::cleanup_LagrDual )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::add_Modification( sp_Mod & mod )
+{
+ if( f_no_Mod )
+  return;
+
+ // a Modification of a component that is with its father has not been seen
+ // by the LagBFunction, which is what translates it for the Lagrangian Dual:
+ // it is kept for when the component is held again
+ if( ( ! v_held.empty() ) && ( ! f_held ) &&
+     ( mod->get_Block() != f_Block ) ) {
+  const auto i = component_of( mod->get_Block() );
+  if( i < f_nsb ) {
+   while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
+    ;  // try to acquire lock, spin on failure
+   v_missed[ i ].push_back( mod );
+   f_mod_lock.clear( std::memory_order_release );  // release lock
+   return;
+   }
+  }
+
+ CDASolver::add_Modification( mod );
+
+ }  // end( LagrangianDualSolver::add_Modification )
+
+/*--------------------------------------------------------------------------*/
+
+LagrangianDualSolver::Index LagrangianDualSolver::component_of(
+						   const Block * b ) const
+{
+ for( ; b && ( b != f_Block ) ; b = b->get_f_Block() ) {
+  const auto it = f_comp_index.find( b );
+  if( it != f_comp_index.end() )
+   return( it->second );
+  }
+
+ return( f_nsb );
+
+ }  // end( LagrangianDualSolver::component_of )
+
+/*--------------------------------------------------------------------------*/
+
+namespace {
+
+// makes \p b the son of \p father, telling it whether anyone listens up there
+void set_father( Block * b , Block * father )
+{
+ const auto old = b->get_f_Block();
+ if( old == father )
+  return;
+
+ const bool wasthere = old && old->anyone_there();
+ const bool isthere = father && father->anyone_there();
+ b->set_f_Block( father );
+ if( wasthere != isthere )
+  b->anyone_there( isthere );
+ }
+
+}  // end( anonymous namespace )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::hold_components( void )
+{
+ if( v_held.empty() || ( f_held++ ) )  // nothing to hold, or already held
+  return;
+
+ for( Index i = 0 ; i < f_nsb ; ++i )
+  set_father( v_component[ i ] , v_held[ i ] );
+
+ // the Modification kept aside while the components were given back
+ std::vector< Lst_sp_Mod > missed( f_nsb );
+ while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
+  ;  // try to acquire lock, spin on failure
+ bool any = false;
+ for( Index i = 0 ; i < f_nsb ; ++i )
+  if( ! v_missed[ i ].empty() ) {
+   missed[ i ].swap( v_missed[ i ] );
+   any = true;
+   }
+ f_mod_lock.clear( std::memory_order_release );  // release lock
+
+ if( ! any )
+  return;
+
+ // hand them to whoever holds the component, as if they had arrived then;
+ // the father of the LagBFunction is taken away meanwhile, since f_Block
+ // and its Solver have already had them from the component
+ for( auto lbf : v_LBF )
+  lbf->set_f_Block( nullptr );
+
+ for( Index i = 0 ; i < f_nsb ; ++i )
+  for( auto & mod : missed[ i ] )
+   v_held[ i ]->add_Modification( mod );
+
+ for( auto lbf : v_LBF )
+  lbf->set_f_Block( f_Block );
+
+ }  // end( LagrangianDualSolver::hold_components )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::release_components( void )
+{
+ if( v_held.empty() || ( --f_held ) )  // nothing held, or still held
+  return;
+
+ for( Index i = 0 ; i < f_nsb ; ++i ) {
+  v_held[ i ] = v_component[ i ]->get_f_Block();
+  set_father( v_component[ i ] , v_father[ i ] );
+  }
+ }  // end( LagrangianDualSolver::release_components )
 
 /*--------------------------------------------------------------------------*/
 

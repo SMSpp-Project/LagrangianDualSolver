@@ -109,6 +109,7 @@ void PrimalProximalHeur::set_Block( Block * block )
  LagrangianDualSolver::set_Block( block );  // call the base method
 
  if( f_Block ) {         // a new Block is now attached
+  ComponentHold hold( *this );
   initialize();
   best_bound  =   f_max ? - Inf< double >() : Inf< double >();
   worst_bound = - best_bound;
@@ -327,6 +328,10 @@ bool PrimalProximalHeur::gap_closed( void ) const
 
 int PrimalProximalHeur::compute( bool changedvars )
 {
+ // the components are held for the whole heuristic, which runs the inner
+ // Solver of the Lagrangian Dual several times and the recovery after it
+ ComponentHold hold( *this );
+
  // no static binary Variable to apply the proximal penalty to: PPH has
  // nothing to add over the inner Lagrangian Dual, which is solved as it is;
  // its primal solution is then the point the consensus recovery starts

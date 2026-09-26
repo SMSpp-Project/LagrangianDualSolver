@@ -38,6 +38,10 @@
 
 #include "UpdateSolver.h"
 
+#include <atomic>
+
+#include <unordered_map>
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -539,7 +543,7 @@ public:
   f_status( kUnEval ) ,
   f_max( false ) , LagrDual( nullptr ) , f_BCfg( nullptr ) ,
   f_BSCfg( nullptr ) ,  f_DBCfg( nullptr ) , f_DBSCfg( nullptr ) ,
-  f_DBSCfg_map( nullptr ) , static_cons( 0 ) {
+  f_DBSCfg_map( nullptr ) , static_cons( 0 ) , f_held( 0 ) {
   // ensure all parameters are properly given their default value
   iBCopy          = get_dflt_int_par( int_LDSlv_iBCopy );
   NNMult          = get_dflt_int_par( int_LDSlv_NNMult );
@@ -1249,6 +1253,20 @@ public:
  /// (try to) solve the Lagrangian Dual of the given Block
 
  int compute( bool changedvars = true ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// receives a Modification of the Block, or of a component
+ /** Unless the sub-Block are copied, a component is the son of its
+  * LagBFunction only while this Solver needs the Lagrangian Dual whole, i.e.,
+  * within compute(), get_var_solution() and get_dual_solution(), and it is
+  * given back to its original father otherwise [see hold_components()]. A
+  * Modification that a component issues while it is given back reaches this
+  * Solver through the original father, and not the LagBFunction, which would
+  * translate it: it is kept aside and handed to the LagBFunction (or to
+  * whoever holds the component, see v_held) when the component is taken
+  * again. Any other Modification is queued as by the base class. */
+
+ void add_Modification( sp_Mod & mod ) override;
 
 /*--------------------------------------------------------------------------*/
  /// returns the "inner" CDASolver used to solve the Lagrangian Dual
@@ -2283,6 +2301,63 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  std::vector< Block * > v_component;
  std::vector< Block * > v_father;
+
+ /// the father each component has while this Solver holds it
+ /** Unless the sub-Block are copied, v_component[ i ] is the son of
+  * v_held[ i ] only while this Solver holds the components, i.e., within
+  * compute(), get_var_solution() and get_dual_solution(); v_held[ i ] is its
+  * LagBFunction, or the MasterProblemBlock of the inner Solver where the
+  * component is easy, and it is recorded each time the component is given
+  * back to v_father[ i ]. The rest of the time the Block to which this Solver
+  * is attached is whole, so that any other Solver attached to it, another
+  * LagrangianDualSolver included, finds it as it is. Empty when the sub-Block
+  * are copied, or before the Lagrangian Dual is formed. */
+
+ std::vector< Block * > v_held;
+
+ /// the Modification each component issued while it was given back
+ std::vector< Lst_sp_Mod > v_missed;
+
+ /// the index of each component in v_component
+ std::unordered_map< const Block * , Index > f_comp_index;
+
+ /// how many nested holds of the components are open
+ std::atomic< int > f_held;
+
+ /// takes the components from their fathers back to whoever holds them
+ /** The first of nested calls sets v_component[ i ] as the son of
+  * v_held[ i ] and hands to the latter the Modification the component
+  * issued while it was given back [see add_Modification()]. */
+
+ void hold_components( void );
+
+ /// gives the components back to their fathers
+ /** The last of nested calls records in v_held[ i ] the father of
+  * v_component[ i ] and makes it the son of v_father[ i ] again. */
+
+ void release_components( void );
+
+ /// the index in v_component of the component \p b is in, if any
+ /** Walks up from \p b to f_Block; returns f_nsb if \p b is not inside any
+  * component. */
+
+ Index component_of( const Block * b ) const;
+
+ /// holds the components for the lifetime of the object
+ /** hold_components() in the constructor and release_components() in the
+  * destructor, so that an exception does not leave them held. */
+
+ class ComponentHold {
+  public:
+  explicit ComponentHold( LagrangianDualSolver & lds ) : f_lds( lds ) {
+   f_lds.hold_components();
+   }
+  ~ComponentHold() { f_lds.release_components(); }
+  ComponentHold( const ComponentHold & ) = delete;
+  ComponentHold & operator=( const ComponentHold & ) = delete;
+  private:
+  LagrangianDualSolver & f_lds;
+  };
 
  /// the components of the decomposition, and the Block that are decomposed
  /** Fills \p component with the Block that become the components of the
