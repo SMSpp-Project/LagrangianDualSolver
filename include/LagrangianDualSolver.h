@@ -528,15 +528,6 @@ public:
   vstr_LDSl_Cfg = vstrLastParCDAS ,
   ///< parameter for "the cache of Configurations"
 
-  vstr_LDSl_NoEasy ,
-  ///< the classname() of the components that are never "easy"
-
-  vstr_LDSl_VarSol ,
-  ///< the classname() of the components get_var_solution() deals with
-
-  vstr_LDSl_DualSol ,
-  ///< the classname() of the components get_dual_solution() deals with
-
   vstrLastLDSlvPar  ///< first allowed new vector-of-string parameter
                     /**< Convenience value for easily allow derived classes
 		     * to extend the set of vector-of-string parameters. */
@@ -886,26 +877,9 @@ public:
   *   as str_LagBF_BCfg, str_LDBlck_BCfg, str_LagBF_BSCfg and
   *   str_LDBlck_BSCfg.
   *
-  * - vstr_LDSl_NoEasy [empty]: the classname() of the components that the
-  *   inner Solver must not treat as "easy". Every component, i.e., sub-Block
-  *   of the Lagrangian Dual, whose classname() is in the vector is added to
-  *   the vintNoEasy parameter of the inner Solver (see BundleSolver), which
-  *   wants their indices instead, together with those that vintNoEasy may
-  *   already give. This lets one configuration file say "these units are
-  *   hard" for instances whose components are numbered differently, as
-  *   str_LagBF_BSCfg does for their BlockSolverConfig. An inner Solver
-  *   without vintNoEasy is an error, unless the vector is empty.
-  *
-  * - vstr_LDSl_VarSol [empty]: if non-empty(), the classname() of the
-  *   components whose variable solution get_var_solution() constructs when
-  *   it is called with solc == nullptr, the others being skipped; this is
-  *   the by-class form of the SimpleConfiguration< std::vector< int > > it
-  *   may be given, which names them by index.
-  *
-  * - vstr_LDSl_DualSol [empty]: if non-empty(), the classname() of the
-  *   components whose dual solution get_dual_solution() writes when it is
-  *   called with solc == nullptr, the others being skipped; the dual
-  *   solution of the relaxed constraints is written anyway. */
+  * Any other parameter is one of the inner Solver, to which it is given;
+  * this is the case, e.g., of the classname() of the components that a
+  * BundleSolver must never treat as "easy" (see its vstrNoEasy). */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
@@ -1413,9 +1387,20 @@ public:
   * replication); the solution of the i-th sub-Block is computed only if i
   * is found anywhere in solc->value.
   *
-  * If solc == nullptr, the variable solution is constructed for all the
-  * sub-Block, or only for those whose classname() is in vstr_LDSl_VarSol
-  * if this is not empty. */
+  * If *solc is a SimpleConfiguration< std::map< std::string ,
+  * Configuration * > >, the same type as the "meta" Configurations that
+  * dispatch by class, the sub-Block are chosen by class rather than by
+  * index: the solution of a sub-Block is computed if and only if its
+  * classname() is a key of solc->value, and the sub-Block of any other class
+  * are skipped. This
+  * lets one configuration name the sub-Block whose solution is needed for
+  * instances whose sub-Block are numbered differently. The Configuration
+  * the key is mapped to (which can be nullptr, meaning all of it) is the
+  * one passed to map_back_solution() if the sub-Block are copies, and it is
+  * not used otherwise.
+  *
+  * If solc == nullptr, or any other Configuration, the variable solution is
+  * constructed for all the sub-Block. */
 
  void get_var_solution( Configuration * solc = nullptr ) override;
 
@@ -1449,12 +1434,36 @@ public:
   * The \p solc Configuration controls which of these pieces is written:
   *
   * - If \p solc is nullptr, then both the dual solution of the relaxed
-  *   constraints in the father Block and that of all the sub-Block (only of
-  *   those whose classname() is in vstr_LDSl_DualSol, if this is not empty)
-  *   is written; the calls to get_dual_solution() of the Solver of the
+  *   constraints in the father Block and that of all the sub-Block is
+  *   written; the calls to get_dual_solution() of the Solver of the
   *   sub-Block happen with nullptr Configuration (meaning, all of it).
   *
   * - If \p solc is not nullptr, then it can be:
+  *
+  *   = a pointer to a SimpleConfiguration< std::map< std::string ,
+  *     Configuration * > >, the same type as the "meta" Configurations that
+  *     dispatch by class. In this case the sub-Block are chosen by class
+  *     rather than by index: the dual solution is only written for those
+  *     sub-Block whose classname() is a key of solc->f_value, the
+  *     Configuration that the key is mapped to being passed as the argument
+  *     to get_dual_solution() (which can be nullptr, meaning all of it),
+  *     while the sub-Block of any other class are skipped. The dual solution
+  *     of the relaxed constraints in the father Block is written if and only
+  *     if "relaxed" is a key of solc->f_value, in which case the
+  *     Configuration it is mapped to is ignored; no Block has that
+  *     classname(), which is not a class name by the naming convention of
+  *     SMS++. That is, if one only wants the dual solution of the relaxed
+  *     constraints and of the sub-Block of class C, then setting
+  *     solc->f_value = { { "relaxed" , nullptr } , { "C" , nullptr } } does
+  *     the job, and in a text file this is
+  *
+  *         SimpleConfiguration<std::map<std::string,Configuration*>>
+  *         2   # the number of elements in the map
+  *         relaxed  *
+  *         C        *
+  *
+  *     This lets one configuration name the sub-Block whose dual solution is
+  *     needed for instances whose sub-Block are numbered differently.
   *
   *   = a pointer to a SimpleConfiguration< std::vector< std::pair< int ,
   *     Configuration * > > >. In this case, the dual solution is only
@@ -1689,8 +1698,7 @@ public:
  [[nodiscard]] const std::vector< std::string > & get_dflt_vstr_par(
 					     idx_type par ) const override {
   static const std::vector< std::string > _empty;
-  if( ( par == vstr_LDSl_Cfg ) || ( par == vstr_LDSl_NoEasy ) ||
-      ( par == vstr_LDSl_VarSol ) || ( par == vstr_LDSl_DualSol ) )
+  if( par == vstr_LDSl_Cfg )
    return( _empty );
   else
   return( InnerSolver->get_dflt_vstr_par( vstr_par_lds( par ) ) );
@@ -1761,12 +1769,6 @@ public:
   const override  {
   if( par == vstr_LDSl_Cfg )
    return( FCfg );
-  if( par == vstr_LDSl_NoEasy )
-   return( NoEasyCls );
-  if( par == vstr_LDSl_VarSol )
-   return( VarSolCls );
-  if( par == vstr_LDSl_DualSol )
-   return( DualSolCls );
 
   return( InnerSolver->get_vstr_par( vstr_par_lds( par ) ) );
   }
@@ -1850,12 +1852,6 @@ public:
   const override {
   if( name == "vstr_LDSl_Cfg" )
    return( vstr_LDSl_Cfg );
-  if( name == "vstr_LDSl_NoEasy" )
-   return( vstr_LDSl_NoEasy );
-  if( name == "vstr_LDSl_VarSol" )
-   return( vstr_LDSl_VarSol );
-  if( name == "vstr_LDSl_DualSol" )
-   return( vstr_LDSl_DualSol );
 
   return( vstr_par_is( InnerSolver->vstr_par_str2idx( name ) ) );
   }
@@ -1922,17 +1918,8 @@ public:
  [[nodiscard]] const std::string & vstr_par_idx2str( idx_type idx )
   const override {
   static const std::string _vstr_LDSl_Cfg = "vstr_LDSl_Cfg";
-  static const std::string _vstr_LDSl_NoEasy = "vstr_LDSl_NoEasy";
-  static const std::string _vstr_LDSl_VarSol = "vstr_LDSl_VarSol";
-  static const std::string _vstr_LDSl_DualSol = "vstr_LDSl_DualSol";
   if( idx == vstr_LDSl_Cfg )
    return( _vstr_LDSl_Cfg );
-  if( idx == vstr_LDSl_NoEasy )
-   return( _vstr_LDSl_NoEasy );
-  if( idx == vstr_LDSl_VarSol )
-   return( _vstr_LDSl_VarSol );
-  if( idx == vstr_LDSl_DualSol )
-   return( _vstr_LDSl_DualSol );
 
   return( InnerSolver->vstr_par_idx2str( vstr_par_lds( idx ) ) );
   }
@@ -2021,6 +2008,14 @@ public:
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
+ /// attaches the inner Solver to the Lagrangian Dual
+ /** Nothing is done before the Lagrangian Dual is formed; set_Block() calls
+  * this last, when the ComputeConfig of this Solver, and with it all the
+  * parameters of the inner Solver, has been set (BlockSolverConfig sets it
+  * before registering the Solver): a parameter that the inner Solver reads
+  * only when it is attached, as BundleSolver does with vintNoEasy and
+  * vstrNoEasy, is therefore there by then. */
+
  void register_inner_Solver( void ) {
   if( ! LagrDual )
    return;
@@ -2031,9 +2026,6 @@ public:
   // of its descendants, so the inner Solver needs to skip it as well
   if( ! get_excluded_blocks().empty() )
    InnerSolver->set_excluded_blocks( & get_excluded_blocks() );
-  // the inner Solver reads which components are never "easy" when it is
-  // attached to the Lagrangian Dual, so they are given to it first
-  set_NoEasy();
   LagrDual->register_Solver( InnerSolver );
   }
 
@@ -2045,26 +2037,6 @@ public:
    LagrDual->unregister_Solver( InnerSolver );
    }
   }
-
-/*--------------------------------------------------------------------------*/
- /// gives the inner Solver the components that are never "easy"
- /** The components whose classname() is in vstr_LDSl_NoEasy, together with
-  * the vintNoEasy given to the inner Solver (if any), become its vintNoEasy;
-  * nothing is done while vstr_LDSl_NoEasy is empty, or the components or the
-  * inner Solver are not there yet. The inner Solver reads vintNoEasy when it
-  * is attached to the Lagrangian Dual (see BundleSolver::set_Block()), which
-  * is why register_inner_Solver() calls this first. */
-
- void set_NoEasy( void );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// gives the inner Solver the components that are never "easy", now
- /** As set_NoEasy(), but if the inner Solver is already attached to the
-  * Lagrangian Dual it is attached again, so that the new vintNoEasy is read;
-  * this is what a change of vstr_LDSl_NoEasy, or of the vintNoEasy it adds
-  * to, after the Lagrangian Dual has been formed requires. */
-
- void pass_NoEasy( void );
 
 /*--------------------------------------------------------------------------*/
 
@@ -2272,18 +2244,6 @@ FRowConstraint * constraint_with_index( Index i ) {
  ///< for which sub-Block change PushCostToOwner
 
  std::vector< std::string > FCfg;  ///< filenames for Configurations
-
- std::vector< std::string > NoEasyCls;
- ///< the classname() of the components that are never "easy"
-
- std::vector< int > NoEasyIdx;
- ///< the vintNoEasy given to the inner Solver, to which NoEasyCls adds
-
- std::vector< std::string > VarSolCls;
- ///< the classname() of the components get_var_solution() deals with
-
- std::vector< std::string > DualSolCls;
- ///< the classname() of the components get_dual_solution() deals with
  
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 

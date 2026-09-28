@@ -92,6 +92,13 @@ using p_BSC = BlockSolverConfig *;
 using p_SConf_p_p = SimpleConfiguration< std::pair< Configuration * ,
 						    Configuration * > > *;
 
+using p_SConf_m_s_c = SimpleConfiguration< std::map< std::string ,
+						     Configuration * > > *;
+
+// the key of the by-class Configuration of get_dual_solution() that stands
+// for the relaxed constraints of the father Block
+const std::string RelaxedKey = "relaxed";
+
 /*--------------------------------------------------------------------------*/
 /* LagrangianDualSolver always need to have an "inner CDASolver" set, but at
  * the beginning it would have none: it will then have a FakeCDASolver one,
@@ -939,19 +946,8 @@ void LagrangianDualSolver::set_par( idx_type par ,
    std::sort( WhichPushCost.begin() , WhichPushCost.end() );
    set_PushCostToOwner();
    break;
-  default: {
-   const auto ipar = vint_par_lds( par );
-   // the vintNoEasy of the inner Solver is kept, as vstr_LDSl_NoEasy adds
-   // to it, and the two are given together
-   if( InnerSolver->vint_par_idx2str( ipar ) == "vintNoEasy" ) {
-    NoEasyIdx = value;
-    if( ! NoEasyCls.empty() ) {
-     pass_NoEasy();
-     break;
-     }
-    }
-   InnerSolver->set_par( ipar , std::move( value ) );
-   }
+  default:
+   InnerSolver->set_par( vint_par_lds( par ) , std::move( value ) );
   }
  }
 
@@ -969,61 +965,9 @@ void LagrangianDualSolver::set_par( idx_type par ,
    for( Index i = 0 ; i < v_Cfg.size() ; ++i )
     v_Cfg[ i ] = Configuration::deserialize( FCfg[ i ] );
    break;
-  case( vstr_LDSl_NoEasy ):
-   NoEasyCls = std::move( value );
-   pass_NoEasy();
-   break;
-  case( vstr_LDSl_VarSol ):
-   VarSolCls = std::move( value );
-   break;
-  case( vstr_LDSl_DualSol ):
-   DualSolCls = std::move( value );
-   break;
   default:
    InnerSolver->set_par( vstr_par_lds( par ) , std::move( value ) );
   }
- }
-
-/*--------------------------------------------------------------------------*/
-
-void LagrangianDualSolver::pass_NoEasy( void )
-{
- if( NoEasyCls.empty() || ( ! InnerSolver ) || v_component.empty() )
-  return;
-
- // attached already, the inner Solver has read its vintNoEasy: it is
- // attached again, register_inner_Solver() giving it the new one first
- if( LagrDual && ( InnerSolver->get_Block() == LagrDual ) ) {
-  ComponentHold hold( *this );  // the inner Solver looks at the components
-  unregister_inner_Solver();
-  register_inner_Solver();
-  }
- else
-  set_NoEasy();
- }
-
-/*--------------------------------------------------------------------------*/
-
-void LagrangianDualSolver::set_NoEasy( void )
-{
- if( NoEasyCls.empty() || ( ! InnerSolver ) || v_component.empty() )
-  return;
-
- const auto idx = InnerSolver->vint_par_str2idx( "vintNoEasy" );
- if( idx == Inf< idx_type >() )
-  throw( std::invalid_argument( "LagrangianDualSolver::set_NoEasy: the "
-				"inner Solver " + ISName + " has no "
-				"vintNoEasy, which vstr_LDSl_NoEasy needs" ) );
-
- std::vector< int > hard( NoEasyIdx );
- for( Index i = 0 ; i < v_component.size() ; ++i )
-  if( std::find( NoEasyCls.begin() , NoEasyCls.end() ,
-		 v_component[ i ]->classname() ) != NoEasyCls.end() )
-   hard.push_back( int( i ) );
-
- std::sort( hard.begin() , hard.end() );
- hard.erase( std::unique( hard.begin() , hard.end() ) , hard.end() );
- InnerSolver->set_par( idx , std::move( hard ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1186,8 +1130,10 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
  InnerSolver->get_dual_solution( dcfg );
 
  // define a lambda that does the solution (computation and) retrieval
- // for a specific sub-Block
- auto getsoli = [ this ] ( Index i ) -> void {
+ // for a specific sub-Block; mcfg is what map_back_solution() is given if
+ // the sub-Block is a copy
+ auto getsoli = [ this ] ( Index i , Configuration * mcfg = nullptr )
+  -> void {
   Index szi = v_LBF[ i ]->get_int_par( C05Function::intGPMaxSz );
   if( ! szi ) {
    // intGPMaxSz == 0 is the conventional flag set by the inner Solver
@@ -1200,7 +1146,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
    // sub-Block was R3Block-copied.
    if( iBCopy )
     v_component[ i ]->map_back_solution(
-                                  v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
+			  v_LBF[ i ]->get_nested_Block( 0 ) , nullptr , mcfg );
    return;
    }
   auto & lc = v_LBF[ i ]->get_important_linearization_coefficients();
@@ -1236,7 +1182,7 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
   // if sub-Block is a copy, map_back the solution to the original
   if( iBCopy )
     v_component[ i ]->map_back_solution(
-			    v_LBF[ i ]->get_nested_Block( 0 ) , nullptr );
+			  v_LBF[ i ]->get_nested_Block( 0 ) , nullptr , mcfg );
   };
 
  auto SCvi = dynamic_cast< SimpleConfiguration< std::vector< int > > * >( solc );
@@ -1251,10 +1197,17 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
    getsoli( el );
   }
  else
-  for( Index i = 0 ; i < f_nsb ; ++i )
-   if( VarSolCls.empty() ||
-       ( std::find( VarSolCls.begin() , VarSolCls.end() ,
-		    v_component[ i ]->classname() ) != VarSolCls.end() ) )
+  if( auto SCmc = dynamic_cast< p_SConf_m_s_c >( solc ) ) {
+   // by class: only the sub-Block whose classname() is a key
+   const auto & cls = SCmc->value();
+   for( Index i = 0 ; i < f_nsb ; ++i ) {
+    const auto it = cls.find( v_component[ i ]->classname() );
+    if( it != cls.end() )
+     getsoli( i , it->second );
+    }
+   }
+  else
+   for( Index i = 0 ; i < f_nsb ; ++i )
     getsoli( i );
  
  }  // end( LagrangianDualSolver::get_var_solution )
@@ -1328,17 +1281,29 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
    v_LBF[ b ]->cleanup_inner_objective();
   };
  
- // if solc == nullptr get the dual solutions of all sub-Block (those of the
- // classes in vstr_LDSl_DualSol, if any) with nullptr Configuration - - - -
+ // if solc == nullptr get the dual solutions of all sub-Block with nullptr
+ // Configuration- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  if( ! solc ) {
   for( Index i = 0 ; i < f_nsb ; ++i )
-   if( DualSolCls.empty() ||
-       ( std::find( DualSolCls.begin() , DualSolCls.end() ,
-		    v_component[ i ]->classname() ) != DualSolCls.end() ) )
-    lcfg( i , nullptr );
+   lcfg( i , nullptr );
 
   goto get_duals;  // then go to also get those of the relaxed constraints
+  }
+
+ // the case of std::map< std::string , Configuration * >- - - - - - - - - -
+ if( auto c = dynamic_cast< p_SConf_m_s_c >( solc ) ) {
+  const auto & cls = c->value();
+  for( Index i = 0 ; i < f_nsb ; ++i ) {
+   const auto it = cls.find( v_component[ i ]->classname() );
+   if( it != cls.end() )
+    lcfg( i , it->second );
+   }
+
+  if( cls.count( RelaxedKey ) )
+   goto get_duals;
+
+  return;
   }
 
  // the case of std::vector< std::pair< int , Configuration * > >- - - - - -

@@ -9,16 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `vstr_LDSl_NoEasy`, the classname() of the components that the inner
-  Solver must never treat as easy: the index of each component of one of
-  those classes is added to the `vintNoEasy` of the inner Solver, together
-  with those given there directly, so that a configuration names the hard
-  components of any instance without knowing their position
-
-- `vstr_LDSl_VarSol` and `vstr_LDSl_DualSol`, the classname() of the
-  components whose primal and dual solution `get_var_solution()` and
-  `get_dual_solution()` deal with when they are given no Configuration,
-  the by-class form of the index-based Configurations they take
+- `get_var_solution()` and `get_dual_solution()` take a
+  `SimpleConfiguration< std::map< std::string , Configuration * > >`, the
+  type of the "meta" Configurations, that names the sub-Block whose
+  solution is written by class: only the sub-Block whose classname() is a
+  key are dealt with, each with the Configuration its class is mapped to,
+  and the key `relaxed` asks `get_dual_solution()` for the duals of the
+  relaxed constraints too, as an invalid index does in the index-based
+  forms; a configuration so names the components whose solution is needed
+  for instances whose components are numbered differently
 
 - the list of the sub-Block this Solver is told to skip, which
   `get_excluded_blocks()` gives, is handed to the inner Solver as it is: any
@@ -53,6 +52,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now tells whoever links it to keep the symbol that forces the module in,
   and on ELF, where naming the symbol is not enough, the library as a whole
 
+### Removed
+
+- `vstr_LDSl_NoEasy`, the classname() of the components that the inner
+  Solver must never treat as easy, together with what resolved it into the
+  indices of `vintNoEasy` and attached the inner Solver again when it
+  changed: which components are easy is a concept of `BundleSolver`, not of
+  the Lagrangian Dual (a subgradient Solver has no such thing), and the
+  classes are now given to `BundleSolver` itself with its `vstrNoEasy`,
+  which a ComputeConfig of this Solver passes on to the inner Solver as any
+  other parameter of it, before the inner Solver is attached to the
+  Lagrangian Dual
+
+- `vstr_LDSl_VarSol` and `vstr_LDSl_DualSol`, the classname() of the
+  components whose primal and dual solution `get_var_solution()` and
+  `get_dual_solution()` write when given no Configuration: which components
+  are written is what the Configuration of the two methods says, and a
+  parameter that changes what nullptr means took that away from it; the
+  classes are now the keys of the by-class Configuration the two methods
+  take, and nullptr again means all the components
+
 ### Fixed
 
 - `compute()`, `get_var_solution()` and `get_dual_solution()` unlock the
@@ -77,13 +96,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the Lagrangian Dual and whoever observes it has to see them together,
   which is what the branch that removes them, and the one that adds a
   Variable to a constraint that is already there, do
-
-- the components that `vstr_LDSl_NoEasy` names are given to the inner Solver
-  before it is attached to the Lagrangian Dual, which is when
-  `BundleSolver` reads `vintNoEasy`, and a later change of the parameter
-  attaches it again: they were given after, and a component the parameter
-  named hard, such as a `HydroSystemUnitBlock` solved as an LP, was treated
-  as easy
 
 - `compute()` holds the components before it processes the outstanding
   Modification, not after: those of the Variable of a component look for it
