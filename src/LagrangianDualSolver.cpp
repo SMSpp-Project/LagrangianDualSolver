@@ -2155,16 +2155,21 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
   if( const auto tmod = std::dynamic_pointer_cast<
                                  BlockModRmv< FRowConstraint > >( *imod ) ) {
 
+   /* The Modification hands the Constraint that have been removed as a
+    * std::list of them, and what is wanted here is the address of each:
+    * taking them by value copies a Constraint, which is what the copy
+    * constructor of the base class refuses, by design, with a throw. */
    if( Addd.empty() )  // nothing added yet, they can only be original constr
-    for( auto el : tmod->removed() )
-     Dltds.insert( & el );
+    for( const auto & el : tmod->removed() )
+     Dltds.insert( const_cast< p_FRC >( & el ) );
    else {  // have to check if some was a just added constraints
-    for( auto el : tmod->removed() ) {
-     auto sit = Addds.find( & el );
+    for( const auto & el : tmod->removed() ) {
+     const auto cns = const_cast< p_FRC >( & el );
+     auto sit = Addds.find( cns );
      if( sit == Addds.end() )  // one of the original constraints
-      Dltds.insert( & el );    // just mark it as removed
+      Dltds.insert( cns );     // just mark it as removed
      else {                    // a previously added constraint
-      AddDltd.insert( & el );  // mark it so
+      AddDltd.insert( cns );   // mark it so
       Addds.erase( sit );      // remove it from the set of added
       // note: the element is *not* removed from the *vector* of added
       // ones since this would be a costly operation, this is done only
@@ -2692,20 +2697,30 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
   NumVar += NAddd;
   dcon_to_idx.resize( NumVar - static_cons );
   idx_to_dcon.resize( NumVar - static_cons );
-  auto dc2iit = dcon_to_idx.begin() + i;
-  auto i2dcit = idx_to_dcon.begin() + i;
+  /* The two dictionaries are indexed from the first dynamic constraint on,
+   * while i counts from the first constraint of all: the offset is where
+   * the new entries go. */
+  auto dc2iit = dcon_to_idx.begin() + ( i - static_cons );
+  auto i2dcit = idx_to_dcon.begin() + ( i - static_cons );
 
   for( auto el : Addd ) {
+   /* The dictionaries learn the constraint and the index of its multiplier
+    * before anything else: the Variable is added whatever the row turns out
+    * to be, and whoever removes the row later asks them for that index. */
+   *( i2dcit++ ) = el;
+   *( dc2iit++ ) = std::make_pair( el , i++ );
+
    // check the LHS/RHS
    auto lhs = el->get_lhs();
    auto rhs = el->get_rhs();
 
    if( ( ( lhs == -INFshift ) && ( rhs == INFshift ) ) || el->is_relaxed() ) {
     // this constraint is eiter "infinitely loose" or relaxed: its rhs is
-    // 0 and the Lagrangian term is empty
+    // 0 and the Lagrangian term is empty; the ones that follow it are not
+    // affected, hence this row is done with and the next is taken
     *( objit++ ) = std::make_pair( &*( Lit++ ) , 0 );
     ++LTit;
-    return;
+    continue;
     }
 
    auto coef = constr2val( *el , *Lit );

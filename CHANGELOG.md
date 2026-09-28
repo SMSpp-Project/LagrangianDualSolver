@@ -74,6 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a dynamic `FRowConstraint` added to the Block while the Solver is attached
+  no longer needs the Block to be reloaded: the Constraint removed by a
+  `BlockModRmv` are read by reference (taking them by value calls the copy
+  constructor of `Constraint`, which throws by design), the two dictionaries
+  that give the multiplier of a dynamic constraint and the constraint of a
+  multiplier are indexed from the first dynamic constraint and not from the
+  first constraint of all, they learn the new row before it is looked at,
+  and a row that is "infinitely loose" or relaxed leaves the others to be
+  dealt with instead of ending the loop over the added ones
+
 - `compute()`, `get_var_solution()` and `get_dual_solution()` unlock the
   components that the Block, locked by the LagrangianDualSolver itself,
   keeps locked with it, and lock them again after: when whoever calls
