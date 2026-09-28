@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vstr_LDSl_NoEasy`, the classname() of the components that the inner
+  Solver must never treat as easy: the index of each component of one of
+  those classes is added to the `vintNoEasy` of the inner Solver, together
+  with those given there directly, so that a configuration names the hard
+  components of any instance without knowing their position
+
+- `vstr_LDSl_VarSol` and `vstr_LDSl_DualSol`, the classname() of the
+  components whose primal and dual solution `get_var_solution()` and
+  `get_dual_solution()` deal with when they are given no Configuration,
+  the by-class form of the index-based Configurations they take
+
 - the list of the sub-Block this Solver is told to skip, which
   `get_excluded_blocks()` gives, is handed to the inner Solver as it is: any
   sub-Block excluded here is a sub-Block of the Lagrangian dual or of one of
@@ -43,6 +54,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and on ELF, where naming the symbol is not enough, the library as a whole
 
 ### Fixed
+
+- `compute()`, `get_var_solution()` and `get_dual_solution()` unlock the
+  components that the Block, locked by the LagrangianDualSolver itself,
+  keeps locked with it, and lock them again after: when whoever calls
+  `compute()` has locked the Block and given its own id to the Solver, as
+  the `InvestmentFunction` does, the LagBFunction of a component, which
+  locks it with its own id, could not, and the inner Solver returned
+  `kError` at the first evaluation
+
+- `get_dual_solution()` asks the dual solution of a component to the Solver
+  its LagBFunction uses, and if that Solver has none at the moment (its
+  Objective having been put back after `compute()`) the component is solved
+  again at the multipliers of the solution, where its duals belong; a
+  component whose Solver cannot give duals at all (e.g., a dynamic
+  programming) leaves its Constraint as they are, which a reader such as a
+  `BendersBFunction` has to check
+
+- when a linking constraint grows, the Modification the added dual pairs of
+  every `LagBFunction` issue go in the channel the branch opens, as the one
+  of the objective of the Lagrangian Dual already did: they are one change
+  of the Lagrangian Dual and whoever observes it has to see them together,
+  which is what the branch that removes them, and the one that adds a
+  Variable to a constraint that is already there, do
+
+- the components that `vstr_LDSl_NoEasy` names are given to the inner Solver
+  before it is attached to the Lagrangian Dual, which is when
+  `BundleSolver` reads `vintNoEasy`, and a later change of the parameter
+  attaches it again: they were given after, and a component the parameter
+  named hard, such as a `HydroSystemUnitBlock` solved as an LP, was treated
+  as easy
+
+- `compute()` holds the components before it processes the outstanding
+  Modification, not after: those of the Variable of a component look for it
+  through the Lagrangian Dual, which is its father only while it is held,
+  and threw "Variable belonging to wrong Block"
+
+- a `NBModification` of a sub-Block no longer empties the list of the
+  Modification waiting to be processed: the Lagrangian dual discards it
+  anyway, its `LagBFunction` taking care of it, while the list lost the
+  changes of the coefficients of the relaxed constraints issued before it.
+  An `InvestmentFunction` that scaled the units of a stage and then removed
+  its cuts left the Lagrangian dual with the old coefficients, above the
+  integer optimum
+
+- several LagrangianDualSolver (a PrimalProximalHeur included) attached to
+  the same Block work together: with `int_LDSlv_iBCopy 0` each of them
+  evicted the sub-Block into its own LagBFunction when it was attached and
+  kept them there, so that the one attached later found them in the tree of
+  the first ("Variable belonging to wrong Block") or took them from it, and
+  the BlockSolverConfig of its LagBFunction, applied in differential mode,
+  replaced the inner Solver of the first on the same sub-Block, the first
+  then computing its bound with the Solver of the second. The components are
+  now held only within compute(), get_var_solution() and get_dual_solution()
+  (the Modification they issue meanwhile are handed to the LagBFunction when
+  they are held again), the BlockSolverConfig of the LagBFunction is applied
+  in additive mode, and each LagBFunction is told the position of the inner
+  Solver its configuration has registered (`intInnrSlvr`). On a TSSB of
+  thermal units the dual of the scenarios, the nested and the recursive
+  dual and the PrimalProximalHeur now give the bound each gives alone,
+  whatever the others attached and their order
+
+- on macOS a program linking the module lost the classes the module
+  registers in the factories when the linker dropped the library, as it
+  does under `-dead_strip_dylibs`, which conda sets: the target now asks the
+  linker for the symbol that forces the module in (`-u`), which ld64,
+  unlike the ELF linker, counts as a use of the library
+
+- a change to a relaxed constraint, such as a coefficient rewritten by the
+  scaling of a unit, reaches the right Lagrangian term also when
+  `intSparseLagPairs` is on (the default): each `LagBFunction` then holds only
+  the dual pairs of the constraints its sub-Block appears in, numbered among
+  themselves, while the term was looked up by the index of the constraint
+  among all the relaxed ones, which rewrote the wrong term or crashed; the
+  term is now found through its multiplier, and a sub-Block that enters a
+  relaxed constraint for the first time gets the dual pair it lacked
+
+- `has_var_solution()` answers false after a `compute()` that returned
+  `kError` or `kBlockLocked`: it asked the inner Solver whether it had a
+  dual solution, which a bundle has (the multipliers of its master problem)
+  also when the evaluation of a component failed, and the caller that
+  believed it had `get_var_solution()` throw "no coefficients stored" on the
+  component whose linearizations were never computed
 
 - `PrimalProximalHeur` records a recovered point only if it is one: a point
   is discarded when its value beats the bound the Lagrangian Dual gives, no

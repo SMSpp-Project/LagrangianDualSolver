@@ -666,10 +666,22 @@ void LagrangianDualSolver::set_Block( Block * block )
    // the same BlockSolverConfig is typically apply()-ed to many sub-Block,
    // so a clone per sub-Block is kept, clear()-ed, as the object that
    // un-does this very configuration [see v_aBSCfg]
+   //
+   // the clone is apply()-ed in additive mode: the Solver it names are
+   // registered in addition to those the sub-Block already has, which may
+   // belong to another Solver attached to the same Block (say, the inner
+   // Solver of another LagrangianDualSolver), and which a differential or
+   // setting apply() would reconfigure or replace; the inner Solver of the
+   // LagBFunction is then the first one this very configuration registers
+   const auto nslv = csbi->get_registered_solvers().size();
    auto cBSCi = BSCi->clone();
+   cBSCi->set_diff( BlockSolverConfig::eAddMode );
    cBSCi->apply( csbi );
    cBSCi->clear();
    v_aBSCfg[ i ] = cBSCi;
+
+   if( csbi->get_registered_solvers().size() > nslv )
+    v_LBF[ i ]->set_par( LagBFunction::intInnrSlvr , int( nslv ) );
    }
   }
 
@@ -762,7 +774,21 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
    */
 
- // release the Block- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // give the components back to their fathers- - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // the LagBFunction have taken the components from their fathers; they are
+ // given back until compute() needs them, so that the Block is whole for any
+ // other Solver attached to it [see v_held]
+
+ if( ! iBCopy ) {
+  f_comp_index.clear();
+  for( Index i = 0 ; i < f_nsb ; ++i )
+   f_comp_index[ v_component[ i ] ] = i;
+  v_held.assign( f_nsb , nullptr );
+  v_missed.assign( f_nsb , Lst_sp_Mod() );
+  f_held = 1;
+  release_components();
+  }
 
  // and now, finally, all is done
 
@@ -914,8 +940,19 @@ void LagrangianDualSolver::set_par( idx_type par ,
    std::sort( WhichPushCost.begin() , WhichPushCost.end() );
    set_PushCostToOwner();
    break;
-  default:
-   InnerSolver->set_par( vint_par_lds( par ) , std::move( value ) );
+  default: {
+   const auto ipar = vint_par_lds( par );
+   // the vintNoEasy of the inner Solver is kept, as vstr_LDSl_NoEasy adds
+   // to it, and the two are given together
+   if( InnerSolver->vint_par_idx2str( ipar ) == "vintNoEasy" ) {
+    NoEasyIdx = value;
+    if( ! NoEasyCls.empty() ) {
+     pass_NoEasy();
+     break;
+     }
+    }
+   InnerSolver->set_par( ipar , std::move( value ) );
+   }
   }
  }
 
@@ -933,9 +970,61 @@ void LagrangianDualSolver::set_par( idx_type par ,
    for( Index i = 0 ; i < v_Cfg.size() ; ++i )
     v_Cfg[ i ] = Configuration::deserialize( FCfg[ i ] );
    break;
+  case( vstr_LDSl_NoEasy ):
+   NoEasyCls = std::move( value );
+   pass_NoEasy();
+   break;
+  case( vstr_LDSl_VarSol ):
+   VarSolCls = std::move( value );
+   break;
+  case( vstr_LDSl_DualSol ):
+   DualSolCls = std::move( value );
+   break;
   default:
    InnerSolver->set_par( vstr_par_lds( par ) , std::move( value ) );
   }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::pass_NoEasy( void )
+{
+ if( NoEasyCls.empty() || ( ! InnerSolver ) || v_component.empty() )
+  return;
+
+ // attached already, the inner Solver has read its vintNoEasy: it is
+ // attached again, register_inner_Solver() giving it the new one first
+ if( LagrDual && ( InnerSolver->get_Block() == LagrDual ) ) {
+  ComponentHold hold( *this );  // the inner Solver looks at the components
+  unregister_inner_Solver();
+  register_inner_Solver();
+  }
+ else
+  set_NoEasy();
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::set_NoEasy( void )
+{
+ if( NoEasyCls.empty() || ( ! InnerSolver ) || v_component.empty() )
+  return;
+
+ const auto idx = InnerSolver->vint_par_str2idx( "vintNoEasy" );
+ if( idx == Inf< idx_type >() )
+  throw( std::invalid_argument( "LagrangianDualSolver::set_NoEasy: the "
+				"inner Solver " + ISName + " has no "
+				"vintNoEasy, which vstr_LDSl_NoEasy needs" ) );
+
+ std::vector< int > hard( NoEasyIdx );
+ for( Index i = 0 ; i < v_component.size() ; ++i )
+  if( std::find( NoEasyCls.begin() , NoEasyCls.end() ,
+		 v_component[ i ]->classname() ) != NoEasyCls.end() )
+   hard.push_back( int( i ) );
+
+ std::sort( hard.begin() , hard.end() );
+ hard.erase( std::unique( hard.begin() , hard.end() ) , hard.end() );
+ InnerSolver->set_par( idx , std::move( hard ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1019,6 +1108,12 @@ int LagrangianDualSolver::compute( bool changedvars )
   throw( std::runtime_error(
                        "LagrangianDualSolver: unable to lock the Block" ) );
 
+ // the components are held for as long as the inner Solver runs, and
+ // already while the outstanding Modification are processed: those of the
+ // Variable of a component find the component through the Lagrangian Dual
+ // [see Block2Index()], which is its father only while it is held
+ ComponentHold hold( *this );
+
  process_outstanding_Modification();
 
  if( ! owned )
@@ -1036,6 +1131,8 @@ int LagrangianDualSolver::compute( bool changedvars )
   for( auto us : v_US )
    us->inhibit_Modification( true );
    */
+
+ ComponentUnlock unlocked( *this );  // for the LagBFunction to lock them
 
  auto res = InnerSolver->compute( changedvars );
 
@@ -1058,6 +1155,8 @@ int LagrangianDualSolver::compute( bool changedvars )
   if( res == kInfeasible )
    res = kUnbounded;
 
+ f_status = res;
+
  unlock();  // unlock the mutex
 
  return( res );
@@ -1073,6 +1172,9 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
  if( ! LagrDual )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
+
+ ComponentHold hold( *this );
+ ComponentUnlock unlocked( *this );
 
  // pick up the proper Configuration for get_dual_solution(), if any
  Configuration * dcfg = nullptr;
@@ -1151,9 +1253,26 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
   }
  else
   for( Index i = 0 ; i < f_nsb ; ++i )
-   getsoli( i );
+   if( VarSolCls.empty() ||
+       ( std::find( VarSolCls.begin() , VarSolCls.end() ,
+		    v_component[ i ]->classname() ) != VarSolCls.end() ) )
+    getsoli( i );
  
  }  // end( LagrangianDualSolver::get_var_solution )
+
+/*--------------------------------------------------------------------------*/
+
+CDASolver * LagrangianDualSolver::component_solver( Index b ) const
+{
+ const auto & slvs = v_LBF[ b ]->get_nested_Block( 0 )->
+                                               get_registered_solvers();
+ const Index i = v_LBF[ b ]->get_int_par( LagBFunction::intInnrSlvr );
+ if( i >= slvs.size() )
+  return( nullptr );
+
+ return( dynamic_cast< CDASolver * >( *std::next( slvs.begin() , i ) ) );
+
+ }  // end( LagrangianDualSolver::component_solver )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1162,6 +1281,9 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  if( ! LagrDual )
   throw( std::logic_error(
     "LagrangianDualSolver::get_var_solution: Lagrangian Dual not formed" ) );
+
+ ComponentHold hold( *this );
+ ComponentUnlock unlocked( *this );
 
  // pick up the proper Configuration for get_var_solution(), if any
  Configuration * cfg = nullptr;
@@ -1179,29 +1301,43 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  // this function.
  auto lcfg = [ this ]( Index b , Configuration * cfg ) {
   auto LSBb = v_LBF[ b ]->get_nested_Block( 0 );
-  if( LSBb->get_registered_solvers().empty() )
+
+  // ask it to the Solver that was used to compute() the inner Block; if it
+  // has no dual solution now, typically because the Objective of the
+  // component has been put back after compute(), the component is solved
+  // again at the multipliers of the solution, which is where its duals
+  // belong; a Solver that has no dual solution to offer anyway (say, it
+  // solved the sub-Block as an integer MILP) is skipped, leaving the
+  // Constraint of the component with the dual value they had
+  auto SBSb = component_solver( b );
+  if( ! SBSb )
    return;
 
-  // ask it to the Solver that was used to compute() the inner Block; note
-  // that the Solver may have no dual solution to offer (say, it solved the
-  // sub-Block as an integer MILP), in which case it is silently skipped
-  auto rsp = LSBb->get_registered_solvers().begin();
-  std::advance( rsp , v_LBF[ b ]->get_int_par( LagBFunction::intInnrSlvr ) );
-  if( auto SBSb = dynamic_cast< CDASolver * >( *rsp ) ) {
-   if( ! SBSb->has_dual_solution() )
-    return;
+  bool again = false;
+  if( ! SBSb->has_dual_solution() ) {
+   v_LBF[ b ]->compute( true );
+   again = true;
+   }
+
+  if( SBSb->has_dual_solution() ) {
    SBSb->get_dual_solution( cfg );
    if( iBCopy )  // the sub-Block is a copy
     v_component[ b ]->map_back_solution( LSBb , nullptr , cfg );
    }
+
+  if( again && ( ! iBCopy ) )
+   v_LBF[ b ]->cleanup_inner_objective();
   };
  
- // if solc == nullptr get the dual solutions of all sub-Block with nullptr
- // Configuration- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if solc == nullptr get the dual solutions of all sub-Block (those of the
+ // classes in vstr_LDSl_DualSol, if any) with nullptr Configuration - - - -
 
  if( ! solc ) {
   for( Index i = 0 ; i < f_nsb ; ++i )
-   lcfg( i , nullptr );
+   if( DualSolCls.empty() ||
+       ( std::find( DualSolCls.begin() , DualSolCls.end() ,
+		    v_component[ i ]->classname() ) != DualSolCls.end() ) )
+    lcfg( i , nullptr );
 
   goto get_duals;  // then go to also get those of the relaxed constraints
   }
@@ -1735,6 +1871,17 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  if( ! LagrDual )  // nothing to be cleaned up
   return;          // all done
 
+ // the dismantling below starts from the components held, as they were
+ // when the Lagrangian Dual was formed; once it is done they are with their
+ // fathers for good, hence nothing is held any longer
+ if( ! v_held.empty() ) {
+  hold_components();
+  v_held.clear();
+  v_missed.clear();
+  f_comp_index.clear();
+  f_held = 0;
+  }
+
  // first detach the inner Solver
  unregister_inner_Solver();
 
@@ -1782,6 +1929,128 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  v_father.clear();
 
  }  // end( LagrangianDualSolver::cleanup_LagrDual )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::add_Modification( sp_Mod & mod )
+{
+ if( f_no_Mod )
+  return;
+
+ // a Modification of a component that is with its father has not been seen
+ // by the LagBFunction, which is what translates it for the Lagrangian Dual:
+ // it is kept for when the component is held again
+ if( ( ! v_held.empty() ) && ( ! f_held ) &&
+     ( mod->get_Block() != f_Block ) ) {
+  const auto i = component_of( mod->get_Block() );
+  if( i < f_nsb ) {
+   while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
+    ;  // try to acquire lock, spin on failure
+   v_missed[ i ].push_back( mod );
+   f_mod_lock.clear( std::memory_order_release );  // release lock
+   return;
+   }
+  }
+
+ // a NBModification of a sub-Block concerns that sub-Block only, which its
+ // LagBFunction takes care of, and it is discarded when the list is
+ // processed [see flatten_Modification_list()]: queued, it would empty the
+ // list, losing the changes to the relaxed constraints issued before it
+ if( std::dynamic_pointer_cast< const NBModification >( mod ) &&
+     ( mod->get_Block() != f_Block ) )
+  return;
+
+ CDASolver::add_Modification( mod );
+
+ }  // end( LagrangianDualSolver::add_Modification )
+
+/*--------------------------------------------------------------------------*/
+
+LagrangianDualSolver::Index LagrangianDualSolver::component_of(
+						   const Block * b ) const
+{
+ for( ; b && ( b != f_Block ) ; b = b->get_f_Block() ) {
+  const auto it = f_comp_index.find( b );
+  if( it != f_comp_index.end() )
+   return( it->second );
+  }
+
+ return( f_nsb );
+
+ }  // end( LagrangianDualSolver::component_of )
+
+/*--------------------------------------------------------------------------*/
+
+namespace {
+
+// makes \p b the son of \p father, telling it whether anyone listens up there
+void set_father( Block * b , Block * father )
+{
+ const auto old = b->get_f_Block();
+ if( old == father )
+  return;
+
+ const bool wasthere = old && old->anyone_there();
+ const bool isthere = father && father->anyone_there();
+ b->set_f_Block( father );
+ if( wasthere != isthere )
+  b->anyone_there( isthere );
+ }
+
+}  // end( anonymous namespace )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::hold_components( void )
+{
+ if( v_held.empty() || ( f_held++ ) )  // nothing to hold, or already held
+  return;
+
+ for( Index i = 0 ; i < f_nsb ; ++i )
+  set_father( v_component[ i ] , v_held[ i ] );
+
+ // the Modification kept aside while the components were given back
+ std::vector< Lst_sp_Mod > missed( f_nsb );
+ while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
+  ;  // try to acquire lock, spin on failure
+ bool any = false;
+ for( Index i = 0 ; i < f_nsb ; ++i )
+  if( ! v_missed[ i ].empty() ) {
+   missed[ i ].swap( v_missed[ i ] );
+   any = true;
+   }
+ f_mod_lock.clear( std::memory_order_release );  // release lock
+
+ if( ! any )
+  return;
+
+ // hand them to whoever holds the component, as if they had arrived then;
+ // the father of the LagBFunction is taken away meanwhile, since f_Block
+ // and its Solver have already had them from the component
+ for( auto lbf : v_LBF )
+  lbf->set_f_Block( nullptr );
+
+ for( Index i = 0 ; i < f_nsb ; ++i )
+  for( auto & mod : missed[ i ] )
+   v_held[ i ]->add_Modification( mod );
+
+ for( auto lbf : v_LBF )
+  lbf->set_f_Block( f_Block );
+
+ }  // end( LagrangianDualSolver::hold_components )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::release_components( void )
+{
+ if( v_held.empty() || ( --f_held ) )  // nothing held, or still held
+  return;
+
+ for( Index i = 0 ; i < f_nsb ; ++i ) {
+  v_held[ i ] = v_component[ i ]->get_f_Block();
+  set_father( v_component[ i ] , v_father[ i ] );
+  }
+ }  // end( LagrangianDualSolver::release_components )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1838,6 +2107,38 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 
  if( v_mod_tmp.empty() )  // no Modification coming directly from f_Block
   return;                 // all done
+
+ // the Lagrangian variable of the pos-th relaxed constraint, the static ones
+ // first and then the dynamic ones
+ const auto multiplier = [ this ]( Index pos ) -> ColVariable * {
+  if( pos < static_cons )
+   return( & ( *LagrDual->get_static_variable_v< ColVariable >(
+					      "Lambda_s" ) )[ pos ] );
+  return( & *std::next( LagrDual->get_dynamic_variable< ColVariable >(
+					      "Lambda_d" )->begin() ,
+			pos - static_cons ) );
+  };
+
+ // the Lagrangian term of the pos-th relaxed constraint in the h-th
+ // LagBFunction, nullptr if it has none; the dual pairs of a LagBFunction
+ // are numbered among themselves, and with SparseLagPairs it only has
+ // those whose term was nonempty, so the pair is found through its
+ // Lagrangian variable
+ const auto lagrangian_term = [ & ]( Index h , Index pos ) -> p_LF {
+  const auto i = SparseLagPairs ? v_LBF[ h ]->is_active( multiplier( pos ) )
+                                : pos;
+  if( i == Inf< Index >() )
+   return( nullptr );
+  return( static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( i ) ) );
+  };
+
+ // the same, when the term is known to be there because some ColVariable of
+ // the sub-Block is already in the constraint
+ const auto existing_term = [ & ]( Index h , Index pos ) -> p_LF {
+  const auto lfh = lagrangian_term( h , pos );
+  assert( lfh );
+  return( lfh );
+  };
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 1st loop: only consider addition and deletion of (dynamic) FRowConstraint
@@ -2091,10 +2392,15 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     if( ! chnls[ h ] )
      chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
 
-    static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos )
-			 )->add_variables( std::move( split[ h ] ) ,
-					   Observer::make_par( eModBlck ,
-							       chnls[ h ] ) );
+    if( const auto lfh = lagrangian_term( h , pos ) )
+     lfh->add_variables( std::move( split[ h ] ) ,
+			 Observer::make_par( eModBlck , chnls[ h ] ) );
+    else  // the first ColVariable of this sub-Block in the constraint
+     v_LBF[ h ]->add_dual_pairs( v_dual_pair( { dual_pair(
+				  multiplier( pos ) ,
+				  new LinearFunction( std::move( split[ h ] ) )
+				  ) } ) ,
+				 Observer::make_par( eModBlck , chnls[ h ] ) );
     }
    }  // end( C05FunctionModVarsAddd )
 
@@ -2139,8 +2445,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    for( Index i = 0 ; i < tmod->vars().size() ; ++i ) {
     auto bidx = blckidx[ i ];
     split[ bidx ][ cntr[ bidx ]++ ] =
-     static_cast< p_LF >( v_LBF[ bidx ]->get_Lagrangian_term( pos )
-			  )->is_active( tmod->vars()[ i ] );
+     existing_term( bidx , pos )->is_active( tmod->vars()[ i ] );
     }
 
    // now call remove_variables() for all the appropriate LinearFunction
@@ -2151,8 +2456,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     if( ! chnls[ h ] )
      chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
 
-    static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos )
-			 )->remove_variables( std::move( split[ h ] ) ,
+    existing_term( h , pos )->remove_variables( std::move( split[ h ] ) ,
 					      false ,
 					      Observer::make_par( eModBlck ,
 								  chnls[ h ] )
@@ -2201,8 +2505,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     auto bidx = blckidx[ i ];
     auto tc = cntr[ bidx ]++;
     split[ bidx ][ tc ] =
-     static_cast< p_LF >( v_LBF[ bidx ]->get_Lagrangian_term( pos )
-			  )->is_active( tmod->vars()[ i ] );
+     existing_term( bidx , pos )->is_active( tmod->vars()[ i ] );
     delta[ bidx ][ tc ] = tmod->delta()[ i ];
     }
 
@@ -2220,7 +2523,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     if( ! chnls[ h ] )
      chnls[ h ] = LagrDual->get_nested_Block( h )->open_channel();
 
-    auto lfh = static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( pos ) );
+    auto lfh = existing_term( h , pos );
     auto & vcp = lfh->get_v_var();
     for( Index i = 0 ; i < cntr[ h ] ; ++i )
      delta[ h ][ i ] += vcp[ split[ h ][ i ] ].second;
@@ -2490,7 +2793,11 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
      }
     }
 
-   v_LBF[ h ]->add_dual_pairs( std::move( dp ) );
+   // the Modification this issues goes in the channel with the one of the
+   // objective above: they are one change of the Lagrangian Dual, and whoever
+   // observes it has to see them together [cf. the removal branch, and the
+   // branch that adds a Variable to a constraint that is already there]
+   v_LBF[ h ]->add_dual_pairs( std::move( dp ) , mp );
    }
 
   LagrDual->close_channel( chnl );  // close the channel

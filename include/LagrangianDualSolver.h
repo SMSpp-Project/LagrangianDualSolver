@@ -38,6 +38,10 @@
 
 #include "UpdateSolver.h"
 
+#include <atomic>
+
+#include <unordered_map>
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -408,14 +412,17 @@ public:
   * are the leaves of the decomposable part of the tree rather than the
   * children of the root, and the multipliers are those of every level.
   *
-  * The two things being compared are then the same dual solved in two ways:
-  * with this off, a child that is itself decomposable is one component, and
-  * whichever Solver is attached to it may solve its own Lagrangian dual,
-  * which gives a stronger bound at the price of a dual inside a dual; with
-  * this on, there is a single dual with all the multipliers of all the
-  * levels, whose bound is weaker but whose master is one instead of many.
-  * Which of the two is faster is a matter of the instance, hence the
-  * parameter. Default 0, i.e., the children are the components. */
+  * With this off, a child that is itself decomposable is one component,
+  * solved by whichever Solver is attached to it. If that Solver is exact
+  * (e.g., a :MILPSolver), the bound is that of the dual of the children,
+  * which is at least as strong as the one given with this on; if it is a
+  * LagrangianDualSolver in turn, the two settings solve the same dual in
+  * two ways and give the same bound, i.e., that of the convexified
+  * relaxation w.r.t. the leaves: a dual inside a dual with this off, and a
+  * single dual with all the multipliers of all the levels, and one master
+  * instead of many, with this on. Which of the two is faster is a matter of
+  * the instance, hence the parameter. Default 0, i.e., the children are the
+  * components. */
 
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -521,6 +528,15 @@ public:
   vstr_LDSl_Cfg = vstrLastParCDAS ,
   ///< parameter for "the cache of Configurations"
 
+  vstr_LDSl_NoEasy ,
+  ///< the classname() of the components that are never "easy"
+
+  vstr_LDSl_VarSol ,
+  ///< the classname() of the components get_var_solution() deals with
+
+  vstr_LDSl_DualSol ,
+  ///< the classname() of the components get_dual_solution() deals with
+
   vstrLastLDSlvPar  ///< first allowed new vector-of-string parameter
                     /**< Convenience value for easily allow derived classes
 		     * to extend the set of vector-of-string parameters. */
@@ -536,9 +552,10 @@ public:
  /// constructor: ensure every field is initialized
 
  LagrangianDualSolver( void ) : CDASolver() , NumVar( 0 ) , f_nsb( 0 ) ,
+  f_status( kUnEval ) ,
   f_max( false ) , LagrDual( nullptr ) , f_BCfg( nullptr ) ,
   f_BSCfg( nullptr ) ,  f_DBCfg( nullptr ) , f_DBSCfg( nullptr ) ,
-  f_DBSCfg_map( nullptr ) , static_cons( 0 ) {
+  f_DBSCfg_map( nullptr ) , static_cons( 0 ) , f_held( 0 ) {
   // ensure all parameters are properly given their default value
   iBCopy          = get_dflt_int_par( int_LDSlv_iBCopy );
   NNMult          = get_dflt_int_par( int_LDSlv_NNMult );
@@ -867,7 +884,28 @@ public:
   *   or any other Configuration, whose elements can then be used for
   *   various purposes; see all times where vstr_LDSl_Cfg is mentioned, such
   *   as str_LagBF_BCfg, str_LDBlck_BCfg, str_LagBF_BSCfg and
-  *   str_LDBlck_BSCfg. */
+  *   str_LDBlck_BSCfg.
+  *
+  * - vstr_LDSl_NoEasy [empty]: the classname() of the components that the
+  *   inner Solver must not treat as "easy". Every component, i.e., sub-Block
+  *   of the Lagrangian Dual, whose classname() is in the vector is added to
+  *   the vintNoEasy parameter of the inner Solver (see BundleSolver), which
+  *   wants their indices instead, together with those that vintNoEasy may
+  *   already give. This lets one configuration file say "these units are
+  *   hard" for instances whose components are numbered differently, as
+  *   str_LagBF_BSCfg does for their BlockSolverConfig. An inner Solver
+  *   without vintNoEasy is an error, unless the vector is empty.
+  *
+  * - vstr_LDSl_VarSol [empty]: if non-empty(), the classname() of the
+  *   components whose variable solution get_var_solution() constructs when
+  *   it is called with solc == nullptr, the others being skipped; this is
+  *   the by-class form of the SimpleConfiguration< std::vector< int > > it
+  *   may be given, which names them by index.
+  *
+  * - vstr_LDSl_DualSol [empty]: if non-empty(), the classname() of the
+  *   components whose dual solution get_dual_solution() writes when it is
+  *   called with solc == nullptr, the others being skipped; the dual
+  *   solution of the relaxed constraints is written anyway. */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
@@ -1250,6 +1288,24 @@ public:
  int compute( bool changedvars = true ) override;
 
 /*--------------------------------------------------------------------------*/
+ /// receives a Modification of the Block, or of a component
+ /** Unless the sub-Block are copied, a component is the son of its
+  * LagBFunction only while this Solver needs the Lagrangian Dual whole, i.e.,
+  * within compute(), get_var_solution() and get_dual_solution(), and it is
+  * given back to its original father otherwise [see hold_components()]. A
+  * Modification that a component issues while it is given back reaches this
+  * Solver through the original father, and not the LagBFunction, which would
+  * translate it: it is kept aside and handed to the LagBFunction (or to
+  * whoever holds the component, see v_held) when the component is taken
+  * again. A NBModification of a sub-Block is not queued at all: it only
+  * concerns that sub-Block, which its LagBFunction takes care of, and
+  * queued it would empty the list, losing the changes to the relaxed
+  * constraints issued before it. Any other Modification is queued as by the
+  * base class. */
+
+ void add_Modification( sp_Mod & mod ) override;
+
+/*--------------------------------------------------------------------------*/
  /// returns the "inner" CDASolver used to solve the Lagrangian Dual
  /** Returns a pointer to the "inner" CDASolver used to solve the Lagrangian
   * Dual. This should not be necessary since LagrangianDualSolver makes it
@@ -1292,10 +1348,23 @@ public:
 /*--------------------------------------------------------------------------*/
 
  bool has_var_solution( void ) override {
+  // after a failed compute() the inner Solver may still have a dual
+  // solution, e.g., the multipliers of the master problem of a bundle, but
+  // the linearizations the primal one is made of are missing for the
+  // component whose evaluation failed
+  if( ( f_status == kError ) || ( f_status == kBlockLocked ) )
+   return( false );
   return( InnerSolver->has_dual_solution() );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ /** The dual solution of the Block is that of the relaxed Constraint, which
+  * the inner Solver gives, and that of the Constraint inside each component,
+  * which only the Solver of the component can give [see
+  * get_dual_solution()]: a component whose Solver has none (say, a dynamic
+  * programming, or a MILP) leaves its Constraint with whatever dual value
+  * they had, which who reads them has to check. */
 
  bool has_dual_solution( void ) override {
   return( InnerSolver->has_var_solution() );
@@ -1345,7 +1414,8 @@ public:
   * is found anywhere in solc->value.
   *
   * If solc == nullptr, the variable solution is constructed for all the
-  * sub-Block. */
+  * sub-Block, or only for those whose classname() is in vstr_LDSl_VarSol
+  * if this is not empty. */
 
  void get_var_solution( Configuration * solc = nullptr ) override;
 
@@ -1379,8 +1449,9 @@ public:
   * The \p solc Configuration controls which of these pieces is written:
   *
   * - If \p solc is nullptr, then both the dual solution of the relaxed
-  *   constraints in the father Block and that of all the sub-Block is
-  *   written; the calls to get_dual_solution() of the Solver of the
+  *   constraints in the father Block and that of all the sub-Block (only of
+  *   those whose classname() is in vstr_LDSl_DualSol, if this is not empty)
+  *   is written; the calls to get_dual_solution() of the Solver of the
   *   sub-Block happen with nullptr Configuration (meaning, all of it).
   *
   * - If \p solc is not nullptr, then it can be:
@@ -1618,7 +1689,8 @@ public:
  [[nodiscard]] const std::vector< std::string > & get_dflt_vstr_par(
 					     idx_type par ) const override {
   static const std::vector< std::string > _empty;
-  if( par == vstr_LDSl_Cfg )
+  if( ( par == vstr_LDSl_Cfg ) || ( par == vstr_LDSl_NoEasy ) ||
+      ( par == vstr_LDSl_VarSol ) || ( par == vstr_LDSl_DualSol ) )
    return( _empty );
   else
   return( InnerSolver->get_dflt_vstr_par( vstr_par_lds( par ) ) );
@@ -1689,6 +1761,12 @@ public:
   const override  {
   if( par == vstr_LDSl_Cfg )
    return( FCfg );
+  if( par == vstr_LDSl_NoEasy )
+   return( NoEasyCls );
+  if( par == vstr_LDSl_VarSol )
+   return( VarSolCls );
+  if( par == vstr_LDSl_DualSol )
+   return( DualSolCls );
 
   return( InnerSolver->get_vstr_par( vstr_par_lds( par ) ) );
   }
@@ -1772,6 +1850,12 @@ public:
   const override {
   if( name == "vstr_LDSl_Cfg" )
    return( vstr_LDSl_Cfg );
+  if( name == "vstr_LDSl_NoEasy" )
+   return( vstr_LDSl_NoEasy );
+  if( name == "vstr_LDSl_VarSol" )
+   return( vstr_LDSl_VarSol );
+  if( name == "vstr_LDSl_DualSol" )
+   return( vstr_LDSl_DualSol );
 
   return( vstr_par_is( InnerSolver->vstr_par_str2idx( name ) ) );
   }
@@ -1838,8 +1922,17 @@ public:
  [[nodiscard]] const std::string & vstr_par_idx2str( idx_type idx )
   const override {
   static const std::string _vstr_LDSl_Cfg = "vstr_LDSl_Cfg";
+  static const std::string _vstr_LDSl_NoEasy = "vstr_LDSl_NoEasy";
+  static const std::string _vstr_LDSl_VarSol = "vstr_LDSl_VarSol";
+  static const std::string _vstr_LDSl_DualSol = "vstr_LDSl_DualSol";
   if( idx == vstr_LDSl_Cfg )
    return( _vstr_LDSl_Cfg );
+  if( idx == vstr_LDSl_NoEasy )
+   return( _vstr_LDSl_NoEasy );
+  if( idx == vstr_LDSl_VarSol )
+   return( _vstr_LDSl_VarSol );
+  if( idx == vstr_LDSl_DualSol )
+   return( _vstr_LDSl_DualSol );
 
   return( InnerSolver->vstr_par_idx2str( vstr_par_lds( idx ) ) );
   }
@@ -1938,6 +2031,9 @@ public:
   // of its descendants, so the inner Solver needs to skip it as well
   if( ! get_excluded_blocks().empty() )
    InnerSolver->set_excluded_blocks( & get_excluded_blocks() );
+  // the inner Solver reads which components are never "easy" when it is
+  // attached to the Lagrangian Dual, so they are given to it first
+  set_NoEasy();
   LagrDual->register_Solver( InnerSolver );
   }
 
@@ -1949,6 +2045,26 @@ public:
    LagrDual->unregister_Solver( InnerSolver );
    }
   }
+
+/*--------------------------------------------------------------------------*/
+ /// gives the inner Solver the components that are never "easy"
+ /** The components whose classname() is in vstr_LDSl_NoEasy, together with
+  * the vintNoEasy given to the inner Solver (if any), become its vintNoEasy;
+  * nothing is done while vstr_LDSl_NoEasy is empty, or the components or the
+  * inner Solver are not there yet. The inner Solver reads vintNoEasy when it
+  * is attached to the Lagrangian Dual (see BundleSolver::set_Block()), which
+  * is why register_inner_Solver() calls this first. */
+
+ void set_NoEasy( void );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// gives the inner Solver the components that are never "easy", now
+ /** As set_NoEasy(), but if the inner Solver is already attached to the
+  * Lagrangian Dual it is attached again, so that the new vintNoEasy is read;
+  * this is what a change of vstr_LDSl_NoEasy, or of the vintNoEasy it adds
+  * to, after the Lagrangian Dual has been formed requires. */
+
+ void pass_NoEasy( void );
 
 /*--------------------------------------------------------------------------*/
 
@@ -2156,12 +2272,26 @@ FRowConstraint * constraint_with_index( Index i ) {
  ///< for which sub-Block change PushCostToOwner
 
  std::vector< std::string > FCfg;  ///< filenames for Configurations
+
+ std::vector< std::string > NoEasyCls;
+ ///< the classname() of the components that are never "easy"
+
+ std::vector< int > NoEasyIdx;
+ ///< the vintNoEasy given to the inner Solver, to which NoEasyCls adds
+
+ std::vector< std::string > VarSolCls;
+ ///< the classname() of the components get_var_solution() deals with
+
+ std::vector< std::string > DualSolCls;
+ ///< the classname() of the components get_dual_solution() deals with
  
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  Index NumVar;      ///< (current) number of variables
 
  Index f_nsb;       ///< number of sub-Block
+
+ int f_status;      ///< the value returned by the last compute()
 
  bool f_max;        ///< true if (B) was a max problem, false otherwise
 
@@ -2274,6 +2404,98 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  std::vector< Block * > v_component;
  std::vector< Block * > v_father;
+
+ /// the father each component has while this Solver holds it
+ /** Unless the sub-Block are copied, v_component[ i ] is the son of
+  * v_held[ i ] only while this Solver holds the components, i.e., within
+  * compute(), get_var_solution() and get_dual_solution(); v_held[ i ] is its
+  * LagBFunction, or the MasterProblemBlock of the inner Solver where the
+  * component is easy, and it is recorded each time the component is given
+  * back to v_father[ i ]. The rest of the time the Block to which this Solver
+  * is attached is whole, so that any other Solver attached to it, another
+  * LagrangianDualSolver included, finds it as it is. Empty when the sub-Block
+  * are copied, or before the Lagrangian Dual is formed. */
+
+ std::vector< Block * > v_held;
+
+ /// the Modification each component issued while it was given back
+ std::vector< Lst_sp_Mod > v_missed;
+
+ /// the index of each component in v_component
+ std::unordered_map< const Block * , Index > f_comp_index;
+
+ /// how many nested holds of the components are open
+ std::atomic< int > f_held;
+
+ /// takes the components from their fathers back to whoever holds them
+ /** The first of nested calls sets v_component[ i ] as the son of
+  * v_held[ i ] and hands to the latter the Modification the component
+  * issued while it was given back [see add_Modification()]. */
+
+ void hold_components( void );
+
+ /// gives the components back to their fathers
+ /** The last of nested calls records in v_held[ i ] the father of
+  * v_component[ i ] and makes it the son of v_father[ i ] again. */
+
+ void release_components( void );
+
+ /// the index in v_component of the component \p b is in, if any
+ /** Walks up from \p b to f_Block; returns f_nsb if \p b is not inside any
+  * component. */
+
+ Index component_of( const Block * b ) const;
+
+ /// the Solver that the LagBFunction of the b-th component uses, if any
+ /** nullptr if it is not a CDASolver, or if there is none. */
+
+ CDASolver * component_solver( Index b ) const;
+
+ /// unlocks the components that f_Block, locked by this Solver, has locked
+ /** A component stays among the sub-Block of its father while it is held,
+  * hence locking f_Block locks it too. If f_Block stays locked by this
+  * Solver while the inner Solver runs, as it does when whoever called
+  * compute() had locked it and given its own id to this Solver, the
+  * LagBFunction of a component, which locks it with its own id, could not:
+  * the components locked by this Solver are unlocked for the lifetime of the
+  * object, and locked again after, since unlocking f_Block unlocks them. */
+
+ class ComponentUnlock {
+  public:
+  explicit ComponentUnlock( LagrangianDualSolver & lds ) : f_lds( lds ) {
+   if( lds.f_id && lds.f_Block->is_owned_by( lds.f_id ) )
+    for( auto c : lds.v_component )
+     if( c->is_owned_by( lds.f_id ) ) {
+      c->unlock( lds.f_id );
+      f_unlocked.push_back( c );
+      }
+   }
+  ~ComponentUnlock() {
+   for( auto c : f_unlocked )
+    c->lock( f_lds.f_id );
+   }
+  ComponentUnlock( const ComponentUnlock & ) = delete;
+  ComponentUnlock & operator=( const ComponentUnlock & ) = delete;
+  private:
+  LagrangianDualSolver & f_lds;
+  std::vector< Block * > f_unlocked;
+  };
+
+ /// holds the components for the lifetime of the object
+ /** hold_components() in the constructor and release_components() in the
+  * destructor, so that an exception does not leave them held. */
+
+ class ComponentHold {
+  public:
+  explicit ComponentHold( LagrangianDualSolver & lds ) : f_lds( lds ) {
+   f_lds.hold_components();
+   }
+  ~ComponentHold() { f_lds.release_components(); }
+  ComponentHold( const ComponentHold & ) = delete;
+  ComponentHold & operator=( const ComponentHold & ) = delete;
+  private:
+  LagrangianDualSolver & f_lds;
+  };
 
  /// the components of the decomposition, and the Block that are decomposed
  /** Fills \p component with the Block that become the components of the
