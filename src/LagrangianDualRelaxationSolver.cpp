@@ -104,8 +104,8 @@ int LagrangianDualRelaxationSolver::compute(bool changedvars)
 }
 
 // TODO understand if it's correct, since we obtain the value from the primal solver
-OFValue LagrangianDualRelaxationSolver::get_lb() { return this->PrimalProximalHeur::LagrangianDualSolver::get_lb(); }
-OFValue LagrangianDualRelaxationSolver::get_ub() { return this->PrimalProximalHeur::LagrangianDualSolver::get_ub(); }
+OFValue LagrangianDualRelaxationSolver::get_lb() { return this->PrimalProximalHeur::get_lb(); }
+OFValue LagrangianDualRelaxationSolver::get_ub() { return this->PrimalProximalHeur::get_ub(); }
 
 OFValue LagrangianDualRelaxationSolver::get_true_lb()
 {
@@ -269,35 +269,20 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
                 auto *gi = map_varToLF[pv].second;
                 oldLB = gi->get_constant_term();
                 gi->set_constant_term(value);
-                if (doUndo)
-                {
-                    undoChange = new LagrangianChange(AbstractChange::eChgLB, {oldLB}, std::vector<AbstractPath>{c->get_paths()});
-                }
             }
             else
             {
                 // g(x) = value -x = -1*x + value
                 auto *g = new LinearFunction(LinearFunction::v_coeff_pair{{pv, -1.0}}, //-1 coefficent
                                              value);                                   // constant term
-
-                std::list<FRowConstraint> cons_list;
-                cons_list.emplace_back(LagrDual, -Inf<RowConstraint::RHSValue>(), 0, g);
-
-                auto *group = LagrDual->get_dynamic_constraint<FRowConstraint>(str_BranchBounds);
-                if (!group)
-                    throw std::runtime_error("group BranchBounds not found in block");
-
-                LagrDual->add_dynamic_constraints(*group, cons_list); // plurale: aggiunge al gruppo esistente
-
-                if (group->empty())
-                    throw std::runtime_error("Invalid BranchBounds group");
-
-                map_varToLF[pv].second = static_cast<LinearFunction *>(group->back().get_function());
-
-                if (doUndo)
-                {
-                    undoChange = new LagrangianChange(LagrangianChange::eDeleteLB, {}, std::vector<AbstractPath>{c->get_paths()});
-                }
+                ColVariable *y = new ColVariable();
+                y->is_positive(true);
+                lbf->add_dual_pairs(LagBFunction::v_dual_pair{{y, g}});
+                map_varToLF[pv].second = g;
+            }
+            if (doUndo)
+            {
+                undoChange = new LagrangianChange(AbstractChange::eChgLB, {oldLB}, std::vector<AbstractPath>{c->get_paths()});
             }
             break;
         }
@@ -324,10 +309,6 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
                 auto *gi = map_varToLF[pv].first;
                 oldUB = gi->get_constant_term() * -1.0; // store the old upper bound
                 gi->set_constant_term(-value);
-                if (doUndo)
-                {
-                    undoChange = new LagrangianChange(AbstractChange::eChgUB, {oldUB}, std::vector<AbstractPath>{c->get_paths()});
-                }
             }
             else
             {
@@ -336,23 +317,14 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
                 auto *g = new LinearFunction(LinearFunction::v_coeff_pair{{pv, 1.0}}, // 1 coefficent
                                              -value);
                 // constant term
-                std::list<FRowConstraint> cons_list;
-                cons_list.emplace_back(LagrDual, -Inf<RowConstraint::RHSValue>(), 0, g);
-
-                auto *group = LagrDual->get_dynamic_constraint<FRowConstraint>(str_BranchBounds);
-                if (!group)
-                    throw std::runtime_error("group BranchBounds not found in block");
-
-                LagrDual->add_dynamic_constraints(*group, cons_list); // plurale: aggiunge al gruppo esistente
-
-                if (group->empty())
-                    throw std::runtime_error("Invalid BranchBounds group");
-
-                map_varToLF[pv].first = static_cast<LinearFunction *>(group->back().get_function());
-                if (doUndo)
-                {
-                    undoChange = new LagrangianChange(LagrangianChange::eDeleteUB, {}, std::vector<AbstractPath>{c->get_paths()});
-                }
+                ColVariable *y = new ColVariable();
+                y->is_positive(true);
+                lbf->add_dual_pairs(LagBFunction::v_dual_pair{{y, g}});
+                map_varToLF[pv].second = g;
+            }
+            if (doUndo)
+            {
+                undoChange = new LagrangianChange(AbstractChange::eChgUB, {oldUB}, std::vector<AbstractPath>{c->get_paths()});
             }
             break;
         }
@@ -388,6 +360,10 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
                     undoChange = new LagrangianChange(AbstractChange::eUnfixX, {}, std::vector<AbstractPath>{c->get_paths()});
                 }
             }
+            if (!f_global_information)
+                throw std::runtime_error("LagrangianDualRelaxationSolver::apply: global information not set");
+            pv->set_value(value);
+            pv->is_fixed(true);
             auto mvts = map_varToSol;
             const auto handler_id = lbf->set_event_handler(LagBFunction::eColumnPurged,
                                                            // TODO insert here lambda function
@@ -405,11 +381,9 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
                                                                                               pc[pv].push_back(std::move(el));
                                                                                           });
                                                                // temporarly, check if it works correctly
-                                                               assert(ok);
+                                                               assert(ok && "eColumnPurged: failed to write purged solution to map_varToSol");
                                                                return ThinComputeInterface::eContinue;
                                                            });
-            pv->set_value(value);
-            pv->is_fixed(true);
             lbf->reset_event_handler(LagBFunction::eColumnPurged, handler_id);
             break;
         }
@@ -461,12 +435,6 @@ Change *LagrangianDualRelaxationSolver::apply(Change *change, bool doUndo)
             throw(std::runtime_error("LagrangianDualRelaxationSolver::apply: apply strategy not implemented"));
         }
     }
-    else if (c->get_type() == LagrangianChange::eDeleteUB)
-    {
-    }
-    else if (c->get_type() == LagrangianChange::eDeleteLB)
-    {
-    }
     else
         undoChange = c->apply(this->f_Block, doUndo);
 
@@ -489,46 +457,6 @@ void LagrangianDualRelaxationSolver::set_global_information(GlobalInformation *g
     {
         map_varToSol->write(str_PurgedColumns, PurgedColumn{});
     }
-}
-
-// nel .cpp
-Change *LagrangianDualRelaxationSolver::removeBound(
-    ColVariable *pv, bool isLB, bool doUndo,
-    const std::vector<AbstractPath> &paths)
-{
-    auto &slot = isLB ? map_varToLF[pv].second : map_varToLF[pv].first;
-
-    if (!slot)
-        throw std::logic_error(
-            "LagrangianDualRelaxationSolver::removeBound: no activate constraint");
-
-    auto *con = dynamic_cast<FRowConstraint *>(slot->get_Observer());
-    if (!con)
-        throw std::logic_error(
-            "LagrangianDualRelaxationSolver::removeBound: Observer is not a FRowConstraint");
-
-    Change *undoChange = nullptr;
-    if (doUndo)
-    {
-        double oldValue = isLB ? slot->get_constant_term()
-                               : -slot->get_constant_term();
-        undoChange = new LagrangianChange(
-            isLB ? AbstractChange::eChgLB : AbstractChange::eChgUB,
-            {oldValue}, paths);
-    }
-
-    auto *group = LagrDual->get_dynamic_constraint<FRowConstraint>(str_BranchBounds);
-    auto it = std::find_if(group->begin(), group->end(),
-                           [con](const FRowConstraint &c2)
-                           { return &c2 == con; });
-    if (it == group->end())
-        throw std::logic_error(
-            "LagrangianDualRelaxationSolver::removeBound: constraint not found in the group");
-
-    LagrDual->remove_dynamic_constraint(*group, it);
-
-    slot = nullptr;
-    return undoChange;
 }
 
 // register LagrangianDualRelaxationSolver to the Solver factory

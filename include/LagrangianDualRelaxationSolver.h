@@ -12,16 +12,9 @@ namespace SMSpp_di_unipi_it
     class LagrangianChange : public AbstractChange
     {
     public:
-        enum LagrangianChangeType
-        {
-            eDeleteUB = eLastACTtype, ///< rimuove il vincolo di UB da f_Block
-            eDeleteLB,                ///< rimuove il vincolo di LB da f_Block
-            eLastLagrangianChangeType ///< primo valore libero per le classi derivate
-        };
-
         LagrangianChange() : AbstractChange() {}
 
-        LagrangianChange(int type, std::vector<double> value,
+        LagrangianChange(AbstractChange::AbstractChangeType type, std::vector<double> value,
                          std::vector<AbstractPath> paths)
             : AbstractChange(static_cast<AbstractChange::AbstractChangeType>(type), std::move(value), std::move(paths)) {}
 
@@ -34,17 +27,7 @@ namespace SMSpp_di_unipi_it
             if (!dynamic_cast<AbstractBlock *>(block))
                 throw std::invalid_argument(
                     "LagrangianChange::apply: block is not an AbstractBlock");
-            switch (f_type)
-            {
-            case eDeleteUB:
-            case eDeleteLB:
-                throw std::invalid_argument(
-                    "LagrangianChange::apply: eDeleteUB/eDeleteLB richiedono lo stato "
-                    "interno del solver e vanno applicati tramite "
-                    "LagrangianDualRelaxationSolver::apply(), non genericamente");
-            default:
-                return AbstractChange::apply(block, doUndo, issueMod, issueAMod);
-            }
+            return AbstractChange::apply(block, doUndo, issueMod, issueAMod);
         }
 
     private:
@@ -157,10 +140,6 @@ namespace SMSpp_di_unipi_it
         std::unordered_map<Variable *, std::pair<LinearFunction *, LinearFunction *>> map_varToLF;
         std::shared_ptr<Collection<PurgedColumn>> map_varToSol = nullptr;
         std::map<ColVariable *, AbstractPath> map_varToPath;
-
-        // Remove bound from the LagrangianDualBlock, can return doUndo
-        Change *removeBound(ColVariable *pv, bool isLB, bool doUndo,
-                            const std::vector<AbstractPath> &paths);
 
         SMSpp_insert_in_factory_h; // insert LagrangianDualRelaxationSolver in the factory
     };
