@@ -1265,8 +1265,12 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   if( ! SBSb )
    return;
 
+  // the Solver may still have a dual solution that is not at the
+  // multipliers of the solution, e.g., the one of the last point the inner
+  // Solver tried, which is not necessarily its best point
   bool again = false;
-  if( ! SBSb->has_dual_solution() ) {
+  if( ( ! SBSb->has_dual_solution() ) ||
+      ( ! v_LBF[ b ]->solved_at_current_point() ) ) {
    v_LBF[ b ]->compute( true );
    again = true;
    }

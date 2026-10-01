@@ -74,6 +74,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `get_dual_solution()` solves a component again also when its Solver has a
+  dual solution that is not at the multipliers of the solution, i.e., the
+  one of the last point the inner Solver tried: the duals read by whoever
+  comes after the LagrangianDualSolver (e.g.,
+  `BatteryUnitBlock::get_kappa_linearization()`) were those of that point
+
 - a dynamic `FRowConstraint` added to the Block while the Solver is attached
   no longer needs the Block to be reloaded: the Constraint removed by a
   `BlockModRmv` are read by reference (taking them by value calls the copy
