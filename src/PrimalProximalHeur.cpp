@@ -1195,7 +1195,9 @@ bool PrimalProximalHeur::consensus_recovery( double & cost )
  if( parent.empty() )
   return( false );
 
- // each group is fixed to its mean, rounded if its Variable are integer
+ // each group is fixed to its mean, rounded if its Variable are integer, or
+ // to the value of one of its Variable that is fixed already, which is the
+ // only one the group can take [see ColVariable::set_value()]
  std::unordered_map< ColVariable * , std::vector< ColVariable * > > groups;
  for( const auto & vp : parent )
   groups[ find( vp.first ) ].push_back( vp.first );
@@ -1204,13 +1206,18 @@ bool PrimalProximalHeur::consensus_recovery( double & cost )
  for( const auto & g : groups ) {
   double mean = 0;
   bool integer = false;
+  ColVariable * already = nullptr;
   for( auto v : g.second ) {
    mean += v->get_value();
    integer = integer || v->is_integer();
+   if( v->is_fixed() && ( ! already ) )
+    already = v;
    }
   mean /= g.second.size();
   if( integer )
    mean = std::round( mean );
+  if( already )
+   mean = already->get_value();
   for( auto v : g.second ) {
    fixed.emplace_back( v , v->is_fixed() );
    v->set_value( mean );
