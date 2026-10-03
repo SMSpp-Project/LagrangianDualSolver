@@ -209,6 +209,17 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
   throw( std::runtime_error( "LagrangianDualRelaxationSolver::branch: no "
 			     "variable to branch on" ) );
 
+ // an integral Lagrangian solution of a well-terminated Lagrangian Dual
+ // satisfies the relaxed constraints, i.e., it solves the node, which is
+ // then fenced by bound and never branched; were it to be branched, the
+ // two children would be the same node, hence this is an error, of the
+ // termination of the inner Solver (say, dblNZEps too large)
+ if( best <= 1e-6 )
+  throw( std::logic_error( "LagrangianDualRelaxationSolver::branch: the "
+			   "Lagrangian solution is integral, the relaxed "
+			   "constraints are violated beyond the termination "
+			   "tolerance of the Lagrangian Dual (dblNZEps)" ) );
+
  const std::vector< AbstractPath > path{ AbstractPath( var , path_base() ) };
  const double lo = std::floor( value );
  const double up = std::ceil( value );

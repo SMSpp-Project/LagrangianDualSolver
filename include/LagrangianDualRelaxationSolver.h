@@ -127,7 +127,12 @@ class LagrangianChange : public AbstractChange {
  * the Lagrangian solution (the convexified one of the Lagrangian Dual, see
  * PrimalProximalHeur::get_Lagrangian_initial_solution()) is fractional [see
  * intBranchStrategy], and produces the two LagrangianChange that branch on
- * it, which apply() applies [see intApplyStrategy]:
+ * it, which apply() applies [see intApplyStrategy]. The Lagrangian Dual has
+ * to be solved accurately enough (see dblNZEps and intWZNorm of the inner
+ * Solver) that an integral Lagrangian solution satisfies the relaxed
+ * constraints, and hence solves the node: branch() finding none fractional
+ * throws.
+ *
  *
  * The LagrangianChange identify the variable by its AbstractPath relative
  * to the LagrangianDualBlock if the sub-Blocks are copied into it
