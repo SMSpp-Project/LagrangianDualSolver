@@ -101,6 +101,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PrimalProximalHeur` sets it on the unpenalized iteration only, and stops
   there if the Lagrangian Dual is unbounded or infeasible
 
+- the BlockSolverConfig of each sub-Block is given to its LagBFunction,
+  which applies it at its first `compute()`: a sub-Block that the inner
+  Solver never computes, as the easy components of a BundleSolver, gets no
+  Solver, and `get_dual_solution()` leaves its dual values as the inner
+  Solver has written them, instead of overwriting them with those of a
+  Solver that has never solved it
+
 - the check that the Block has no Variable of its own asks it for its groups,
   and the dictionaries of the relaxed Constraint are filled one run at a
   time, the vectors of `boost::any` they used to read not being there any
@@ -157,6 +164,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copied (`int_LDSlv_iBCopy` 0), the variables fixed by the instance or by a
   Branch-and-Bound were freed, with no Modification, after the first primal
   recovery
+
+- a component given back to its father is always told that someone listens
+  to it, the LagrangianDualSolver: when this happened within `set_Block()`,
+  before the LagrangianDualSolver was among the Solver of its Block, the
+  component was told that nobody did, and it issued no Modification
 
 - a dynamic `FRowConstraint` added to the Block while the Solver is attached
   no longer needs the Block to be reloaded: the Constraint removed by a
