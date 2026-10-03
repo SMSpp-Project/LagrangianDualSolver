@@ -75,6 +75,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the primal recovery of `PrimalProximalHeur` (`recover_primal()`) fixes the
+  binaries it rounds only if they are free, and un-fixes only those it has
+  fixed: it used to un-fix all of them, so that, the sub-Blocks not being
+  copied (`int_LDSlv_iBCopy` 0), the variables fixed by the instance or by a
+  Branch-and-Bound were freed, with no Modification, after the first primal
+  recovery
+
 - a dynamic `FRowConstraint` added to the Block while the Solver is attached
   no longer needs the Block to be reloaded: the Constraint removed by a
   `BlockModRmv` are read by reference (taking them by value calls the copy

@@ -1030,10 +1030,16 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 
  // fix the proximal binaries at their rounded values; eNoMod keeps the
  // fixing invisible to the Solver attached to f_Block, and it is undone
- // below before anyone else can compute()
+ // below before anyone else can compute(); a binary that is fixed already
+ // (by the instance, or by a Branch-and-Bound) keeps its value, and stays
+ // fixed afterwards
+ std::vector< char > was_fixed;
  for( const auto & sbd : idx_to_var_sbi1 )
   for( const auto & dv : sbd ) {
    const auto pv = dv.second;
+   was_fixed.push_back( pv->is_fixed() );
+   if( pv->is_fixed() )
+    continue;
    pv->set_value( std::round( pv->get_value() ) );
    pv->is_fixed( true , eNoMod );
    }
@@ -1122,18 +1128,23 @@ bool PrimalProximalHeur::recover_primal( double & cost )
   // Note that with equality couplings this direction does not always
   // help (an over-active set can be as infeasible as an under-active
   // one), whence the last resort below.
+  Index k = 0;
   for( const auto & sbd : idx_to_var_sbi1 )
    for( const auto & dv : sbd )
-    if( dv.second->get_value() < 0.5 )
+    if( ( ! was_fixed[ k++ ] ) && ( dv.second->get_value() < 0.5 ) )
      dv.second->is_fixed( false , eNoMod );
 
   ok = solve_restricted( "ones" );
   }
 
- // un-fix the proximal binaries
- for( const auto & sbd : idx_to_var_sbi1 )
-  for( const auto & dv : sbd )
-   dv.second->is_fixed( false , eNoMod );
+ // un-fix the proximal binaries that were not fixed before
+ {
+  Index k = 0;
+  for( const auto & sbd : idx_to_var_sbi1 )
+   for( const auto & dv : sbd )
+    if( ! was_fixed[ k++ ] )
+     dv.second->is_fixed( false , eNoMod );
+  }
 
  if( ! ok )
   // last resort: nothing fixed, i.e. the original problem within the
