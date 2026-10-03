@@ -644,8 +644,6 @@ void LagrangianDualSolver::set_Block( Block * block )
    }
   }
 
- v_aBSCfg.assign( f_nsb , nullptr );
-
  Index iW2BSCfg = 0;  // index in W2BSCfg
  for( Index i = 0 ; i < f_nsb ; ++i ) {
   Block * csbi = v_LBF[ i ]->get_inner_block();
@@ -668,27 +666,16 @@ void LagrangianDualSolver::set_Block( Block * block )
      BSCi = c;
    }
 
-  if( BSCi ) {
-   // the same BlockSolverConfig is typically apply()-ed to many sub-Block,
-   // so a clone per sub-Block is kept, clear()-ed, as the object that
-   // un-does this very configuration [see v_aBSCfg]
-   //
-   // the clone is apply()-ed in additive mode: the Solver it names are
-   // registered in addition to those the sub-Block already has, which may
-   // belong to another Solver attached to the same Block (say, the inner
-   // Solver of another LagrangianDualSolver), and which a differential or
-   // setting apply() would reconfigure or replace; the inner Solver of the
-   // LagBFunction is then the first one this very configuration registers
-   const auto nslv = csbi->get_registered_solvers().size();
-   auto cBSCi = BSCi->clone();
-   cBSCi->set_diff( BlockSolverConfig::eAddMode );
-   cBSCi->apply( csbi );
-   cBSCi->clear();
-   v_aBSCfg[ i ] = cBSCi;
-
-   if( csbi->get_registered_solvers().size() > nslv )
-    v_LBF[ i ]->set_par( LagBFunction::intInnrSlvr , int( nslv ) );
-   }
+  // the BlockSolverConfig is handed to the LagBFunction, which apply()-es
+  // it (in additive mode, so as not to touch the Solver the sub-Block may
+  // already have, say the inner Solver of another LagrangianDualSolver) the
+  // first time it is compute()-d: a sub-Block that the inner Solver never
+  // asks to compute(), say because it handles it as an "easy" one, never
+  // gets a Solver [see LagBFunction::set_lazy_inner_BlockSolverConfig()];
+  // a clone is given because the same BlockSolverConfig is typically used
+  // for many sub-Block
+  if( BSCi )
+   v_LBF[ i ]->set_lazy_inner_BlockSolverConfig( BSCi->clone() );
   }
 
  // BlockSolverConfig-ure the Lagrangian Dual Block as a whole - - - - - - - -
@@ -1254,6 +1241,16 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  auto lcfg = [ this ]( Index b , Configuration * cfg ) {
   auto LSBb = v_LBF[ b ]->get_nested_Block( 0 );
 
+  // a component that has never been compute()-d, say because the inner
+  // Solver handles it as an "easy" one, has no Solver yet: its dual values
+  // are those the inner Solver has written, which are only mapped back if
+  // the sub-Block is a copy
+  if( v_LBF[ b ]->lazy_inner_BlockSolverConfig_pending() ) {
+   if( iBCopy )
+    v_component[ b ]->map_back_solution( LSBb , nullptr , cfg );
+   return;
+   }
+
   // ask it to the Solver that was used to compute() the inner Block; if it
   // has no dual solution now, typically because the Objective of the
   // component has been put back after compute(), the component is solved
@@ -1472,18 +1469,11 @@ BlockSolverConfig * LagrangianDualSolver::default_BSCfg_for( Block * inner )
 
 void LagrangianDualSolver::clear_inner_BlockSolverConfig( void )
 {
- // each inner Block is un-configured by the very object that configured it
- // [see v_aBSCfg]: no need to work out again which BlockSolverConfig applies
- // to which sub-Block
+ // each LagBFunction un-does the BlockSolverConfig it has been given, if it
+ // has applied it, and deletes it
  if( LagrDual )
-  for( Index i = 0 ; i < v_aBSCfg.size() ; ++i )
-   if( v_aBSCfg[ i ] )
-    v_aBSCfg[ i ]->apply( v_LBF[ i ]->get_inner_block() );
-
- for( auto BSCi : v_aBSCfg )
-  delete BSCi;
-
- v_aBSCfg.clear();
+  for( auto lbf : v_LBF )
+   lbf->set_lazy_inner_BlockSolverConfig( nullptr );
 
  }  // end( LagrangianDualSolver::clear_inner_BlockSolverConfig )
 
@@ -1948,17 +1938,13 @@ LagrangianDualSolver::Index LagrangianDualSolver::component_of(
 namespace {
 
 // makes \p b the son of \p father, telling it whether anyone listens up there
-void set_father( Block * b , Block * father )
+void set_father( Block * b , Block * father , bool isthere )
 {
- const auto old = b->get_f_Block();
- if( old == father )
+ if( b->get_f_Block() == father )
   return;
 
- const bool wasthere = old && old->anyone_there();
- const bool isthere = father && father->anyone_there();
  b->set_f_Block( father );
- if( wasthere != isthere )
-  b->anyone_there( isthere );
+ b->anyone_there( isthere );
  }
 
 }  // end( anonymous namespace )
@@ -1971,7 +1957,8 @@ void LagrangianDualSolver::hold_components( void )
   return;
 
  for( Index i = 0 ; i < f_nsb ; ++i )
-  set_father( v_component[ i ] , v_held[ i ] );
+  set_father( v_component[ i ] , v_held[ i ] ,
+	      v_held[ i ] && v_held[ i ]->anyone_there() );
 
  // the Modification kept aside while the components were given back
  std::vector< Lst_sp_Mod > missed( f_nsb );
@@ -2010,9 +1997,13 @@ void LagrangianDualSolver::release_components( void )
  if( v_held.empty() || ( --f_held ) )  // nothing held, or still held
   return;
 
+ // the LagrangianDualSolver listens to f_Block, and therefore to all the
+ // components given back to their father, even when it is not yet in the
+ // list of the Solver of f_Block (as it happens in set_Block()), so that the
+ // Modification of a component reach it [see add_Modification()]
  for( Index i = 0 ; i < f_nsb ; ++i ) {
   v_held[ i ] = v_component[ i ]->get_f_Block();
-  set_father( v_component[ i ] , v_father[ i ] );
+  set_father( v_component[ i ] , v_father[ i ] , true );
   }
  }  // end( LagrangianDualSolver::release_components )
 

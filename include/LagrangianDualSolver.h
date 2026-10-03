@@ -2292,15 +2292,6 @@ FRowConstraint * constraint_with_index( Index i ) {
   * configuration is un-done. nullptr if LagrDual is not configured. */
  BlockSolverConfig * f_aBSCfg = nullptr;
 
- /// the cleared BlockSolverConfig that configured each inner Block
- /** For each sub-Block, the clone of the BlockSolverConfig that has actually
-  * been apply()-ed to it, kept clear()-ed [see f_aBSCfg]. A clone per Block
-  * is necessary because the same BlockSolverConfig is typically apply()-ed
-  * to many sub-Block, while the record of the registered Solver that its
-  * cleared apply() uses is per-Block. Entries are nullptr where no
-  * BlockSolverConfig applied. */
- std::vector< BlockSolverConfig * > v_aBSCfg;
-
  std::vector< Configuration * > v_Cfg;  ///< the "Configuration cache"
 
  std::vector< UpdateSolver * > v_US;   /// the UpdateSolvers
