@@ -35,12 +35,14 @@
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 LgDSLVOBJ = $(LgDSLVSDR)/obj/LagrangianDualSolver.o \
-	$(LgDSLVSDR)/obj/PrimalProximalHeur.o
+	$(LgDSLVSDR)/obj/PrimalProximalHeur.o \
+	$(LgDSLVSDR)/obj/LagrangianDualRelaxationSolver.o
 
 LgDSLVINC = -I$(LgDSLVSDR)/include
 
 LgDSLVH   = $(LgDSLVSDR)/include/LagrangianDualSolver.h \
-	$(LgDSLVSDR)/include/PrimalProximalHeur.h
+	$(LgDSLVSDR)/include/PrimalProximalHeur.h \
+	$(LgDSLVSDR)/include/LagrangianDualRelaxationSolver.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -58,6 +60,11 @@ $(LgDSLVSDR)/obj/LagrangianDualSolver.o: \
 $(LgDSLVSDR)/obj/PrimalProximalHeur.o: \
 	$(LgDSLVSDR)/src/PrimalProximalHeur.cpp $(LgDSLVH) $(SMS++OBJ)
 	$(CC) -c $(LgDSLVSDR)/src/PrimalProximalHeur.cpp -o $@ \
+	$(LgDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
+
+$(LgDSLVSDR)/obj/LagrangianDualRelaxationSolver.o: \
+	$(LgDSLVSDR)/src/LagrangianDualRelaxationSolver.cpp $(LgDSLVH) $(SMS++OBJ)
+	$(CC) -c $(LgDSLVSDR)/src/LagrangianDualRelaxationSolver.cpp -o $@ \
 	$(LgDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
 
 ########################## End of makefile ###################################

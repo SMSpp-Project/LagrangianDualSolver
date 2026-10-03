@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `LagrangianDualRelaxationSolver`, the RelaxationSolver that solves the
+  Lagrangian Dual of each node of a Branch-and-Bound (as in
+  BranchAndXSolver), with the primal recovery of `PrimalProximalHeur`, and
+  branches on a variable that is fractional in the Lagrangian solution,
+  either with new dual pairs of the bounds of the variable
+  (`intApplyStrategy` 0) or by fixing it in its sub-Block (1), the columns
+  of the global pool that the fixing purges coming back at the unfixing;
+  `LagrangianChange` is the Change it applies
+
 - `get_var_solution()` and `get_dual_solution()` take a
   `SimpleConfiguration< std::map< std::string , Configuration * > >`, the
   type of the "meta" Configurations, that names the sub-Block whose

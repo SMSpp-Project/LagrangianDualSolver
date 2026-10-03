@@ -129,7 +129,8 @@ endif ()
 # Note: do not GLOB files here.
 target_sources(${modName} PRIVATE
         src/LagrangianDualSolver.cpp
-        src/PrimalProximalHeur.cpp)
+        src/PrimalProximalHeur.cpp
+        src/LagrangianDualRelaxationSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
