@@ -21,6 +21,8 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include <algorithm>
+
 #include <cmath>
 
 #include "LagrangianDualRelaxationSolver.h"
@@ -34,6 +36,13 @@ using namespace SMSpp_di_unipi_it;
 using Index = Block::Index;
 
 using OFValue = Solver::OFValue;
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------------- CONSTANTS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+// how far from the closest integer a value has to be to be fractional
+static constexpr double FracEps = 1e-6;
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
@@ -134,11 +143,25 @@ void LagrangianDualRelaxationSolver::set_global_information(
 int LagrangianDualRelaxationSolver::compute( bool changedvars )
 {
  const int status = PrimalProximalHeur::compute( changedvars );
- if( ( status >= kOK ) &&
-     ( ( status == kLowPrecision ) || ( status < kError ) ) &&
-     ( get_Lagrangian_initial_solution().size() == NumStatVar ) )
-  return( kOK );
- return( status );
+
+ const bool done = ( status >= kOK ) &&
+                   ( ( status == kLowPrecision ) || ( status < kError ) );
+ const auto & sol = get_Lagrangian_convexified_solution();
+ if( ( ! done ) || ( sol.size() != NumStatVar ) )
+  return( status );
+
+ // the Lagrangian Dual not solved (stopped by a budget, or kLowPrecision)
+ // gives a valid bound, and a convexified solution that need not satisfy
+ // the relaxed constraints: the node can still be branched on a variable
+ // fractional in it, but if there is none it can be neither branched nor
+ // fenced, and what the inner Solver returned is said
+ const int ld_status = get_Lagrangian_initial_status();
+ if( ld_status != kOK )
+  if( std::none_of( sol.begin() , sol.end() , []( double v ) {
+       return( std::abs( v - std::round( v ) ) > FracEps ); } ) )
+   return( ld_status );
+
+ return( kOK );
 
  }  // end( LagrangianDualRelaxationSolver::compute )
 
@@ -173,8 +196,10 @@ Solution * LagrangianDualRelaxationSolver::get_true_solution(
 
 std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
 {
- // the Lagrangian solution, one value per variable of the sub-Blocks
- const auto & sol = get_Lagrangian_initial_solution();
+ // the convexified Lagrangian solution, one value per binary variable of
+ // the sub-Blocks: that of the sub-Blocks alone is integral whenever they
+ // are, and it says nothing about where the relaxation is fractional
+ const auto & sol = get_Lagrangian_convexified_solution();
  if( sol.empty() )
   throw( std::runtime_error( "LagrangianDualRelaxationSolver::branch: no "
 			     "Lagrangian solution available" ) );
@@ -214,7 +239,7 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
  // then fenced by bound and never branched; were it to be branched, the
  // two children would be the same node, hence this is an error, of the
  // termination of the inner Solver (say, dblNZEps too large)
- if( best <= 1e-6 )
+ if( best <= FracEps )
   throw( std::logic_error( "LagrangianDualRelaxationSolver::branch: the "
 			   "Lagrangian solution is integral, the relaxed "
 			   "constraints are violated beyond the termination "

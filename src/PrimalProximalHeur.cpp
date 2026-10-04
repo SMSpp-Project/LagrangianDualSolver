@@ -662,8 +662,10 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   // the first iteration solved the Lagrangian Dual of the original
   // objective: its bound is the valid one on the original problem
-  if( ! penalized )
+  if( ! penalized ) {
    valid_bound = f_max ? InnerSolver->get_ub() : InnerSolver->get_lb();
+   f_LagrInitStatus = res;
+   }
 
   // read back the current sub-Block Variable values - - - - - - - - - - - -
   {
@@ -753,6 +755,29 @@ int PrimalProximalHeur::compute( bool changedvars )
    }
   else LOG_VERB( 2 )
    *f_log << "  IS_INFEASIBLE_SOL" << std::endl;
+
+  // the convexified solution of the unpenalized Lagrangian Dual, if asked
+  // for: get_var_solution() writes it into the Variable of the sub-Block,
+  // whose binary ones are then given back the values of the Lagrangian
+  // solution, which the rest of the heuristic (the primal recovery
+  // included) starts from; the continuous ones are written again by the
+  // next solve, and the primal recovery does not read them
+  if( f_save_conv_sol && ( ! penalized ) ) {
+   v_LagrConvSol.clear();
+   if( LagrangianDualSolver::has_var_solution() ) {
+    LagrangianDualSolver::get_var_solution();
+    v_LagrConvSol.resize( NumStatVar );
+    const auto n_sub = f_Block->get_number_nested_Blocks();
+    Index kvar = 0;
+    for( Index index = 0 ; index < n_sub ; ++index )
+     for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+      const auto var = idx_to_var_sbi1[ index ][ ivar ].second;
+      v_LagrConvSol[ kvar ] = var->get_value();
+      var->set_value( sol[ kvar ] );
+      ++kvar;
+      }
+    }
+   }
 
   ++iters;
 
@@ -1450,6 +1475,7 @@ void PrimalProximalHeur::guts_of_destructor( void )
  is_linear.clear();
  previous_sol.clear();
  v_LagrInitSol.clear();
+ v_LagrConvSol.clear();
  pos_id_sbi.clear();
 
  }  // end( PrimalProximalHeur::guts_of_destructor )

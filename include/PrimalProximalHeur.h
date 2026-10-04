@@ -495,6 +495,39 @@ class PrimalProximalHeur : public LagrangianDualSolver
   return( v_LagrInitSol );
   }
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the convexified solution of the first Lagrangian solve
+ /** Read-only access to the vector of values of the binary static
+  * Variables in the convexified (primal) solution of the same unpenalized
+  * Lagrangian Dual solve that gives get_Lagrangian_initial_solution(),
+  * i.e., the convex combination of the solutions of the sub-Block that the
+  * inner Solver associates with the optimal multipliers. Unlike the former,
+  * which is a solution of the sub-Block, hence integral when they are, this
+  * is a solution of the convexified relaxation of f_Block, and it satisfies
+  * the relaxed Constraint up to the termination tolerance of the inner
+  * Solver. It is only filled if f_save_conv_sol is set by the derived
+  * class, since it costs a get_var_solution() of the Lagrangian Dual, and
+  * it is empty if the inner Solver has no primal solution to give. */
+
+ [[nodiscard]] const std::vector< double > &
+ get_Lagrangian_convexified_solution( void ) const {
+  return( v_LagrConvSol );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the return value of the first Lagrangian solve
+ /** Returns what the inner Solver returned in the unpenalized Lagrangian
+  * Dual solve that gives get_Lagrangian_initial_solution(), i.e., whether
+  * the Lagrangian Dual has been solved (kOK), or the inner Solver has been
+  * stopped by a budget (kStopTime, kStopIter), so that the bound and the
+  * convexified solution are those of a point that is not optimal; the
+  * return value of compute() is about the heuristic as a whole, and does not
+  * tell this apart. It is kUnEval if compute() has not been called yet. */
+
+ [[nodiscard]] int get_Lagrangian_initial_status( void ) const {
+  return( f_LagrInitStatus );
+  }
+
 /** @} ---------------------------------------------------------------------*/
 /*------------------- METHODS FOR HANDLING THE PARAMETERS ------------------*/
 /*--------------------------------------------------------------------------*/
@@ -768,6 +801,20 @@ class PrimalProximalHeur : public LagrangianDualSolver
  ///< compute() and never touched again: it is the "protected" (read-only,
  ///< via get_Lagrangian_initial_solution()) initial Lagrangian solution
  ///< used as the reference starting point of the heuristic.
+
+ std::vector< double > v_LagrConvSol;
+ ///< value of each binary static Variable in the convexified solution of
+ ///< the same unpenalized Lagrangian Dual solve that gives v_LagrInitSol,
+ ///< see get_Lagrangian_convexified_solution(); only filled if
+ ///< f_save_conv_sol is true
+
+ int f_LagrInitStatus = kUnEval;
+ ///< the return value of the inner Solver in the same unpenalized
+ ///< Lagrangian Dual solve that gives v_LagrInitSol
+
+ bool f_save_conv_sol = false;
+ ///< true if compute() has to fill v_LagrConvSol, which derived classes
+ ///< needing the convexified solution (say, to branch on it) set
 
  std::vector< LinearFunction > Funct_sbi;
  ///< copy of the (linear) inner objective Function of each sub-Block,

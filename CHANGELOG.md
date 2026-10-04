@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LagrangianDualRelaxationSolver`, the RelaxationSolver that solves the
   Lagrangian Dual of each node of a Branch-and-Bound (as in
   BranchAndXSolver), with the primal recovery of `PrimalProximalHeur`, and
-  branches on a variable that is fractional in the Lagrangian solution,
+  branches on a variable that is fractional in the convexified solution of
+  the Lagrangian Dual (which `PrimalProximalHeur` keeps, see
+  `get_Lagrangian_convexified_solution()`),
   either with new dual pairs of the bounds of the variable
   (`intApplyStrategy` 0) or by fixing it in its sub-Block (1), the columns
   of the global pool that the fixing purges coming back at the unfixing;
