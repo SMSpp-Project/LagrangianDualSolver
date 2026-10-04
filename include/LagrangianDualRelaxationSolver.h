@@ -216,6 +216,27 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
   };
 
+ /// public enum for the string algorithmic parameters
+ /** Public enum describing the algorithmic parameters of string type that
+  * LagrangianDualRelaxationSolver has in addition to these of
+  * PrimalProximalHeur:
+  *
+  * - strStrongLog [""]: the file to which eStrongBranching appends one line
+  *   per candidate, in CSV, so that a branching rule can be learned from
+  *   strong branching: the progressive number of the call of branch(), the
+  *   bound of the node, the fraction of the binary variables that are fixed,
+  *   the rank of the candidate, the index of its sub-Block and its position
+  *   in it (in [0, 1]), its value in the convexified and in the Lagrangian
+  *   solution, its fractionality, its cost in the objective of the sub-Block,
+  *   the bounds of the two children, the score, and 1 for the chosen one; a
+  *   header line is written when the file is created, and with the empty
+  *   string nothing is written. */
+
+ enum str_par_type_LDRS {
+  strStrongLog = strLastPPHPar ,  ///< the file of the strong branching data
+  strLastLDRSPar      ///< first allowed new str parameter for derived classes
+  };
+
 /*--------------------------------------------------------------------------*/
 /*--------------------- CONSTRUCTOR AND DESTRUCTOR -------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -238,8 +259,14 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  void set_par( idx_type par , int value ) override;
 
+ void set_par( idx_type par , std::string && value ) override;
+
  [[nodiscard]] idx_type int_par_first_is( void ) const override {
   return( intLastLDRSPar );
+  }
+
+ [[nodiscard]] idx_type str_par_first_is( void ) const override {
+  return( strLastLDRSPar );
   }
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override;
@@ -250,6 +277,18 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   const override;
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type par )
+  const override;
+
+ [[nodiscard]] const std::string & get_dflt_str_par( idx_type par )
+  const override;
+
+ [[nodiscard]] const std::string & get_str_par( idx_type par )
+  const override;
+
+ [[nodiscard]] idx_type str_par_str2idx( const std::string & name )
+  const override;
+
+ [[nodiscard]] const std::string & str_par_idx2str( idx_type par )
   const override;
 
 /*--------------------------------------------------------------------------*/
@@ -368,6 +407,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  int f_branch_strategy = eMostFractional;  ///< intBranchStrategy
  int f_apply_strategy = eMaster;           ///< intApplyStrategy
  int f_strong_cands = 10;                  ///< intStrongCands
+ std::string f_strong_log;                 ///< strStrongLog
+ Index f_n_branch = 0;                     ///< calls of branch() so far
 
  /// for each variable, the dual pairs of its upper (first) and lower
  /// (second) bound added by apply() with eMaster, nullptr if none

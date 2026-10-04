@@ -23,7 +23,15 @@
 
 #include <algorithm>
 
+#include <array>
+
 #include <cmath>
+
+#include <filesystem>
+
+#include <fstream>
+
+#include <iomanip>
 
 #include "LagrangianDualRelaxationSolver.h"
 
@@ -127,6 +135,59 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
 
 /*--------------------------------------------------------------------------*/
 
+void LagrangianDualRelaxationSolver::set_par( idx_type par ,
+					      std::string && value )
+{
+ if( par == strStrongLog )
+  f_strong_log = std::move( value );
+ else
+  PrimalProximalHeur::set_par( par , std::move( value ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::string & LagrangianDualRelaxationSolver::get_dflt_str_par(
+						     idx_type par ) const
+{
+ static const std::string empty;
+ if( par == strStrongLog )
+  return( empty );
+ return( PrimalProximalHeur::get_dflt_str_par( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::string & LagrangianDualRelaxationSolver::get_str_par(
+						     idx_type par ) const
+{
+ if( par == strStrongLog )
+  return( f_strong_log );
+ return( PrimalProximalHeur::get_str_par( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Solver::idx_type LagrangianDualRelaxationSolver::str_par_str2idx(
+					      const std::string & name ) const
+{
+ if( name == "strStrongLog" )
+  return( strStrongLog );
+ return( PrimalProximalHeur::str_par_str2idx( name ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::string & LagrangianDualRelaxationSolver::str_par_idx2str(
+						     idx_type par ) const
+{
+ static const std::string log = "strStrongLog";
+ if( par == strStrongLog )
+  return( log );
+ return( PrimalProximalHeur::str_par_idx2str( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualRelaxationSolver::set_global_information(
 						    GlobalInformation * gi )
 {
@@ -215,18 +276,28 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
 			     "Lagrangian solution has the wrong size" ) );
 
  // the candidates: the fractional variables, the most fractional first
- struct Cand { ColVariable * var; double value; double frac; };
+ struct Cand {
+  ColVariable * var;  // the variable
+  double value;       // its value in the convexified solution
+  double frac;        // its fractionality
+  Index k;            // its index among the binary static variables
+  Index sb;           // its sub-Block
+  Index pos;          // its position among those of the sub-Block
+  double cost;        // its cost in the objective of the sub-Block
+  };
  std::vector< Cand > cands;
  {
   Index k = 0;
-  for( const auto & sbd : idx_to_var_sbi1 )  // for each sub-Block
-   for( const auto & dv : sbd ) {            // for each of its variables
-    const double v = sol[ k++ ];
+  for( Index sb = 0 ; sb < idx_to_var_sbi1.size() ; ++sb )
+   for( Index pos = 0 ; pos < idx_to_var_sbi1[ sb ].size() ; ++pos , ++k ) {
+    const auto & dv = idx_to_var_sbi1[ sb ][ pos ];
+    const double v = sol[ k ];
     const double frac = std::abs( v - std::round( v ) );
     if( frac > FracEps )
-     cands.push_back( { dv.second , v , frac } );
+     cands.push_back( { dv.second , v , frac , k , sb , pos , dv.first } );
     }
   }
+ ++f_n_branch;
 
  // no fractional variable: an integral Lagrangian solution of a
  // well-terminated Lagrangian Dual satisfies the relaxed constraints, i.e.,
@@ -267,6 +338,7 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
 
    Index best_c = 0;
    double best_score = -1;
+   std::vector< std::array< double , 3 > > evals( cands.size() );
    for( Index c = 0 ; c < cands.size() ; ++c ) {
     auto changes = branchings( cands[ c ].var , cands[ c ].value );
     const double down = child_bound( changes[ 0 ] );
@@ -275,6 +347,7 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
      delete ch;
 
     const double score = gain( down ) * gain( up );
+    evals[ c ] = { down , up , score };
     if( f_log && ( logVerb >= 1 ) )
      *f_log << "LagrangianDualRelaxationSolver::branch: candidate " << c
 	    << " value " << cands[ c ].value << " down " << down << " up "
@@ -282,6 +355,37 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
     if( score > best_score ) {
      best_score = score;
      best_c = c;
+     }
+    }
+
+   // the data of the candidates, for a branching rule to learn from them
+   // [see strStrongLog]
+   if( ! f_strong_log.empty() ) {
+    const bool is_new = ! std::filesystem::exists( f_strong_log );
+    std::ofstream out( f_strong_log , std::ios::app );
+    if( ! out )
+     throw( std::runtime_error( "LagrangianDualRelaxationSolver::branch: "
+				"cannot open " + f_strong_log ) );
+    if( is_new )
+     out << "call,node,fixed,rank,sb,pos,value,lagr,frac,cost,down,up,"
+	 << "score,chosen" << std::endl;
+    Index n_fixed = 0;
+    for( const auto & sbd : idx_to_var_sbi1 )
+     for( const auto & dv : sbd )
+      if( dv.second->is_fixed() )
+       ++n_fixed;
+    const auto & lagr = get_Lagrangian_initial_solution();
+    out << std::setprecision( 10 );
+    for( Index c = 0 ; c < cands.size() ; ++c ) {
+     const auto & cd = cands[ c ];
+     const auto n_sb = idx_to_var_sbi1[ cd.sb ].size();
+     out << f_n_branch << "," << node << ","
+	 << double( n_fixed ) / NumStatVar << "," << c << "," << cd.sb << ","
+	 << ( n_sb > 1 ? double( cd.pos ) / ( n_sb - 1 ) : 0.0 ) << ","
+	 << cd.value << "," << ( cd.k < lagr.size() ? lagr[ cd.k ] : cd.value )
+	 << "," << cd.frac << "," << cd.cost << "," << evals[ c ][ 0 ] << ","
+	 << evals[ c ][ 1 ] << "," << evals[ c ][ 2 ] << ","
+	 << ( c == best_c ? 1 : 0 ) << std::endl;
      }
     }
 
