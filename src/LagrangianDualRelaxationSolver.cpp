@@ -66,6 +66,7 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par , int value )
  switch( par ) {
   case( intApplyStrategy ):  f_apply_strategy = value;  break;
   case( intBranchStrategy ): f_branch_strategy = value; break;
+  case( intStrongCands ):    f_strong_cands = value;    break;
   default: PrimalProximalHeur::set_par( par , value );
   }
  }
@@ -77,6 +78,7 @@ int LagrangianDualRelaxationSolver::get_dflt_int_par( idx_type par ) const
  switch( par ) {
   case( intApplyStrategy ):  return( eMaster );
   case( intBranchStrategy ): return( eMostFractional );
+  case( intStrongCands ):    return( 10 );
   default: return( PrimalProximalHeur::get_dflt_int_par( par ) );
   }
  }
@@ -88,6 +90,7 @@ int LagrangianDualRelaxationSolver::get_int_par( idx_type par ) const
  switch( par ) {
   case( intApplyStrategy ):  return( f_apply_strategy );
   case( intBranchStrategy ): return( f_branch_strategy );
+  case( intStrongCands ):    return( f_strong_cands );
   default: return( PrimalProximalHeur::get_int_par( par ) );
   }
  }
@@ -101,6 +104,8 @@ Solver::idx_type LagrangianDualRelaxationSolver::int_par_str2idx(
   return( intApplyStrategy );
  if( name == "intBranchStrategy" )
   return( intBranchStrategy );
+ if( name == "intStrongCands" )
+  return( intStrongCands );
  return( PrimalProximalHeur::int_par_str2idx( name ) );
  }
 
@@ -111,9 +116,11 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
 {
  static const std::string apply = "intApplyStrategy";
  static const std::string branch = "intBranchStrategy";
+ static const std::string cands = "intStrongCands";
  switch( par ) {
   case( intApplyStrategy ):  return( apply );
   case( intBranchStrategy ): return( branch );
+  case( intStrongCands ):    return( cands );
   default: return( PrimalProximalHeur::int_par_idx2str( par ) );
   }
  }
@@ -207,44 +214,92 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
   throw( std::runtime_error( "LagrangianDualRelaxationSolver::branch: the "
 			     "Lagrangian solution has the wrong size" ) );
 
- // the branching variable
- ColVariable * var = nullptr;
- double best = -1;
- double value = 0;
- switch( f_branch_strategy ) {
-  case( eMostFractional ): {
-   Index k = 0;
-   for( const auto & sbd : idx_to_var_sbi1 )  // for each sub-Block
-    for( const auto & dv : sbd ) {            // for each of its variables
-     const double v = sol[ k++ ];
-     const double frac = std::abs( v - std::round( v ) );
-     if( frac > best ) {
-      best = frac;
-      var = dv.second;
-      value = v;
-      }
-     }
-   break;
-   }
-  default:
-   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::branch: "
-				 "unknown intBranchStrategy" ) );
+ // the candidates: the fractional variables, the most fractional first
+ struct Cand { ColVariable * var; double value; double frac; };
+ std::vector< Cand > cands;
+ {
+  Index k = 0;
+  for( const auto & sbd : idx_to_var_sbi1 )  // for each sub-Block
+   for( const auto & dv : sbd ) {            // for each of its variables
+    const double v = sol[ k++ ];
+    const double frac = std::abs( v - std::round( v ) );
+    if( frac > FracEps )
+     cands.push_back( { dv.second , v , frac } );
+    }
   }
- if( ! var )
-  throw( std::runtime_error( "LagrangianDualRelaxationSolver::branch: no "
-			     "variable to branch on" ) );
 
- // an integral Lagrangian solution of a well-terminated Lagrangian Dual
- // satisfies the relaxed constraints, i.e., it solves the node, which is
- // then fenced by bound and never branched; were it to be branched, the
- // two children would be the same node, hence this is an error, of the
- // termination of the inner Solver (say, dblNZEps too large)
- if( best <= FracEps )
+ // no fractional variable: an integral Lagrangian solution of a
+ // well-terminated Lagrangian Dual satisfies the relaxed constraints, i.e.,
+ // it solves the node, which is then fenced by bound and never branched;
+ // were it to be branched, the two children would be the same node, hence
+ // this is an error, of the termination of the inner Solver (say, dblNZEps
+ // too large)
+ if( cands.empty() )
   throw( std::logic_error( "LagrangianDualRelaxationSolver::branch: the "
 			   "Lagrangian solution is integral, the relaxed "
 			   "constraints are violated beyond the termination "
 			   "tolerance of the Lagrangian Dual (dblNZEps)" ) );
 
+ std::stable_sort( cands.begin() , cands.end() ,
+		   []( const Cand & a , const Cand & b ) {
+		    return( a.frac > b.frac ); } );
+
+ switch( f_branch_strategy ) {
+  case( eMostFractional ):
+   return( branchings( cands.front().var , cands.front().value ) );
+
+  case( eStrongBranching ): {
+   if( f_strong_cands <= 0 )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::branch: "
+				  "intStrongCands must be positive" ) );
+   if( cands.size() > Index( f_strong_cands ) )
+    cands.resize( f_strong_cands );
+
+   // the improvement of a child bound over that of the node, on the side
+   // of the relaxation; at least eps, so that a candidate with one child
+   // not improving still ranks by the other one
+   const double node = valid_bound;
+   const double eps = 1e-6 * std::max( std::abs( node ) , 1.0 );
+   auto gain = [ & ]( double child ) {
+    const double g = f_max ? node - child : child - node;
+    return( std::max( g , eps ) );
+    };
+
+   Index best_c = 0;
+   double best_score = -1;
+   for( Index c = 0 ; c < cands.size() ; ++c ) {
+    auto changes = branchings( cands[ c ].var , cands[ c ].value );
+    const double down = child_bound( changes[ 0 ] );
+    const double up = child_bound( changes[ 1 ] );
+    for( auto ch : changes )
+     delete ch;
+
+    const double score = gain( down ) * gain( up );
+    if( f_log && ( logVerb >= 1 ) )
+     *f_log << "LagrangianDualRelaxationSolver::branch: candidate " << c
+	    << " value " << cands[ c ].value << " down " << down << " up "
+	    << up << " score " << score << std::endl;
+    if( score > best_score ) {
+     best_score = score;
+     best_c = c;
+     }
+    }
+
+   return( branchings( cands[ best_c ].var , cands[ best_c ].value ) );
+   }
+
+  default:
+   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::branch: "
+				 "unknown intBranchStrategy" ) );
+  }
+
+ }  // end( LagrangianDualRelaxationSolver::branch )
+
+/*--------------------------------------------------------------------------*/
+
+std::vector< Change * > LagrangianDualRelaxationSolver::branchings(
+				      ColVariable * var , double value ) const
+{
  const std::vector< AbstractPath > path{ AbstractPath( var , path_base() ) };
  const double lo = std::floor( value );
  const double up = std::ceil( value );
@@ -263,13 +318,31 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
 					    { up } , path ) );
    break;
   default:
-   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::branch: "
-				 "unknown intApplyStrategy" ) );
+   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::"
+				 "branchings: unknown intApplyStrategy" ) );
   }
 
  return( changes );
 
- }  // end( LagrangianDualRelaxationSolver::branch )
+ }  // end( LagrangianDualRelaxationSolver::branchings )
+
+/*--------------------------------------------------------------------------*/
+
+double LagrangianDualRelaxationSolver::child_bound( Change * change )
+{
+ auto undo = apply( change , true );
+ const int res = LagrangianDualSolver::compute( false );
+ double bound;
+ if( res == kInfeasible )
+  bound = f_max ? - Inf< double >() : Inf< double >();
+ else
+  bound = f_max ? LagrangianDualSolver::get_ub()
+                : LagrangianDualSolver::get_lb();
+ apply( undo , false );
+ delete undo;
+ return( bound );
+
+ }  // end( LagrangianDualRelaxationSolver::child_bound )
 
 /*--------------------------------------------------------------------------*/
 

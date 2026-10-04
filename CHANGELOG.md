@@ -14,11 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   BranchAndXSolver), with the primal recovery of `PrimalProximalHeur`, and
   branches on a variable that is fractional in the convexified solution of
   the Lagrangian Dual (which `PrimalProximalHeur` keeps, see
-  `get_Lagrangian_convexified_solution()`),
-  either with new dual pairs of the bounds of the variable
-  (`intApplyStrategy` 0) or by fixing it in its sub-Block (1), the columns
-  of the global pool that the fixing purges coming back at the unfixing;
-  `LagrangianChange` is the Change it applies
+  `get_Lagrangian_convexified_solution()`), the most fractional one
+  (`intBranchStrategy` 0) or the best by strong branching among the
+  `intStrongCands` most fractional ones (1), either with new dual pairs of
+  the bounds of the variable (`intApplyStrategy` 0) or by fixing it in its
+  sub-Block (1), the columns of the global pool that the fixing purges
+  coming back at the unfixing; `LagrangianChange` is the Change it applies
 
 - `get_var_solution()` and `get_dual_solution()` take a
   `SimpleConfiguration< std::map< std::string , Configuration * > >`, the

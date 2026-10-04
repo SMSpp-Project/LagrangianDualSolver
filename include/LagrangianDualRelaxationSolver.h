@@ -180,7 +180,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /// the possible values of intBranchStrategy
 
  enum branch_strategy {
-  eMostFractional = 0  ///< the variable with the most fractional value
+  eMostFractional = 0 ,  ///< the variable with the most fractional value
+  eStrongBranching = 1   ///< the best of intStrongCands by strong branching
   };
 
  /// the possible values of intApplyStrategy
@@ -199,11 +200,19 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   apply_strategy and the general notes of the class];
   *
   * - intBranchStrategy [eMostFractional]: how the branching variable is
-  *   chosen [see branch_strategy]. */
+  *   chosen [see branch_strategy]: with eStrongBranching the intStrongCands
+  *   most fractional variables are candidates, and for each of them the
+  *   Lagrangian Dual of both children is solved (without the heuristic),
+  *   the chosen one being that with the largest product of the bound
+  *   improvements of its children over the node, a child found infeasible
+  *   counting as an infinite improvement;
+  *
+  * - intStrongCands [10]: the number of candidates of eStrongBranching. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
   intBranchStrategy ,                 ///< how the branching variable is chosen
+  intStrongCands ,                    ///< candidates of strong branching
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
   };
 
@@ -337,11 +346,28 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  LagBFunction * LagBF_of( Variable * var ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// the two LagrangianChange branching on var at the fractional value
+ /** The first one is the "down" child (var <= floor( value ), or var fixed
+  * to it), the second the "up" one [see intApplyStrategy]. */
+
+ std::vector< Change * > branchings( ColVariable * var , double value ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// the bound of the node with the LagrangianChange applied
+ /** Applies the Change, solves the Lagrangian Dual alone (not the
+  * heuristic), and undoes the Change; returns the bound on the side of the
+  * relaxation (the lower one for a minimization problem), +/- infinity if
+  * the Lagrangian Dual finds the child infeasible. */
+
+ double child_bound( Change * change );
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------- PRIVATE FIELDS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
  int f_branch_strategy = eMostFractional;  ///< intBranchStrategy
  int f_apply_strategy = eMaster;           ///< intApplyStrategy
+ int f_strong_cands = 10;                  ///< intStrongCands
 
  /// for each variable, the dual pairs of its upper (first) and lower
  /// (second) bound added by apply() with eMaster, nullptr if none
