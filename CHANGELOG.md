@@ -108,6 +108,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Solver has written them, instead of overwriting them with those of a
   Solver that has never solved it
 
+- a sub-Block without a BlockSolverConfig is never computed by its
+  LagBFunction, which is told that it has no inner Solver even if the
+  sub-Block has some: if the inner Solver asks for it, i.e., it does not
+  handle it as an easy one, an exception is thrown
+
 - the check that the Block has no Variable of its own asks it for its groups,
   and the dictionaries of the relaxed Constraint are filled one run at a
   time, the vectors of `boost::any` they used to read not being there any

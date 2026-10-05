@@ -675,9 +675,14 @@ void LagrangianDualSolver::set_Block( Block * block )
   // asks to compute(), say because it handles it as an "easy" one, never
   // gets a Solver [see LagBFunction::set_lazy_inner_BlockSolverConfig()];
   // a clone is given because the same BlockSolverConfig is typically used
-  // for many sub-Block
+  // for many sub-Block; a sub-Block without a BlockSolverConfig is never
+  // supposed to be compute()-d, so its LagBFunction is told that it has no
+  // inner Solver, whatever Solver the sub-Block may have, and it throws if
+  // it is ever compute()-d [see LagBFunction::intInnrSlvr]
   if( BSCi )
    v_LBF[ i ]->set_lazy_inner_BlockSolverConfig( BSCi->clone() );
+  else
+   v_LBF[ i ]->set_par( LagBFunction::intInnrSlvr , -1 );
   }
 
  // BlockSolverConfig-ure the Lagrangian Dual Block as a whole - - - - - - - -
@@ -697,9 +702,21 @@ void LagrangianDualSolver::set_Block( Block * block )
  // apply() is done through a clone that is then kept, clear()-ed, as the
  // object that un-does this very configuration [see f_aBSCfg]
  if( f_BSCfg ) {
+  // a sub-Block that has been given no BlockSolverConfig above may get its
+  // Solver from this one: if so, its LagBFunction uses the first of them
+  std::vector< Index > nslv( f_nsb );
+  for( Index i = 0 ; i < f_nsb ; ++i )
+   nslv[ i ] = v_LBF[ i ]->get_inner_block()->get_registered_solvers().size();
+
   f_aBSCfg = f_BSCfg->clone();
   f_aBSCfg->apply( LagrDual );
   f_aBSCfg->clear();
+
+  for( Index i = 0 ; i < f_nsb ; ++i )
+   if( ( v_LBF[ i ]->get_int_par( LagBFunction::intInnrSlvr ) < 0 ) &&
+       ( v_LBF[ i ]->get_inner_block()->get_registered_solvers().size() >
+	 nslv[ i ] ) )
+    v_LBF[ i ]->set_par( LagBFunction::intInnrSlvr , int( nslv[ i ] ) );
   }
  
  #if CHECK_DS & 1

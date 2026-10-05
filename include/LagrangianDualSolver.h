@@ -794,7 +794,16 @@ public:
   *   note that each LagBFunction does require a working Solver attached to
   *   its inner Block (unless the inner Solver can avoid it for some specially
   *   structured inner Block), so this will have to be provided in some way,
-  *   this parameter being one of the many */
+  *   this parameter being one of the many; a sub-Block that gets no Solver
+  *   by any of them is assumed never to be computed, and its LagBFunction
+  *   uses no Solver even if the sub-Block already had some before the
+  *   LagrangianDualSolver was registered [see LagBFunction::intInnrSlvr],
+  *   so that it throws if it is ever computed. Conversely, as the
+  *   BlockSolverConfig of str_LagBF_BSCfg and vstr_LDSl_Cfg are only
+  *   apply()-ed at the first compute() of the LagBFunction, a sub-Block that
+  *   the inner Solver never computes (say, an "easy" component of a
+  *   BundleSolver) gets no Solver, so these can be given to all the
+  *   sub-Block alike */
 
  void set_par( idx_type par , std::string && value ) override;
 
