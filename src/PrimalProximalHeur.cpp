@@ -459,6 +459,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  best_bound = f_max ? - Inf< double >() : Inf< double >();
  valid_bound = f_max ? Inf< double >() : - Inf< double >();
+ other_bound = - valid_bound;
 
  std::vector< double > sol( NumStatVar );
 
@@ -664,6 +665,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   // objective: its bound is the valid one on the original problem
   if( ! penalized ) {
    valid_bound = f_max ? InnerSolver->get_ub() : InnerSolver->get_lb();
+   other_bound = f_max ? InnerSolver->get_lb() : InnerSolver->get_ub();
    f_LagrInitStatus = res;
    }
 

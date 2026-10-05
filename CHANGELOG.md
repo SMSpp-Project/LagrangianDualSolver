@@ -23,7 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it in its sub-Block (1), the columns of the global pool that the fixing
   purges coming back at the unfixing; `vstrBranchGroups` restricts the
   candidates to the variables of the named groups of static Variable of the
-  sub-Blocks; `LagrangianChange` is the Change it applies
+  sub-Blocks; `LagrangianChange` is the Change it applies. Its bounds of the
+  relaxation are, on the side of the relaxation, that of the Lagrangian Dual
+  of the original objective, and, on the other, the best between the other
+  bound of that Lagrangian Dual and the value of the best solution of the
+  heuristic; its true bounds are those of `PrimalProximalHeur`
 
 - `LagrangianDualRelaxationSolverML`, in the library `LagrangianDualSolverML`
   that is only built where Torch is: with `intBranchStrategy` 3 (`eOnline`)

@@ -31,6 +31,8 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include <algorithm>
+
 #include <array>
 
 #include <map>
@@ -396,15 +398,30 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
- /// the bound of the relaxation
- /** That of PrimalProximalHeur, i.e., the bound of the Lagrangian Dual of
-  * the original objective; with a proximal penalty (dbl_penaltyFactor > 0)
-  * the last call of the inner Solver bounds the penalized function, which
-  * is not a bound on the node. */
+ /// the bounds of the relaxation
+ /** On the side of the relaxation (the lower one for a minimization
+  * problem), that of PrimalProximalHeur, i.e., the bound of the Lagrangian
+  * Dual of the original objective; with a proximal penalty
+  * (dbl_penaltyFactor > 0) the last call of the inner Solver bounds the
+  * penalized function, which is not a bound on the node. On the other side,
+  * the best between the bound of the Lagrangian Dual on that side [see
+  * PrimalProximalHeur::relaxation_other_bound()], which may be infinite,
+  * and the value of the best feasible solution of the heuristic, which
+  * bounds the relaxation too. */
 
- OFValue get_lb( void ) override { return( PrimalProximalHeur::get_lb() ); }
+ OFValue get_lb( void ) override {
+  if( ! f_max )
+   return( PrimalProximalHeur::get_lb() );
+  return( std::max( PrimalProximalHeur::get_lb() ,
+		    relaxation_other_bound() ) );
+  }
 
- OFValue get_ub( void ) override { return( PrimalProximalHeur::get_ub() ); }
+ OFValue get_ub( void ) override {
+  if( f_max )
+   return( PrimalProximalHeur::get_ub() );
+  return( std::min( PrimalProximalHeur::get_ub() ,
+		    relaxation_other_bound() ) );
+  }
 
  OFValue get_true_lb( void ) override {
   return( PrimalProximalHeur::get_lb() );

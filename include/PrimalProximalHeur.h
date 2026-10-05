@@ -727,6 +727,23 @@ class PrimalProximalHeur : public LagrangianDualSolver
  using var_col_int = std::tuple< ColVariable * , Index , Index >;
 
 /*--------------------------------------------------------------------------*/
+/*--------------------------- PROTECTED METHODS ----------------------------*/
+/*--------------------------------------------------------------------------*/
+ /// the bound of the Lagrangian Dual opposite to that of get_lb() / get_ub()
+ /** An upper bound on the value of the Lagrangian Dual of the original
+  * objective for a minimization problem (a lower one for a maximization
+  * problem): that of the inner Solver when no proximal penalty is ever
+  * applied, as in get_lb(), and other_bound otherwise. It bounds the
+  * relaxation, not the original problem, and it may be infinite. */
+
+ OFValue relaxation_other_bound( void ) {
+  if( ( R == 0 ) || ( NumStatVar == 0 ) )
+   return( f_max ? LagrangianDualSolver::get_lb()
+	         : LagrangianDualSolver::get_ub() );
+  return( other_bound );
+  }
+
+/*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -772,6 +789,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * a valid lower bound for a minimization problem (upper for a
   * maximization one), whereas the bound of every later iteration is on
   * the penalized objective and says nothing about the original one. */
+
+ double other_bound;
+ ///< the other bound of the Lagrangian Dual of the first iteration
+ /**< The bound of the Lagrangian Dual of the original objective on the side
+  * opposite to valid_bound (an upper one for a minimization problem), from
+  * the same unpenalized first iteration; it bounds the relaxation, not the
+  * original problem, and it may be infinite (say, for a Bundle method with
+  * no valid bound on its model). */
 
  double worst_bound;  ///< worst objective value over the feasible solutions
 
