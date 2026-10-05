@@ -73,6 +73,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the cutoff that makes the problem "as good as infeasible" (`dblUpCutOff`
+  for a minimization problem, `dblLwCutOff` for a maximization one) is not
+  passed to the inner Solver but becomes the conditional bound of the
+  Lagrangian Dual Block, so that the inner Solver stops as soon as the
+  Lagrangian Dual is proven beyond it and `compute()` returns `kInfeasible`;
+  `PrimalProximalHeur` sets it on the unpenalized iteration only, and stops
+  there if the Lagrangian Dual is unbounded or infeasible
+
 - the check that the Block has no Variable of its own asks it for its groups,
   and the dictionaries of the relaxed Constraint are filled one run at a
   time, the vectors of `boost::any` they used to read not being there any

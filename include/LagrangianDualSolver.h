@@ -667,10 +667,25 @@ public:
  /// set the double parameters of LagrangianDualSolver / the inner Solver
  /** Set the double parameters specific of LagrangianDualSolver, and allow to
   * directly set those of the inner Solver used to solve the Lagrangian Dual;
-  * see the comments to set_ComputeConfig() for details. */
+  * see the comments to set_ComputeConfig() for details.
+  *
+  * The cutoffs dblUpCutOff and dblLwCutOff are not passed to the inner
+  * Solver, whose problem has the opposite sense: the one that, for the sense
+  * of (B), says that (B) is "as good as infeasible" (dblUpCutOff for a
+  * minimization problem, dblLwCutOff for a maximization one) becomes the
+  * conditional bound of the Lagrangian Dual Block [see
+  * AbstractBlock::set_valid_upper_bound()], so that the inner Solver stops
+  * as soon as the Lagrangian Dual is proven beyond it, and compute() then
+  * returns kInfeasible; the other one is just kept. */
 
  void set_par( idx_type par , double value ) override {
-  InnerSolver->set_par( dbl_par_lds( par ) , value );
+  if( par == dblUpCutOff )
+   UpCutOff = value;
+  else
+   if( par == dblLwCutOff )
+    LwCutOff = value;
+   else
+    InnerSolver->set_par( dbl_par_lds( par ) , value );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -1652,6 +1667,8 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
+  if( ( par == dblUpCutOff ) || ( par == dblLwCutOff ) )
+   return( Solver::get_dflt_dbl_par( par ) );
   return( InnerSolver->get_dflt_dbl_par( dbl_par_lds( par ) ) );
   }
 
@@ -1723,6 +1740,10 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  [[nodiscard]] double get_dbl_par( idx_type par ) const override {
+  if( par == dblUpCutOff )
+   return( UpCutOff );
+  if( par == dblLwCutOff )
+   return( LwCutOff );
   return( InnerSolver->get_dbl_par( dbl_par_lds( par ) ) );
   }
 
@@ -2008,6 +2029,26 @@ public:
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
+ /// the cutoff as the conditional bound of the Lagrangian Dual Block
+ /** Sets the conditional bound of LagrDual to the cutoff that, for the sense
+  * of (B), makes it "as good as infeasible" [see set_par( double )], if \p
+  * on, and removes it otherwise (say, for a dual whose objective is not that
+  * of (B), as in the penalized iterations of PrimalProximalHeur). The
+  * Lagrangian Dual of a minimization problem is a maximization one, whose
+  * value the cutoff bounds from above, and conversely. */
+
+ void set_cutoff_bound( bool on ) {
+  if( ! LagrDual )
+   return;
+  if( f_max )
+   LagrDual->set_valid_lower_bound( on ? LwCutOff : - Inf< double >() ,
+				    true );
+  else
+   LagrDual->set_valid_upper_bound( on ? UpCutOff : Inf< double >() , true );
+  }
+
+/*--------------------------------------------------------------------------*/
+
  /// attaches the inner Solver to the Lagrangian Dual
  /** Nothing is done before the Lagrangian Dual is formed; set_Block() calls
   * this last, when the ComputeConfig of this Solver, and with it all the
@@ -2254,6 +2295,9 @@ FRowConstraint * constraint_with_index( Index i ) {
  int f_status;      ///< the value returned by the last compute()
 
  bool f_max;        ///< true if (B) was a max problem, false otherwise
+
+ double UpCutOff = Inf< double >();    ///< dblUpCutOff
+ double LwCutOff = - Inf< double >();  ///< dblLwCutOff
 
  LagrangianDualBlock * LagrDual;
                     ///< the automatically constructed Lagrangian Dual

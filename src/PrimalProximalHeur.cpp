@@ -655,6 +655,9 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( auto tl = time_left() ; tl < Inf< double >() )
    InnerSolver->set_par( dblMaxTime , std::max( double( 0 ) , tl ) );
 
+  // the cutoff bounds the Lagrangian Dual of the original objective only,
+  // not that of the penalized one
+  set_cutoff_bound( ! penalized );
   res = InnerSolver->compute( changedvars );
 
   LOG_VERB( 2 )
@@ -667,6 +670,12 @@ int PrimalProximalHeur::compute( bool changedvars )
    valid_bound = f_max ? InnerSolver->get_ub() : InnerSolver->get_lb();
    other_bound = f_max ? InnerSolver->get_lb() : InnerSolver->get_ub();
    f_LagrInitStatus = res;
+
+   // the Lagrangian Dual of the original objective is unbounded (the
+   // problem is infeasible, or beyond the cutoff) or infeasible: there is
+   // nothing to recover, and no proximal term to strip yet
+   if( ( res == kUnbounded ) || ( res == kInfeasible ) )
+    break;
    }
 
   // read back the current sub-Block Variable values - - - - - - - - - - - -
