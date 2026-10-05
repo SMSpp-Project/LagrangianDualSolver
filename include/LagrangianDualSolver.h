@@ -1328,6 +1328,13 @@ public:
   // component whose evaluation failed
   if( ( f_status == kError ) || ( f_status == kBlockLocked ) )
    return( false );
+
+  // the Modification of the components kept aside since then reach them
+  // now [see hold_components()], as they would in get_var_solution(): they
+  // may take away from the global pools some of the linearizations the
+  // solution is made of, which the inner Solver then says
+  ComponentHold hold( *this );
+  ComponentUnlock unlocked( *this );
   return( InnerSolver->has_dual_solution() );
   }
 

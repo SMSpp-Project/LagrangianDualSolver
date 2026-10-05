@@ -90,6 +90,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `has_var_solution()` gives the components the Modification kept aside
+  for them, as `get_var_solution()` does, before asking the inner Solver
+  for its dual solution: those of a Solver that has changed the components
+  meanwhile (say, `PrimalProximalHeur` fixing some Variable and freeing
+  them) may take away linearizations the primal solution is made of
+
 - the primal recovery of `PrimalProximalHeur` (`recover_primal()`) fixes the
   binaries it rounds only if they are free, and un-fixes only those it has
   fixed: it used to un-fix all of them, so that, the sub-Blocks not being
