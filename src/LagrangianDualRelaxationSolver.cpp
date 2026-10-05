@@ -141,6 +141,11 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par ,
  if( par == strStrongLog )
   f_strong_log = std::move( value );
  else
+  if( par == strBranchModel ) {
+   f_branch_model = std::move( value );
+   f_w1.clear();  // read again at the next use
+   }
+ else
   PrimalProximalHeur::set_par( par , std::move( value ) );
  }
 
@@ -150,7 +155,7 @@ const std::string & LagrangianDualRelaxationSolver::get_dflt_str_par(
 						     idx_type par ) const
 {
  static const std::string empty;
- if( par == strStrongLog )
+ if( ( par == strStrongLog ) || ( par == strBranchModel ) )
   return( empty );
  return( PrimalProximalHeur::get_dflt_str_par( par ) );
  }
@@ -162,6 +167,8 @@ const std::string & LagrangianDualRelaxationSolver::get_str_par(
 {
  if( par == strStrongLog )
   return( f_strong_log );
+ if( par == strBranchModel )
+  return( f_branch_model );
  return( PrimalProximalHeur::get_str_par( par ) );
  }
 
@@ -172,6 +179,8 @@ Solver::idx_type LagrangianDualRelaxationSolver::str_par_str2idx(
 {
  if( name == "strStrongLog" )
   return( strStrongLog );
+ if( name == "strBranchModel" )
+  return( strBranchModel );
  return( PrimalProximalHeur::str_par_str2idx( name ) );
  }
 
@@ -181,8 +190,11 @@ const std::string & LagrangianDualRelaxationSolver::str_par_idx2str(
 						     idx_type par ) const
 {
  static const std::string log = "strStrongLog";
+ static const std::string model = "strBranchModel";
  if( par == strStrongLog )
   return( log );
+ if( par == strBranchModel )
+  return( model );
  return( PrimalProximalHeur::str_par_idx2str( par ) );
  }
 
@@ -392,6 +404,57 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
    return( branchings( cands[ best_c ].var , cands[ best_c ].value ) );
    }
 
+  case( eLearned ): {
+   if( f_strong_cands <= 0 )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::branch: "
+				  "intStrongCands must be positive" ) );
+   if( cands.size() > Index( f_strong_cands ) )
+    cands.resize( f_strong_cands );
+   if( f_w1.empty() )
+    load_branch_model();
+
+   // the features of the candidates [see strBranchModel]
+   Index n_fixed = 0;
+   for( const auto & sbd : idx_to_var_sbi1 )
+    for( const auto & dv : sbd )
+     if( dv.second->is_fixed() )
+      ++n_fixed;
+   const double fixed = double( n_fixed ) / NumStatVar;
+   double maxc = 0;
+   for( const auto & cd : cands )
+    maxc = std::max( maxc , std::abs( cd.cost ) );
+   if( maxc <= 0 )
+    maxc = 1;
+   const auto & lagr = get_Lagrangian_initial_solution();
+   const Index n = cands.size();
+
+   Index best_c = 0;
+   double best_score = - Inf< double >();
+   std::vector< double > x( 8 );
+   for( Index c = 0 ; c < n ; ++c ) {
+    const auto & cd = cands[ c ];
+    const auto n_sb = idx_to_var_sbi1[ cd.sb ].size();
+    const double lg = cd.k < lagr.size() ? lagr[ cd.k ] : cd.value;
+    x = { cd.frac , cd.value , lg , std::abs( cd.value - lg ) ,
+	  cd.cost / maxc ,
+	  n_sb > 1 ? double( cd.pos ) / ( n_sb - 1 ) : 0.0 , fixed ,
+	  n > 1 ? double( c ) / ( n - 1 ) : 0.0 };
+    double score = f_b2;
+    for( Index h = 0 ; h < f_w1.size() ; ++h ) {
+     double a = f_b1[ h ];
+     for( Index i = 0 ; i < x.size() ; ++i )
+      a += f_w1[ h ][ i ] * x[ i ];
+     score += f_w2[ h ] * std::tanh( a );
+     }
+    if( score > best_score ) {
+     best_score = score;
+     best_c = c;
+     }
+    }
+
+   return( branchings( cands[ best_c ].var , cands[ best_c ].value ) );
+   }
+
   default:
    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::branch: "
 				 "unknown intBranchStrategy" ) );
@@ -447,6 +510,44 @@ double LagrangianDualRelaxationSolver::child_bound( Change * change )
  return( bound );
 
  }  // end( LagrangianDualRelaxationSolver::child_bound )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualRelaxationSolver::load_branch_model( void )
+{
+ static const std::string _prfx =
+  "LagrangianDualRelaxationSolver::load_branch_model: ";
+
+ if( f_branch_model.empty() )
+  throw( std::invalid_argument( _prfx + "eLearned needs strBranchModel" ) );
+ std::ifstream in( f_branch_model );
+ if( ! in )
+  throw( std::runtime_error( _prfx + "cannot open " + f_branch_model ) );
+
+ std::string tag;
+ Index nin , nhid;
+ if( ! ( in >> tag >> nin >> nhid ) || ( tag != "LBRModel" ) || ( nin != 8 )
+     || ( nhid == 0 ) )
+  throw( std::invalid_argument( _prfx + f_branch_model + " is not a model "
+				"of 8 features" ) );
+
+ f_w1.assign( nhid , std::vector< double >( nin ) );
+ f_b1.resize( nhid );
+ f_w2.resize( nhid );
+ for( auto & row : f_w1 )
+  for( auto & w : row )
+   in >> w;
+ for( auto & b : f_b1 )
+  in >> b;
+ for( auto & w : f_w2 )
+  in >> w;
+ in >> f_b2;
+ if( ! in ) {
+  f_w1.clear();
+  throw( std::invalid_argument( _prfx + f_branch_model + " is truncated" ) );
+  }
+
+ }  // end( LagrangianDualRelaxationSolver::load_branch_model )
 
 /*--------------------------------------------------------------------------*/
 

@@ -181,7 +181,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  enum branch_strategy {
   eMostFractional = 0 ,  ///< the variable with the most fractional value
-  eStrongBranching = 1   ///< the best of intStrongCands by strong branching
+  eStrongBranching = 1 , ///< the best of intStrongCands by strong branching
+  eLearned = 2           ///< the best of intStrongCands by strBranchModel
   };
 
  /// the possible values of intApplyStrategy
@@ -207,7 +208,9 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   improvements of its children over the node, a child found infeasible
   *   counting as an infinite improvement;
   *
-  * - intStrongCands [10]: the number of candidates of eStrongBranching. */
+  * - intStrongCands [10]: the number of candidates of eStrongBranching and
+  *   of eLearned, which picks the one a model learned from the data of
+  *   strong branching ranks first [see strBranchModel]. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
@@ -230,10 +233,22 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   solution, its fractionality, its cost in the objective of the sub-Block,
   *   the bounds of the two children, the score, and 1 for the chosen one; a
   *   header line is written when the file is created, and with the empty
-  *   string nothing is written. */
+  *   string nothing is written;
+  *
+  * - strBranchModel [""]: the file of the model of eLearned, a perceptron
+  *   with one tanh hidden layer that gives a score to each candidate out of
+  *   its features (in this order: its fractionality, its value in the
+  *   convexified and in the Lagrangian solution, the absolute difference of
+  *   the two, its cost over the largest absolute cost of the candidates, its
+  *   position in its sub-Block, the fraction of the binary variables that
+  *   are fixed, its rank by fractionality over the number of candidates
+  *   less one), written as the line "LBRModel <nin> <nhid>", the nhid rows
+  *   of nin weights of the hidden layer, its nhid biases, the nhid weights
+  *   of the output and its bias. */
 
  enum str_par_type_LDRS {
   strStrongLog = strLastPPHPar ,  ///< the file of the strong branching data
+  strBranchModel ,                ///< the file of the model of eLearned
   strLastLDRSPar      ///< first allowed new str parameter for derived classes
   };
 
@@ -401,6 +416,11 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  double child_bound( Change * change );
 
 /*--------------------------------------------------------------------------*/
+ /// read the model of eLearned from strBranchModel
+
+ void load_branch_model( void );
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------- PRIVATE FIELDS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -408,6 +428,14 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  int f_apply_strategy = eMaster;           ///< intApplyStrategy
  int f_strong_cands = 10;                  ///< intStrongCands
  std::string f_strong_log;                 ///< strStrongLog
+ std::string f_branch_model;               ///< strBranchModel
+
+ /// the model of eLearned, read from strBranchModel at its first use: the
+ /// weights and the biases of the hidden layer, those of the output
+ std::vector< std::vector< double > > f_w1;
+ std::vector< double > f_b1;
+ std::vector< double > f_w2;
+ double f_b2 = 0;
  Index f_n_branch = 0;                     ///< calls of branch() so far
 
  /// for each variable, the dual pairs of its upper (first) and lower
