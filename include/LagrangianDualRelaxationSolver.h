@@ -34,6 +34,7 @@
 #include <array>
 
 #include <map>
+#include <memory>
 #include <unordered_map>
 
 #include "AbstractChange.h"
@@ -92,6 +93,28 @@ class LagrangianChange : public AbstractChange {
  ~LagrangianChange() override = default;
 
 /*--------------------------------------------------------------------------*/
+ /// the multipliers of the node that branched, which a child may start from
+
+ using Center = std::vector< std::pair< ColVariable * , double > >;
+
+ /// set the multipliers of the node that branched [see get_center()]
+
+ void set_center( std::shared_ptr< const Center > center ) {
+  f_center = std::move( center );
+  }
+
+ /// the multipliers of the node that branched, nullptr if none
+ /** Returns the Lagrangian multipliers, each with its value, that the node
+  * producing this LagrangianChange had when it branched, i.e., the stability
+  * centre its Lagrangian Dual ended at, which the child starts from [see
+  * LagrangianDualRelaxationSolver::apply()]. The LagrangianChange that undo
+  * another one carry none. */
+
+ [[nodiscard]] const Center * get_center( void ) const {
+  return( f_center.get() );
+  }
+
+/*--------------------------------------------------------------------------*/
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -111,6 +134,8 @@ class LagrangianChange : public AbstractChange {
 /*--------------------------------------------------------------------------*/
 
  private:
+
+ std::shared_ptr< const Center > f_center;  ///< see get_center()
 
  SMSpp_insert_in_factory_h;  // insert LagrangianChange in the factory
 
@@ -565,6 +590,22 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  void load_branch_model( void );
 
 /*--------------------------------------------------------------------------*/
+ /// the Lagrangian multipliers, i.e., the active Variable of the LagBFunction
+
+ std::shared_ptr< const LagrangianChange::Center > center( void ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// put back the multipliers of center, those added since then at 0
+ /** Writes in the Lagrangian multipliers the values in center, and 0 in
+  * those that are not there, i.e., the multipliers of the dual pairs added
+  * since center was taken; a Variable of center that is no longer a
+  * multiplier is left alone. The inner Solver is asked, once, to restart
+  * from them at its next compute(), emptying its bundle [see intRstAlg of
+  * BundleSolver]; returns false, doing nothing, if it cannot be asked. */
+
+ bool restore_center( const LagrangianChange::Center & center );
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------- PRIVATE FIELDS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -578,6 +619,15 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  std::vector< double > f_b1;
  std::vector< double > f_w2;
  double f_b2 = 0;
+
+ /// the multipliers taken by the last branch(), if no node has been solved
+ /// since then, so that they are still those of the inner Solver [see
+ /// apply()]; nullptr otherwise
+ mutable const LagrangianChange::Center * f_fresh_center = nullptr;
+
+ /// the intRstAlg of the inner Solver to put back after the compute() that
+ /// restore_center() asked a restart for, -1 if none
+ int f_rst_alg = -1;
 
  /// for each variable, the dual pairs of its upper (first) and lower
  /// (second) bound added by apply() with eMaster, nullptr if none

@@ -102,6 +102,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- in a Branch-and-Bound, a node of `LagrangianDualRelaxationSolver` starts
+  from the Lagrangian multipliers its father ended at, which its
+  `LagrangianChange` carries, the inner Solver restarting from them, rather
+  than from those of the node solved last: after an infeasible node, whose
+  multipliers grow without bound, the next ones were solved from there and
+  their Lagrangian Dual stopped on bounds of -1e11 and below
+
 - the primal recovery of `PrimalProximalHeur` (`recover_primal()`) fixes the
   binaries it rounds only if they are free, and un-fixes only those it has
   fixed: it used to un-fix all of them, so that, the sub-Blocks not being
