@@ -33,6 +33,8 @@
 
 #include <iomanip>
 
+#include <unordered_set>
+
 #include "LagrangianDualRelaxationSolver.h"
 
 /*--------------------------------------------------------------------------*/
@@ -200,6 +202,59 @@ const std::string & LagrangianDualRelaxationSolver::str_par_idx2str(
 
 /*--------------------------------------------------------------------------*/
 
+void LagrangianDualRelaxationSolver::set_par( idx_type par ,
+				      std::vector< std::string > && value )
+{
+ if( par == vstrBranchGroups )
+  f_branch_groups = std::move( value );
+ else  // PrimalProximalHeur has none of its own
+  LagrangianDualSolver::set_par( par , std::move( value ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::vector< std::string > &
+LagrangianDualRelaxationSolver::get_dflt_vstr_par( idx_type par ) const
+{
+ static const std::vector< std::string > empty;
+ if( par == vstrBranchGroups )
+  return( empty );
+ return( PrimalProximalHeur::get_dflt_vstr_par( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::vector< std::string > &
+LagrangianDualRelaxationSolver::get_vstr_par( idx_type par ) const
+{
+ if( par == vstrBranchGroups )
+  return( f_branch_groups );
+ return( PrimalProximalHeur::get_vstr_par( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Solver::idx_type LagrangianDualRelaxationSolver::vstr_par_str2idx(
+					      const std::string & name ) const
+{
+ if( name == "vstrBranchGroups" )
+  return( vstrBranchGroups );
+ return( PrimalProximalHeur::vstr_par_str2idx( name ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::string & LagrangianDualRelaxationSolver::vstr_par_idx2str(
+						     idx_type par ) const
+{
+ static const std::string groups = "vstrBranchGroups";
+ if( par == vstrBranchGroups )
+  return( groups );
+ return( PrimalProximalHeur::vstr_par_idx2str( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualRelaxationSolver::set_global_information(
 						    GlobalInformation * gi )
 {
@@ -226,20 +281,32 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
 
  const bool done = ( status >= kOK ) &&
                    ( ( status == kLowPrecision ) || ( status < kError ) );
- const auto & sol = get_Lagrangian_convexified_solution();
- if( ( ! done ) || ( sol.size() != NumStatVar ) )
+ if( ! done )
   return( status );
+
+ // without the convexified solution (say, the master problem of the inner
+ // Solver failed, leaving no linearization to combine) the node cannot be
+ // branched: what the inner Solver returned is said, or kError if it said
+ // kOK
+ const int ld_status = get_Lagrangian_initial_status();
+ const auto & sol = get_Lagrangian_convexified_solution();
+ if( sol.size() != NumStatVar )
+  return( ld_status == kOK ? int( kError ) : ld_status );
 
  // the Lagrangian Dual not solved (stopped by a budget, or kLowPrecision)
  // gives a valid bound, and a convexified solution that need not satisfy
  // the relaxed constraints: the node can still be branched on a variable
  // fractional in it, but if there is none it can be neither branched nor
  // fenced, and what the inner Solver returned is said
- const int ld_status = get_Lagrangian_initial_status();
- if( ld_status != kOK )
-  if( std::none_of( sol.begin() , sol.end() , []( double v ) {
-       return( std::abs( v - std::round( v ) ) > FracEps ); } ) )
+ if( ld_status != kOK ) {
+  const auto mask = branchable();
+  bool frac = false;
+  for( Index k = 0 ; ( ! frac ) && ( k < sol.size() ) ; ++k )
+   frac = mask[ k ] && ( std::abs( sol[ k ] - std::round( sol[ k ] ) )
+			 > FracEps );
+  if( ! frac )
    return( ld_status );
+  }
 
  return( kOK );
 
@@ -251,20 +318,30 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
 
 Solution * LagrangianDualRelaxationSolver::get_Solution( Configuration * solc )
 {
-   f_Block->lock( this );
-   LagrangianDualSolver::get_var_solution( solc );
-   auto solution = f_Block->get_Solution( solc , false ); // loaded
-   f_Block->unlock( this );
-   return( solution );
-}
+ f_Block->lock( this );
+ LagrangianDualSolver::get_var_solution( solc );
+ auto solution = f_Block->get_Solution( solc , false );  // loaded
+ f_Block->unlock( this );
+ return( solution );
+ }
 
 /*--------------------------------------------------------------------------*/
 
 Solution * LagrangianDualRelaxationSolver::get_true_solution(
 						      Configuration * solc )
 {
-   return v_best_sol.front().first;
-}
+ if( ! solc ) {
+  if( v_best_sol.empty() )
+   return( nullptr );
+  return( v_best_sol.front().first->clone() );  // the caller owns it
+  }
+
+ f_Block->lock( this );
+ get_true_var_solution( solc );
+ auto solution = f_Block->get_Solution( solc , false );  // loaded
+ f_Block->unlock( this );
+ return( solution );
+ }
 
 /*--------------------------------------------------------------------------*/
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
@@ -283,7 +360,8 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
   throw( std::runtime_error( "LagrangianDualRelaxationSolver::branch: the "
 			     "Lagrangian solution has the wrong size" ) );
 
- // the candidates: the fractional variables, the most fractional first
+ // the candidates: the fractional variables among those that may be
+ // branched upon [see vstrBranchGroups], the most fractional first
  struct Cand {
   ColVariable * var;  // the variable
   double value;       // its value in the convexified solution
@@ -295,13 +373,14 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
   };
  std::vector< Cand > cands;
  {
+  const auto mask = branchable();
   Index k = 0;
   for( Index sb = 0 ; sb < idx_to_var_sbi1.size() ; ++sb )
    for( Index pos = 0 ; pos < idx_to_var_sbi1[ sb ].size() ; ++pos , ++k ) {
     const auto & dv = idx_to_var_sbi1[ sb ][ pos ];
     const double v = sol[ k ];
     const double frac = std::abs( v - std::round( v ) );
-    if( frac > FracEps )
+    if( mask[ k ] && ( frac > FracEps ) )
      cands.push_back( { dv.second , v , frac , k , sb , pos , dv.first } );
     }
   }
@@ -312,12 +391,15 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
  // it solves the node, which is then fenced by bound and never branched;
  // were it to be branched, the two children would be the same node, hence
  // this is an error, of the termination of the inner Solver (say, dblNZEps
- // too large)
+ // too large), or of vstrBranchGroups leaving out a group that the others
+ // do not determine
  if( cands.empty() )
-  throw( std::logic_error( "LagrangianDualRelaxationSolver::branch: the "
-			   "Lagrangian solution is integral, the relaxed "
-			   "constraints are violated beyond the termination "
-			   "tolerance of the Lagrangian Dual (dblNZEps)" ) );
+  throw( std::logic_error( "LagrangianDualRelaxationSolver::branch: no "
+			   "variable branched upon is fractional, either the "
+			   "relaxed constraints are violated beyond the "
+			   "termination tolerance of the Lagrangian Dual "
+			   "(dblNZEps) or vstrBranchGroups leaves out a "
+			   "fractional group" ) );
 
  std::stable_sort( cands.begin() , cands.end() ,
 		   []( const Cand & a , const Cand & b ) {
@@ -457,6 +539,34 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
   }
 
  }  // end( LagrangianDualRelaxationSolver::branch )
+
+/*--------------------------------------------------------------------------*/
+
+std::vector< bool > LagrangianDualRelaxationSolver::branchable( void ) const
+{
+ std::vector< bool > mask( NumStatVar , f_branch_groups.empty() );
+ if( f_branch_groups.empty() )
+  return( mask );
+
+ // the variables of the named groups of each sub-Block, then the flags in
+ // the order in which PrimalProximalHeur has registered them
+ std::unordered_set< const ColVariable * > vars;
+ for( const auto & sbi : f_Block->get_nested_Blocks() )
+  for( const auto & group : sbi->get_static_variable_groups() )
+   if( group && ( std::find( f_branch_groups.begin() , f_branch_groups.end() ,
+			     group->get_name() ) != f_branch_groups.end() ) )
+    group->for_each_as< ColVariable >( [ & ]( ColVariable & var ) {
+      vars.insert( & var );
+      } );
+
+ Index k = 0;
+ for( const auto & sbv : idx_to_var_sbi1 )
+  for( const auto & dv : sbv )
+   mask[ k++ ] = vars.contains( dv.second );
+
+ return( mask );
+
+ }  // end( LagrangianDualRelaxationSolver::branchable )
 
 /*--------------------------------------------------------------------------*/
 

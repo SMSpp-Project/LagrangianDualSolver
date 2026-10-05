@@ -252,6 +252,24 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   strLastLDRSPar      ///< first allowed new str parameter for derived classes
   };
 
+ /// public enum for the vector-of-string algorithmic parameters
+ /** Public enum describing the algorithmic parameters of vector-of-string
+  * type that LagrangianDualRelaxationSolver has in addition to these of
+  * PrimalProximalHeur:
+  *
+  * - vstrBranchGroups [empty]: the names of the groups of static Variable of
+  *   the sub-Blocks that are branched upon, the binary variables of any
+  *   other group being never candidates; empty means all of them. A group
+  *   whose variables are determined by these of the others (say, start-up
+  *   variables by the commitment ones) need not be branched upon, and
+  *   leaving it out also spares the Solver of the sub-Block fixings it may
+  *   not support. */
+
+ enum vstr_par_type_LDRS {
+  vstrBranchGroups = vstrLastLDSlvPar ,  ///< the groups branched upon
+  vstrLastLDRSPar  ///< first allowed new vector-of-string parameter
+  };
+
 /*--------------------------------------------------------------------------*/
 /*--------------------- CONSTRUCTOR AND DESTRUCTOR -------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -276,12 +294,18 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  void set_par( idx_type par , std::string && value ) override;
 
+ void set_par( idx_type par , std::vector< std::string > && value ) override;
+
  [[nodiscard]] idx_type int_par_first_is( void ) const override {
   return( intLastLDRSPar );
   }
 
  [[nodiscard]] idx_type str_par_first_is( void ) const override {
   return( strLastLDRSPar );
+  }
+
+ [[nodiscard]] idx_type vstr_par_first_is( void ) const override {
+  return( vstrLastLDRSPar );
   }
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override;
@@ -306,6 +330,18 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  [[nodiscard]] const std::string & str_par_idx2str( idx_type par )
   const override;
 
+ [[nodiscard]] const std::vector< std::string > & get_dflt_vstr_par(
+						 idx_type par ) const override;
+
+ [[nodiscard]] const std::vector< std::string > & get_vstr_par(
+						 idx_type par ) const override;
+
+ [[nodiscard]] idx_type vstr_par_str2idx( const std::string & name )
+  const override;
+
+ [[nodiscard]] const std::string & vstr_par_idx2str( idx_type par )
+  const override;
+
 /*--------------------------------------------------------------------------*/
  /// give the Solver the GlobalInformation of the search
  /** Besides recording it, makes sure that the GlobalInformation has the
@@ -321,7 +357,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /// solve the Lagrangian Dual of the node, with the primal recovery
  /** As PrimalProximalHeur::compute(), but a status between kOK and kError
   * (or kLowPrecision) is kOK when the Lagrangian solution is there, as
-  * branch() only needs that. */
+  * branch() only needs that; when it is not there, the status is that of
+  * the Lagrangian Dual, or kError if that is kOK. */
 
  int compute( bool changedvars = true ) override;
 
@@ -329,9 +366,15 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
- OFValue get_lb( void ) override { return( PrimalProximalHeur::LagrangianDualSolver::get_lb() ); }
+ /// the bound of the relaxation
+ /** That of PrimalProximalHeur, i.e., the bound of the Lagrangian Dual of
+  * the original objective; with a proximal penalty (dbl_penaltyFactor > 0)
+  * the last call of the inner Solver bounds the penalized function, which
+  * is not a bound on the node. */
 
- OFValue get_ub( void ) override { return( PrimalProximalHeur::LagrangianDualSolver::get_ub() ); }
+ OFValue get_lb( void ) override { return( PrimalProximalHeur::get_lb() ); }
+
+ OFValue get_ub( void ) override { return( PrimalProximalHeur::get_ub() ); }
 
  OFValue get_true_lb( void ) override {
   return( PrimalProximalHeur::get_lb() );
@@ -359,7 +402,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  Solution * get_Solution( Configuration * solc = nullptr ) override;
 
- /// the true Solution: that of PrimalProximalHeur
+ /// the true Solution: the best one of PrimalProximalHeur
+ /** A copy of the best Solution that PrimalProximalHeur has saved, which the
+  * caller owns, or nullptr if there is none; only a \p solc asking for a
+  * part of it requires writing it into the Block and reading it back. */
 
  Solution * get_true_solution( Configuration * solc = nullptr ) override;
 
@@ -416,6 +462,13 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  double child_bound( Change * change );
 
 /*--------------------------------------------------------------------------*/
+ /// the binary static variables that may be branched upon
+ /** One flag per variable, in the order of the Lagrangian solution [see
+  * vstrBranchGroups]. */
+
+ std::vector< bool > branchable( void ) const;
+
+/*--------------------------------------------------------------------------*/
  /// read the model of eLearned from strBranchModel
 
  void load_branch_model( void );
@@ -429,6 +482,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  int f_strong_cands = 10;                  ///< intStrongCands
  std::string f_strong_log;                 ///< strStrongLog
  std::string f_branch_model;               ///< strBranchModel
+ std::vector< std::string > f_branch_groups; ///< vstrBranchGroups
 
  /// the model of eLearned, read from strBranchModel at its first use: the
  /// weights and the biases of the hidden layer, those of the output

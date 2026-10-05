@@ -21,8 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (2, `strBranchModel`, a perceptron read from a text file), either with new
   dual pairs of the bounds of the variable (`intApplyStrategy` 0) or by fixing
   it in its sub-Block (1), the columns of the global pool that the fixing
-  purges coming back at the unfixing; `LagrangianChange` is the Change it
-  applies
+  purges coming back at the unfixing; `vstrBranchGroups` restricts the
+  candidates to the variables of the named groups of static Variable of the
+  sub-Blocks; `LagrangianChange` is the Change it applies
 
 - `get_var_solution()` and `get_dual_solution()` take a
   `SimpleConfiguration< std::map< std::string , Configuration * > >`, the
