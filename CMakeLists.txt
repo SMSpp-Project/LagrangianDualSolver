@@ -61,6 +61,9 @@ if (NOT hasParent)
     find_package(MILPSolver REQUIRED)
 endif ()
 
+# Torch needed for LagrangianDualSolverML
+find_package(Torch HINTS ${Torch_ROOT})
+
 # ----- Configuration header ------------------------------------------------ #
 # This will generate a *Config.h header in the build directory.
 configure_file(cmake/${modName}Config.h.in ${modName}Config.h)
@@ -157,6 +160,39 @@ target_link_libraries(${modName} PUBLIC
         ${modNamespace}::SMS++
         ${modNamespace}::MILPSolver)
 
+# LagrangianDualSolverML, which holds LagrangianDualRelaxationSolverML, is a
+# library of its own, as BundleSolverML is: Torch is some hundreds of
+# megabytes of shared objects, whose loading a program linking the one here
+# would pay at each start whether or not the ML variant is ever used. Whoever
+# wants that variant links SMS++::LagrangianDualSolverML, which brings this
+# one along with it.
+if (Torch_FOUND)
+    message(STATUS "${modName}: Torch found, configuring ${modName}ML")
+
+    add_library(${modName}ML)
+    target_compile_features(${modName}ML PUBLIC cxx_std_20)
+
+    if (MSVC AND BUILD_SHARED_LIBS)
+        target_link_options(${modName}ML INTERFACE
+            "/INCLUDE:SMSpp_force_load_LagrangianDualRelaxationSolverML")
+    endif ()
+
+    target_sources(${modName}ML PRIVATE
+            src/LagrangianDualRelaxationSolverML.cpp)
+
+    target_include_directories(
+            ${modName}ML PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+            $<INSTALL_INTERFACE:include/${modNamespace}>)
+
+    separate_arguments(TORCH_CXX_FLAGS_LIST UNIX_COMMAND "${TORCH_CXX_FLAGS}")
+    target_compile_options(${modName}ML PRIVATE ${TORCH_CXX_FLAGS_LIST})
+    target_link_libraries(${modName}ML PUBLIC ${modName} ${TORCH_LIBRARIES})
+
+    add_library(${modNamespace}::${modName}ML ALIAS ${modName}ML)
+endif ()
+
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
 add_library(${modNamespace}::${modName} ALIAS ${modName})
@@ -174,16 +210,34 @@ endif ()
 include(GNUInstallDirs)
 
 # Install the library
+# the ML variant goes in the same export set, so that a consumer finding this
+# module gets SMS++::LagrangianDualSolverML too when it was built
+if (Torch_FOUND)
+    install(TARGETS ${modName}ML
+            EXPORT ${modName}Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
+endif ()
+
 install(TARGETS ${modName}
         EXPORT ${modName}Targets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
 
-# Install the headers
+# Install the headers; the one of the ML variant only with it
 install(FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/include/LagrangianDualSolver.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/PrimalProximalHeur.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/LagrangianDualRelaxationSolver.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
+
+if (Torch_FOUND)
+    install(FILES
+            include/LagrangianDualRelaxationSolverML.h
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
+endif ()
 
 # Install the auto-generated configuration header (see above).
 install(FILES ${PROJECT_BINARY_DIR}/${modName}Config.h

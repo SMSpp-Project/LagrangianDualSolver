@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   candidates to the variables of the named groups of static Variable of the
   sub-Blocks; `LagrangianChange` is the Change it applies
 
+- `LagrangianDualRelaxationSolverML`, in the library `LagrangianDualSolverML`
+  that is only built where Torch is: with `intBranchStrategy` 3 (`eOnline`)
+  it branches by strong branching on the first `intLearnNodes` nodes,
+  keeping the features of the candidates and their scores in the
+  `GlobalInformation` of the search, so that the workers of a parallel
+  Branch-and-Bound share them, then fits on them the model of
+  `intBranchStrategy` 2 (`intHidden`, `intTrainEpochs`, `dblLearnRate`,
+  `intLearnSeed`), which all of them use from then on and which can be
+  written to `strOnlineModel` for another run; the headers of
+  `PrimalProximalHeur` and `LagrangianDualRelaxationSolver` are installed
+
 - `get_var_solution()` and `get_dual_solution()` take a
   `SimpleConfiguration< std::map< std::string , Configuration * > >`, the
   type of the "meta" Configurations, that names the sub-Block whose

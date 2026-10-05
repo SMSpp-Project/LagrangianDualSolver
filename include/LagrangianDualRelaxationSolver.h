@@ -31,6 +31,8 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include <array>
+
 #include <map>
 #include <unordered_map>
 
@@ -182,7 +184,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  enum branch_strategy {
   eMostFractional = 0 ,  ///< the variable with the most fractional value
   eStrongBranching = 1 , ///< the best of intStrongCands by strong branching
-  eLearned = 2           ///< the best of intStrongCands by strBranchModel
+  eLearned = 2 ,         ///< the best of intStrongCands by strBranchModel
+  eOnline = 3            ///< strong branching, then a model learned online
   };
 
  /// the possible values of intApplyStrategy
@@ -210,7 +213,9 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *
   * - intStrongCands [10]: the number of candidates of eStrongBranching and
   *   of eLearned, which picks the one a model learned from the data of
-  *   strong branching ranks first [see strBranchModel]. */
+  *   strong branching ranks first [see strBranchModel]; eOnline learns that
+  *   model while the search goes on, and is only handled by
+  *   LagrangianDualRelaxationSolverML, which needs Torch. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
@@ -422,6 +427,92 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  Change * apply( Change * change , bool doUndo = false ) override;
 
 /*--------------------------------------------------------------------------*/
+/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ protected:
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- PROTECTED TYPES -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ /// a candidate of the branching, a variable fractional in the convexified
+ /// solution
+
+ struct Cand {
+  ColVariable * var;  ///< the variable
+  double value;       ///< its value in the convexified solution
+  double frac;        ///< its fractionality
+  Index k;            ///< its index among the binary static variables
+  Index sb;           ///< its sub-Block
+  Index pos;          ///< its position among those of the sub-Block
+  double cost;        ///< its cost in the objective of the sub-Block
+  };
+
+ /// the number of the features of a candidate [see strBranchModel]
+
+ static constexpr Index NFeatures = 8;
+
+ /// the features of a candidate [see strBranchModel]
+
+ using Features = std::array< double , NFeatures >;
+
+ /// what strong branching finds of a candidate: the bound of the "down"
+ /// child, that of the "up" one and the score [see intBranchStrategy]
+
+ using StrongEval = std::array< double , 3 >;
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- PROTECTED METHODS -----------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ /// the candidates of the node, the most fractional first
+ /** The binary variables of the sub-Blocks that may be branched upon [see
+  * vstrBranchGroups] and are fractional in the convexified solution; throws
+  * if there is none [see branch()]. */
+
+ std::vector< Cand > candidates( void );
+
+/*--------------------------------------------------------------------------*/
+ /// the features of the candidates [see strBranchModel]
+ /** They are relative to the candidates given (say, the cost is over the
+  * largest one among them, the rank over their number), which are in the
+  * order of candidates(). */
+
+ std::vector< Features > features( const std::vector< Cand > & cands ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// strong branching on the candidates [see intBranchStrategy]
+
+ std::vector< StrongEval > strong_branching(
+					      const std::vector< Cand > & cands );
+
+/*--------------------------------------------------------------------------*/
+ /// append the data of strong branching to strStrongLog (if any)
+
+ void write_strong_log( const std::vector< Cand > & cands ,
+			const std::vector< StrongEval > & evals ,
+			Index chosen );
+
+/*--------------------------------------------------------------------------*/
+ /// the candidate to branch upon, by intBranchStrategy
+ /** Returns the index in \p cands of the chosen candidate; \p cands may be
+  * shortened (say, to the intStrongCands most fractional ones). A derived
+  * class that handles more values of intBranchStrategy (as
+  * LagrangianDualRelaxationSolverML does with eOnline) overrides this. */
+
+ virtual Index choose( std::vector< Cand > & cands );
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- PROTECTED FIELDS ------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ int f_branch_strategy = eMostFractional;  ///< intBranchStrategy
+ int f_strong_cands = 10;                  ///< intStrongCands
+ std::string f_strong_log;                 ///< strStrongLog
+ Index f_n_branch = 0;                     ///< calls of branch() so far
+
+/*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -477,10 +568,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 /*--------------------------- PRIVATE FIELDS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
- int f_branch_strategy = eMostFractional;  ///< intBranchStrategy
  int f_apply_strategy = eMaster;           ///< intApplyStrategy
- int f_strong_cands = 10;                  ///< intStrongCands
- std::string f_strong_log;                 ///< strStrongLog
  std::string f_branch_model;               ///< strBranchModel
  std::vector< std::string > f_branch_groups; ///< vstrBranchGroups
 
@@ -490,7 +578,6 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  std::vector< double > f_b1;
  std::vector< double > f_w2;
  double f_b2 = 0;
- Index f_n_branch = 0;                     ///< calls of branch() so far
 
  /// for each variable, the dual pairs of its upper (first) and lower
  /// (second) bound added by apply() with eMaster, nullptr if none

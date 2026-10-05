@@ -43,6 +43,15 @@
 MILPSSDR = $(LgDSLVSDR)/../MILPSolver
 include $(MILPSSDR)/makefile-c
 
+# define input macros for Torch library makefile, then include it;
+# LagrangianDualRelaxationSolverML is only compiled in if Torch is actually
+# installed at $(Torch_ROOT)
+LgDSLVTORCHH = $(subst $\",,$(Torch_ROOT))/include/torch/csrc/api/include
+ifneq ($(wildcard $(LgDSLVTORCHH)/torch/torch.h),)
+    include $(LgDSLVSDR)/../extlib/makefile-libTorch
+    LgDSLVML = 1
+endif
+
 # include the makefile requiring all external modules in input
 include $(LgDSLVSDR)/makefile
 
@@ -51,10 +60,11 @@ include $(LgDSLVSDR)/makefile
 # append external stuff defined in the other makefiles to LgDSLVOBJ,
 # LgDSLVINC and LgDSLVH, thus the := assignment has to be used (use GNU make)
 LgDSLVOBJ := $(LgDSLVOBJ) $(MILPSOBJ)
-LgDSLVINC := $(LgDSLVINC) $(MILPSINC)
+LgDSLVINC := $(LgDSLVINC) $(MILPSINC) $(libTorchINC)
 LgDSLVH := $(LgDSLVH) $(MILPSH)
 
-# external libraries for LagrangianDualSolver (those of MILPSolver)
-LgDSLVLIB = $(MILPSLIB)
+# external libraries for LagrangianDualSolver (those of MILPSolver, and
+# Torch for LagrangianDualRelaxationSolverML)
+LgDSLVLIB = $(MILPSLIB) $(libTorchLIB)
 
 ############################ End of makefile #################################

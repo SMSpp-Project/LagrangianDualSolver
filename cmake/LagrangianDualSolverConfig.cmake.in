@@ -20,6 +20,10 @@ include(CMakeFindDependencyMacro)
 find_dependency(SMS++)
 find_dependency(MILPSolver)
 
+if (@Torch_FOUND@)
+    find_dependency(Torch HINTS @Torch_DIR@)
+endif ()
+
 # ----- Import target ------------------------------------------------------- #
 if (NOT TARGET @modNamespace@::@modName@)
     include("${@modName@_CMAKE_DIR}/@modName@Targets.cmake")
