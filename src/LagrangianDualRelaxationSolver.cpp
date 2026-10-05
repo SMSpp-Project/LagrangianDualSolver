@@ -251,8 +251,11 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
 
 Solution * LagrangianDualRelaxationSolver::get_Solution( Configuration * solc )
 {
-   //TODO probabilmente da fissare
-   return new Solution(get_Lagrangian_convexified_solution());
+   f_Block->lock( this );
+   LagrangianDualSolver::get_var_solution( solc );
+   auto solution = f_Block->get_Solution( solc , false ); // loaded
+   f_Block->unlock( this );
+   return( solution );
 }
 
 /*--------------------------------------------------------------------------*/
@@ -566,7 +569,6 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
  if( ! pv )
   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::apply: "
 				"the variable is not in the Block" ) );
-//TODO controllare come l'avevo ottenuta prima
  auto lbf = LagBF_of( pv );
 
  const auto undo = [ & ]( int utype , std::vector< double > data )
