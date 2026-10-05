@@ -761,18 +761,34 @@ int PrimalProximalHeur::compute( bool changedvars )
   // whose binary ones are then given back the values of the Lagrangian
   // solution, which the rest of the heuristic (the primal recovery
   // included) starts from; the continuous ones are written again by the
-  // next solve, and the primal recovery does not read them
+  // next solve, and the primal recovery does not read them. The status is
+  // that of this solve, as the one has_var_solution() looks at is that of
+  // the last LagrangianDualSolver::compute(); and even after a solve that
+  // ended well a component may have no linearization to combine (say, its
+  // master problem failed and the Bundle went on without it), which only
+  // get_var_solution() finds out, by throwing: then there is no convexified
+  // solution, and the binary variables it may have written are given back
+  // their values all the same
   if( f_save_conv_sol && ( ! penalized ) ) {
    v_LagrConvSol.clear();
-   if( LagrangianDualSolver::has_var_solution() ) {
-    LagrangianDualSolver::get_var_solution();
-    v_LagrConvSol.resize( NumStatVar );
+   if( ( res >= kOK ) && ( ( res < kError ) || ( res == kLowPrecision ) ) &&
+       LagrangianDualSolver::has_var_solution() ) {
+    bool conv = true;
+    try {
+     LagrangianDualSolver::get_var_solution();
+     }
+    catch( std::invalid_argument & ) {
+     conv = false;
+     }
+    if( conv )
+     v_LagrConvSol.resize( NumStatVar );
     const auto n_sub = f_Block->get_number_nested_Blocks();
     Index kvar = 0;
     for( Index index = 0 ; index < n_sub ; ++index )
      for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
       const auto var = idx_to_var_sbi1[ index ][ ivar ].second;
-      v_LagrConvSol[ kvar ] = var->get_value();
+      if( conv )
+       v_LagrConvSol[ kvar ] = var->get_value();
       var->set_value( sol[ kvar ] );
       ++kvar;
       }
