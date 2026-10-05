@@ -78,6 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passed to the inner Solver but becomes the conditional bound of the
   Lagrangian Dual Block, so that the inner Solver stops as soon as the
   Lagrangian Dual is proven beyond it and `compute()` returns `kInfeasible`;
+  the conditional bound is the best between it and the value of the
+  sub-Blocks with the opposite sense on the box of their variables, by a
+  `BoxSolver` (`box_bound()`), beyond which the Lagrangian Dual proves the
+  problem empty with no incumbent at all, when that is finite (say, binary
+  knapsacks, not thermal units whose power is bounded by the commitment);
   `PrimalProximalHeur` sets it on the unpenalized iteration only, and stops
   there if the Lagrangian Dual is unbounded or infeasible
 

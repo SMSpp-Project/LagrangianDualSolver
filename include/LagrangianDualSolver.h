@@ -30,6 +30,8 @@
 
 #include "AbstractBlock.h"
 
+#include "BoxSolver.h"
+
 #include "CDASolver.h"
 
 #include "LagBFunction.h"
@@ -37,6 +39,8 @@
 #include "LinearFunction.h"
 
 #include "UpdateSolver.h"
+
+#include <algorithm>
 
 #include <atomic>
 
@@ -2029,23 +2033,41 @@ public:
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
- /// the cutoff as the conditional bound of the Lagrangian Dual Block
- /** Sets the conditional bound of LagrDual to the cutoff that, for the sense
-  * of (B), makes it "as good as infeasible" [see set_par( double )], if \p
-  * on, and removes it otherwise (say, for a dual whose objective is not that
-  * of (B), as in the penalized iterations of PrimalProximalHeur). The
-  * Lagrangian Dual of a minimization problem is a maximization one, whose
-  * value the cutoff bounds from above, and conversely. */
+ /// the conditional bound of the Lagrangian Dual Block
+ /** If \p on, sets the conditional bound of LagrDual to the best between the
+  * cutoff that, for the sense of (B), makes it "as good as infeasible" [see
+  * set_par( double )] and box_bound(); otherwise (say, for a dual whose
+  * objective is not that of (B), as in the penalized iterations of
+  * PrimalProximalHeur) removes it. The Lagrangian Dual of a minimization
+  * problem is a maximization one, whose value these bound from above, and
+  * conversely; the inner Solver that proves the Lagrangian Dual beyond them
+  * then proves (B) infeasible, or beyond the cutoff. */
 
  void set_cutoff_bound( bool on ) {
   if( ! LagrDual )
    return;
   if( f_max )
-   LagrDual->set_valid_lower_bound( on ? LwCutOff : - Inf< double >() ,
-				    true );
+   LagrDual->set_valid_lower_bound( on ? std::max( LwCutOff , box_bound() )
+				       : - Inf< double >() , true );
   else
-   LagrDual->set_valid_upper_bound( on ? UpCutOff : Inf< double >() , true );
+   LagrDual->set_valid_upper_bound( on ? std::min( UpCutOff , box_bound() )
+				       : Inf< double >() , true );
   }
+
+/*--------------------------------------------------------------------------*/
+ /// the value of (B) without the relaxed Constraint, with the other sense
+ /** The sum over the sub-Blocks of the optimal value of their Objective with
+  * the sense opposite to that of (B), only on the box of their variables (a
+  * BoxSolver ignores the other Constraint, and takes the fixed variables at
+  * their value). If (B) is not empty, its optimal value is no larger than
+  * this for a minimization problem (no smaller for a maximization one),
+  * and so is that of the Lagrangian Dual, so that a Lagrangian Dual proven
+  * beyond it proves (B) empty. It is + infinity for a minimization problem
+  * (- infinity for a maximization one) if some sub-Block is not bounded on
+  * its box, and when the sub-Blocks are copied (int_LDSlv_iBCopy), whose
+  * Objective is then not that of (B). */
+
+ double box_bound( void );
 
 /*--------------------------------------------------------------------------*/
 
@@ -2298,6 +2320,8 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  double UpCutOff = Inf< double >();    ///< dblUpCutOff
  double LwCutOff = - Inf< double >();  ///< dblLwCutOff
+
+ BoxSolver * f_box = nullptr;  ///< the BoxSolver of box_bound()
 
  LagrangianDualBlock * LagrDual;
                     ///< the automatically constructed Lagrangian Dual

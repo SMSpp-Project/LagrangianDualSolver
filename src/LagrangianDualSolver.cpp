@@ -22,6 +22,8 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include <cmath>
+
 #include "BlockSolverConfig.h"
 
 #include "LagrangianDualSolver.h"
@@ -2019,12 +2021,43 @@ void LagrangianDualSolver::release_components( void )
 
 /*--------------------------------------------------------------------------*/
 
+double LagrangianDualSolver::box_bound( void )
+{
+ const double none = f_max ? - Inf< double >() : Inf< double >();
+ if( iBCopy || v_LBF.empty() )
+  return( none );
+
+ if( ! f_box )
+  f_box = new BoxSolver;
+
+ double value = 0;
+ for( auto lbf : v_LBF ) {
+  auto ib = lbf ? lbf->get_inner_block() : nullptr;
+  if( ! ib )
+   return( none );
+  ib->register_Solver( f_box );
+  f_box->compute();
+  const double v = f_box->get_opposite_value();
+  ib->unregister_Solver( f_box );
+  if( std::abs( v ) == Inf< double >() )
+   return( none );
+  value += v;
+  }
+ return( value );
+
+ }  // end( LagrangianDualSolver::box_bound )
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualSolver::guts_of_destructor( void )
 {
  unregister_inner_Solver();
  delete InnerSolver;
  InnerSolver = nullptr;
  cleanup_LagrDual();
+
+ delete f_box;
+ f_box = nullptr;
 
  delete f_DBSCfg;
  delete f_DBSCfg_map;  // mutually exclusive with f_DBSCfg (one is nullptr)
