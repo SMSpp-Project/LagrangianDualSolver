@@ -329,9 +329,9 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
- OFValue get_lb( void ) override { return( PrimalProximalHeur::get_lb() ); }
+ OFValue get_lb( void ) override { return( PrimalProximalHeur::LagrangianDualSolver::get_lb() ); }
 
- OFValue get_ub( void ) override { return( PrimalProximalHeur::get_ub() ); }
+ OFValue get_ub( void ) override { return( PrimalProximalHeur::LagrangianDualSolver::get_ub() ); }
 
  OFValue get_true_lb( void ) override {
   return( PrimalProximalHeur::get_lb() );
