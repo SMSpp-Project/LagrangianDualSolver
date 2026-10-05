@@ -263,7 +263,11 @@ Solution * LagrangianDualRelaxationSolver::get_Solution( Configuration * solc )
 Solution * LagrangianDualRelaxationSolver::get_true_solution(
 						      Configuration * solc )
 {
-   return v_best_sol.front().first;
+ f_Block->lock( this );
+ get_true_var_solution( solc );
+ auto solution = f_Block->get_Solution( solc , false );  // loaded
+ f_Block->unlock( this );
+ return( solution );
 }
 
 /*--------------------------------------------------------------------------*/
