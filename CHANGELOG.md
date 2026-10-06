@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `str_LDSlv_ISCfg`, the file of a ComputeConfig that is given to the inner
+  Solver when it is created, and again when it is re-created by a change of
+  `str_LDSlv_ISName`, or when the parameter changes; it is the way to set the
+  parameters of the inner Solver that a derived class keeps for itself, as
+  `PrimalProximalHeur` does with `intMaxIter` and `dblRelAcc`. Within a
+  differential ComputeConfig of this Solver it is applied first, and the
+  parameters forwarded to the inner Solver override it; a file that cannot
+  be read or holds no ComputeConfig throws
+
 - `LagrangianDualRelaxationSolver`, the RelaxationSolver that solves the
   Lagrangian Dual of each node of a Branch-and-Bound (as in BranchAndXSolver),
   with the primal recovery of `PrimalProximalHeur`, and branches on a variable
@@ -69,9 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of a two-stage problem do: the copies are fixed to their mean, rounded if
   integer, or to the value of one of them that is fixed already, and the
   components, independent then, are solved alone with the Solver of
-  `strRecoveryBSC` by `intRecoveryThreads` threads
+  `strRecoveryBSC` by the calling thread and `intMaxThread` more
 
 ### Changed
+
+- `intMaxThread` of `PrimalProximalHeur` refers to the heuristic, as
+  `intMaxIter`, `dblRelAcc` and `dblMaxTime` do, and it is no longer passed
+  to the inner Solver: it is the number of threads that the consensus
+  recovery spawns besides the calling one, 0 (the default) solving the
+  components one at a time
 
 - the cutoff that makes the problem "as good as infeasible" (`dblUpCutOff`
   for a minimization problem, `dblLwCutOff` for a maximization one) is not
@@ -98,6 +113,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and on ELF, where naming the symbol is not enough, the library as a whole
 
 ### Removed
+
+- `intInnerMaxIter` and `dblInnerRelAcc` of `PrimalProximalHeur`, the
+  `intMaxIter` and `dblRelAcc` of the inner Solver, which are now in the
+  ComputeConfig of the inner Solver, given with `str_LDSlv_ISCfg`
 
 - `vstr_LDSl_NoEasy`, the classname() of the components that the inner
   Solver must never treat as easy, together with what resolved it into the

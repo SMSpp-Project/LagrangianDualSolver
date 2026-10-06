@@ -459,6 +459,8 @@ public:
  enum str_par_type_LDSlv {
   str_LDSlv_ISName = strLastParCDAS ,  ///< classname of the inner Solver
 
+  str_LDSlv_ISCfg ,   ///< filename of the ComputeConfig of the inner Solver
+
   str_LagBF_BCfg ,
   ///< filename of the "default" BlockConfig of the LagBFunction(s)
 
@@ -707,6 +709,21 @@ public:
   *   for LagrangianDualSolver to work, but at least it ensures that
   *   LagrangianDualSolver is not dependent on any other SMS++ module except
   *   the "core" SMS++.
+  *
+  * - str_LDSlv_ISCfg [""]: the filename of a ComputeConfig that is given
+  *   to the inner Solver with set_ComputeConfig(). It is applied as soon as
+  *   the parameter changes, if the inner Solver exists, and again each time
+  *   the inner Solver is re-created by a change of str_LDSlv_ISName; with
+  *   the empty string, which is the default, nothing is applied. The
+  *   ComputeConfig is the one of the inner Solver, hence its parameters
+  *   have the names and the indices of the inner Solver, and it is the way
+  *   to set those parameters of the inner Solver that a derived class keeps
+  *   for itself, as PrimalProximalHeur does with intMaxIter and dblRelAcc;
+  *   any parameter that LagrangianDualSolver forwards to the inner Solver
+  *   and that is set after the ComputeConfig is applied overrides the value
+  *   in there [see set_ComputeConfig() for the order within a ComputeConfig
+  *   of LagrangianDualSolver]. A file that does not exist or does not hold
+  *   a ComputeConfig makes it throw std::invalid_argument.
   *
   * - str_LagBF_BCfg [""]: the filename of the "default" BlockConfig of the
   *   inner Block of the LagBFunction(s). If non-empty(), this parameter is
@@ -1189,6 +1206,20 @@ public:
   * "str_LDSlv_ISName" changes, and only after this is acted upon the
   * standard ThinComputeInterface::set_ComputeConfig() is called to do the
   * bulk of the work.
+  *
+  * The same holds for the ComputeConfig of the inner Solver in the file
+  * "str_LDSlv_ISCfg". If \p scfg is differential, "str_LDSlv_ISName" and
+  * then "str_LDSlv_ISCfg" are acted upon first, wherever they are in \p
+  * scfg, so that the ComputeConfig of the inner Solver is applied before
+  * all the other parameters in \p scfg, and those among them that are
+  * forwarded to the inner Solver override the values it gives. If \p scfg
+  * is not differential, instead, the "factory reset" of all the parameters
+  * that comes first re-creates the inner Solver of the default classname
+  * (and empties "str_LDSlv_ISCfg" without applying anything); the inner
+  * Solver of \p scfg and its ComputeConfig are then created and applied
+  * when the string parameters are read, i.e., after the int and double
+  * ones of \p scfg, which therefore reach the inner Solver of the default
+  * classname and not the final one.
   *
   * However, set_ComputeConfig() also manages f_extra_Configuration. If not
   * nullptr, the field can contain any amongst
@@ -1687,8 +1718,9 @@ public:
  
  [[nodiscard]] const std::string & get_dflt_str_par( idx_type par ) const
   override {
-  static const std::array< std::string , 5 > dflt_str_par = {
+  static const std::array< std::string , 6 > dflt_str_par = {
    "FakeCDASolver" ,  // str_LDSlv_ISName
+   "" ,               // str_LDSlv_ISCfg
    "" ,               // str_LagBF_BCfg
    "" ,               // str_LagBF_BSCfg
    "" ,               // str_LDBlck_BCfg
@@ -1764,6 +1796,7 @@ public:
   const override {
   switch( par ) {
    case( str_LDSlv_ISName ): return( ISName );
+   case( str_LDSlv_ISCfg ):  return( ISCfg );
    case( str_LagBF_BCfg ):   return( LagBF_BCfg );
    case( str_LagBF_BSCfg ):  return( LagBF_BSCfg );
    case( str_LDBlck_BCfg ):  return( LDBlck_BCfg );
@@ -1839,6 +1872,7 @@ public:
   const override {
   static const std::map< std::string , idx_type > str_pars_map = {
    { "str_LDSlv_ISName" , LagrangianDualSolver::str_LDSlv_ISName } ,
+   { "str_LDSlv_ISCfg"  , LagrangianDualSolver::str_LDSlv_ISCfg } ,
    { "str_LagBF_BCfg"   , LagrangianDualSolver::str_LagBF_BCfg } ,
    { "str_LagBF_BSCfg"  , LagrangianDualSolver::str_LagBF_BSCfg } ,
    { "str_LDBlck_BCfg"  , LagrangianDualSolver::str_LDBlck_BCfg } ,
@@ -1914,9 +1948,9 @@ public:
 
  [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 5 > str_pars_str = {
-   "str_LDSlv_ISName" , "str_LagBF_BCfg" , "str_LagBF_BSCfg" ,
-   "str_LDBlck_BCfg" , "str_LDBlck_BSCfg" };
+  static const std::array< std::string , 6 > str_pars_str = {
+   "str_LDSlv_ISName" , "str_LDSlv_ISCfg" , "str_LagBF_BCfg" ,
+   "str_LagBF_BSCfg" , "str_LDBlck_BCfg" , "str_LDBlck_BSCfg" };
 
   if( ( idx >= strLastParCDAS ) && ( idx < strLastLDSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
@@ -2075,6 +2109,15 @@ public:
   * Objective is then not that of (B). */
 
  double box_bound( void );
+
+/*--------------------------------------------------------------------------*/
+ /// gives the inner Solver the ComputeConfig in the file ISCfg, if any
+ /** Does nothing if ISCfg is empty; throws std::invalid_argument if the
+  * file cannot be read or does not hold a ComputeConfig, since a
+  * ComputeConfig that is not applied would leave the inner Solver with
+  * its default parameters, and nothing would tell. */
+
+ void apply_inner_ComputeConfig( void );
 
 /*--------------------------------------------------------------------------*/
 
@@ -2290,6 +2333,8 @@ FRowConstraint * constraint_with_index( Index i ) {
  ///< true if dual pairs with empty Lagrangian term are skipped in set_Block
 
  std::string ISName;  ///< classname of the inner Solver
+
+ std::string ISCfg;   ///< filename of the ComputeConfig of the inner Solver
 
  std::string LagBF_BCfg;
  ///< the filename for the BlockConfig of the individual LagBFunction

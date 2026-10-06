@@ -904,10 +904,23 @@ void LagrangianDualSolver::set_par( idx_type par , std::string && value )
      delete ts;
      throw( std::logic_error( ISName + " not a CDASolver" ) );
      }
+    apply_inner_ComputeConfig();
     register_inner_Solver();
     }
    break;
    }
+  case( str_LDSlv_ISCfg ):
+   if( ISCfg != value ) {
+    std::swap( ISCfg , value );
+    try {
+     apply_inner_ComputeConfig();
+     }
+    catch( ... ) {  // a ComputeConfig that is not applied is not kept
+     ISCfg = std::move( value );
+     throw;
+     }
+    }
+   break;
   case( str_LagBF_BCfg ):
    LagBF_BCfg = value;
    break;
@@ -976,6 +989,11 @@ void LagrangianDualSolver::set_par( idx_type par ,
 
 void LagrangianDualSolver::set_ComputeConfig( const ComputeConfig * scfg )
 {
+ // the factory reset re-creates the inner Solver of the default classname,
+ // to which the ComputeConfig of the inner Solver must not be applied
+ if( ( ! scfg ) || ( ! scfg->diff() ) )
+  ISCfg.clear();
+
  if( ! scfg ) {  // factory reset
   delete f_BCfg;
   f_BCfg = nullptr;
@@ -990,9 +1008,17 @@ void LagrangianDualSolver::set_ComputeConfig( const ComputeConfig * scfg )
   if( pair.first == "str_LDSlv_ISName" )
    set_par( str_LDSlv_ISName , std::string( pair.second ) );
 
+ // then, if no factory reset follows, give the inner Solver its own
+ // ComputeConfig, so that the parameters of scfg forwarded to the inner
+ // Solver come after it
+ if( scfg->diff() )
+  for( const auto & pair : scfg->str_pars )
+   if( pair.first == "str_LDSlv_ISCfg" )
+    set_par( str_LDSlv_ISCfg , std::string( pair.second ) );
+
  // now call the base ThinComputeInterface to do the bulk of work; note
- // that str_LDSlv_ISName is called twice (if ever), but set_par( string )
- // checks if the class remains the same and does nothing
+ // that str_LDSlv_ISName and str_LDSlv_ISCfg are set twice (if ever), but
+ // set_par( string ) does nothing if they do not change
  ThinComputeInterface::set_ComputeConfig( scfg );
 
  // finally, take care of extra_Configuration (if any)
@@ -1039,6 +1065,27 @@ void LagrangianDualSolver::set_ComputeConfig( const ComputeConfig * scfg )
          "LagrangianDualSolver::set_ComputeConfig: invalid extra_Config" ) );
    
  }  // end( LagrangianDualSolver::set_ComputeConfig )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::apply_inner_ComputeConfig( void )
+{
+ if( ISCfg.empty() )
+  return;
+
+ auto c = Configuration::deserialize( ISCfg );
+ auto cc = dynamic_cast< ComputeConfig * >( c );
+ if( ! cc ) {
+  delete c;
+  throw( std::invalid_argument(
+		 "LagrangianDualSolver::apply_inner_ComputeConfig: " + ISCfg +
+		 " is not a readable ComputeConfig" ) );
+  }
+
+ InnerSolver->set_ComputeConfig( cc );
+ delete cc;
+
+ }  // end( LagrangianDualSolver::apply_inner_ComputeConfig )
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/

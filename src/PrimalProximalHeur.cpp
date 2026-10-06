@@ -262,9 +262,7 @@ void PrimalProximalHeur::set_par( idx_type par , int value )
   case( intMaxIter ):    maxIter = value; break;
   case( intMaxSol ):     f_MaxSol = value; break;
   case( intUseWarmStartPSol ): UseWSPSol = value; break;
-  case( intRecoveryThreads ): RecThreads = value; break;
-  case( intInnerMaxIter ):
-   InnerSolver->set_par( intMaxIter , value ); break;
+  case( intMaxThread ):  MaxThread = value; break;
   case( intLogVerb ):
    logVerb = value & 3;
    LagrangianDualSolver::set_par( par , std::max( 0 , value >> 2 ) );
@@ -282,11 +280,10 @@ void PrimalProximalHeur::set_par( idx_type par , double value )
   case( dbl_penaltyFactor ): R = value; break;
 
   // the accuracy required of the heuristic, and the time it is given, are
-  // those of this algorithm; dblInnerRelAcc is instead the accuracy the
-  // inner Solver has to solve the Lagrangian Dual with
+  // those of this algorithm; the accuracy the inner Solver solves the
+  // Lagrangian Dual with is in its own ComputeConfig [see str_LDSlv_ISCfg]
   case( dblRelAcc ):      RelAcc = value; break;
   case( dblMaxTime ):     MaxTime = value; break;
-  case( dblInnerRelAcc ): InnerSolver->set_par( dblRelAcc , value ); break;
   default:
    LagrangianDualSolver::set_par( par , value );
   }
@@ -1288,8 +1285,9 @@ bool PrimalProximalHeur::consensus_recovery( double & cost )
    }
   }
 
- // the components are independent now: each is solved alone, by RecThreads
- // threads, and its value is the one of its whole subtree
+ // the components are independent now: each is solved alone, by the
+ // calling thread and MaxThread more, and its value is the one of its whole
+ // subtree
  const auto & sbs = f_Block->get_nested_Blocks();
  const Index K = sbs.size();
  std::vector< double > value( K , 0 );
@@ -1307,7 +1305,7 @@ bool PrimalProximalHeur::consensus_recovery( double & cost )
   delete recovery;
   };
 
- const Index nt = std::min( Index( std::max( RecThreads , 1 ) ) , K );
+ const Index nt = std::min( Index( std::max( MaxThread , 0 ) ) + 1 , K );
  std::atomic< Index > next( 0 );
  std::exception_ptr error;
  std::mutex error_mutex;
