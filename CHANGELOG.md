@@ -125,14 +125,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sub-Block has some: if the inner Solver asks for it, i.e., it does not
   handle it as an easy one, an exception is thrown
 
-- the class comments of `LagrangianDualSolver` describe the present
-  behaviour only
-
-- the class comments of LagrangianDualSolver.h write the Lagrangian Dual,
-  the sign of the multipliers and the dual of a ranged constraint in
-  Doxygen LaTeX, and say which constraints and which changes of them are
-  refused; the doc of `int_InnerS_WVarSCfg` and `int_InnerS_WDualSCfg` says
-  which solution each retrieves, the other way round than it did
+- the class comments of LagrangianDualSolver.h describe the present behaviour
+  only, write the Lagrangian Dual, the sign of the multipliers and the dual of
+  a ranged constraint in Doxygen LaTeX, and say which constraints and which
+  changes of them are refused; the doc of `int_InnerS_WVarSCfg` and
+  `int_InnerS_WDualSCfg` says which solution each retrieves, the other way
+  round than it did
 
 - the check that the Block has no Variable of its own asks it for its groups,
   and the dictionaries of the relaxed Constraint are filled one run at a
@@ -150,24 +148,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `intInnerMaxIter` and `dblInnerRelAcc` of `PrimalProximalHeur`, the
   `intMaxIter` and `dblRelAcc` of the inner Solver, which are now in the
   ComputeConfig of the inner Solver, given with `str_LDSlv_ISCfg`
-
-- `vstr_LDSl_NoEasy`, the classname() of the components that the inner
-  Solver must never treat as easy, together with what resolved it into the
-  indices of `vintNoEasy` and attached the inner Solver again when it
-  changed: which components are easy is a concept of `BundleSolver`, not of
-  the Lagrangian Dual (a subgradient Solver has no such thing), and the
-  classes are now given to `BundleSolver` itself with its `vstrNoEasy`,
-  which a ComputeConfig of this Solver passes on to the inner Solver as any
-  other parameter of it, before the inner Solver is attached to the
-  Lagrangian Dual
-
-- `vstr_LDSl_VarSol` and `vstr_LDSl_DualSol`, the classname() of the
-  components whose primal and dual solution `get_var_solution()` and
-  `get_dual_solution()` write when given no Configuration: which components
-  are written is what the Configuration of the two methods says, and a
-  parameter that changes what nullptr means took that away from it; the
-  classes are now the keys of the by-class Configuration the two methods
-  take, and nullptr again means all the components
 
 ### Fixed
 
