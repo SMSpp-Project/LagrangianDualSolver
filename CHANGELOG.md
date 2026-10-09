@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the unit test checks the conditional bound of the Lagrangian Dual when the
+  Objective of the relaxed Block has a constant term, in a minimization and in
+  a maximization problem, with bounded and unbounded components and after a
+  change of the constant
+
 - `str_LDSlv_ISCfg`, the file of a ComputeConfig that is given to the inner
   Solver when it is created, and again when it is re-created by a change of
   `str_LDSlv_ISName`, or when the parameter changes; it is the way to set the
@@ -17,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   differential ComputeConfig of this Solver it is applied first, and the
   parameters forwarded to the inner Solver override it; a file that cannot
   be read or holds no ComputeConfig throws
+
+- `test/`, the unit test of the module (`LagrangianDualSolver_unit_test`):
+  an inner Solver defined there records the Lagrangian Dual it is given,
+  which is checked against the class comments for every type of relaxed
+  constraint, with `int_LDSlv_NNMult` 0 and 1, in a minimization and in a
+  maximization problem, through changes of the sides that keep or change
+  the type, dynamic constraints added and removed, and `intRecursive`
 
 - `LagrangianDualRelaxationSolver`, the RelaxationSolver that solves the
   Lagrangian Dual of each node of a Branch-and-Bound (as in BranchAndXSolver),
@@ -113,6 +125,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sub-Block has some: if the inner Solver asks for it, i.e., it does not
   handle it as an easy one, an exception is thrown
 
+- the class comments of `LagrangianDualSolver` describe the present
+  behaviour only
+
+- the class comments of LagrangianDualSolver.h write the Lagrangian Dual,
+  the sign of the multipliers and the dual of a ranged constraint in
+  Doxygen LaTeX, and say which constraints and which changes of them are
+  refused; the doc of `int_InnerS_WVarSCfg` and `int_InnerS_WDualSCfg` says
+  which solution each retrieves, the other way round than it did
+
 - the check that the Block has no Variable of its own asks it for its groups,
   and the dictionaries of the relaxed Constraint are filled one run at a
   time, the vectors of `boost::any` they used to read not being there any
@@ -149,6 +170,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   take, and nullptr again means all the components
 
 ### Fixed
+
+- a relaxed constraint with two different finite sides (or with LHS > RHS)
+  is refused with `std::invalid_argument` also with `int_LDSlv_NNMult` 0,
+  which relaxed it as the equality on its RHS and returned that bound as
+  the optimum, and also when it is added as a dynamic constraint
+
+- a change of the sides of a relaxed constraint, or its relaxation, that
+  changes its type (equality, <=, >=, free) is refused by `compute()` with
+  `std::logic_error`, again at each call until the type is back: it was
+  taken as a change of the coefficient of a multiplier whose sign was made
+  for the old type, e.g., a minimum budget given to a pollutant constraint
+  of a UCBlock (`set_pollutant_min_budget()`) relaxed the constraint at the
+  wrong side and `compute()` returned `kOK` at the old optimum; a change
+  that keeps the type is taken whatever its sequence of Modification (two
+  sides moved one after the other through a ranged state threw), and a
+  relaxed constraint keeps a zero coefficient when its sides change
+
+- the constant term of the Objective of the Block whose constraints are
+  relaxed (with `intRecursive`, of all of them) is the constant term of the
+  Objective of the Lagrangian Dual, also after it changes, and enters
+  `box_bound()`: it was left out of the dual function and of the bounds,
+  which differed from those of a MILPSolver by it (e.g., the constant terms
+  of the NetworkBlock that a UCBlock with a single bus keeps in its
+  Objective)
+
+- with `intRecursive` the Modification of the relaxed constraints of the
+  Blocks below the root were discarded
+
+- an exception while the Modification are processed left the Block and the
+  Solver locked, so that the next `compute()` could not lock the Block
+
+- a relaxed constraint that is free or relaxed when the Solver is attached,
+  or when it is added as a dynamic constraint, crashed
+
+- removing dynamic constraints: a subset of them that is not a range
+  removed all the dynamic multipliers, a range of them one too few, with
+  `intSparseLagPairs` the dual pairs of the LagBFunction were removed by
+  the index of the multiplier among all of them rather than among their own,
+  and a constraint added and removed before the same `compute()` was given
+  a multiplier all the same
 
 - in a Branch-and-Bound, a node of `LagrangianDualRelaxationSolver` starts
   from the Lagrangian multipliers its father ended at, which its
