@@ -7,11 +7,343 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-09
+
 ### Added
+
+- the unit test checks the conditional bound of the Lagrangian Dual when the
+  Objective of the relaxed Block has a constant term, in a minimization and in
+  a maximization problem, with bounded and unbounded components and after a
+  change of the constant
+
+- `str_LDSlv_ISCfg`, the file of a ComputeConfig that is given to the inner
+  Solver when it is created, and again when it is re-created by a change of
+  `str_LDSlv_ISName`, or when the parameter changes; it is the way to set the
+  parameters of the inner Solver that a derived class keeps for itself, as
+  `PrimalProximalHeur` does with `intMaxIter` and `dblRelAcc`. Within a
+  differential ComputeConfig of this Solver it is applied first, and the
+  parameters forwarded to the inner Solver override it; a file that cannot
+  be read or holds no ComputeConfig throws
+
+- `test/`, the unit test of the module (`LagrangianDualSolver_unit_test`):
+  an inner Solver defined there records the Lagrangian Dual it is given,
+  which is checked against the class comments for every type of relaxed
+  constraint, with `int_LDSlv_NNMult` 0 and 1, in a minimization and in a
+  maximization problem, through changes of the sides that keep or change
+  the type, dynamic constraints added and removed, and `intRecursive`
+
+- `LagrangianDualRelaxationSolver`, the RelaxationSolver that solves the
+  Lagrangian Dual of each node of a Branch-and-Bound (as in BranchAndXSolver),
+  with the primal recovery of `PrimalProximalHeur`, and branches on a variable
+  that is fractional in the convexified solution of the Lagrangian Dual (which
+  `PrimalProximalHeur` keeps, see `get_Lagrangian_convexified_solution()`),
+  the most fractional one (`intBranchStrategy` 0) or the best by strong
+  branching among the `intStrongCands` most fractional ones (1), whose data
+  `strStrongLog` writes in CSV for a branching rule to be learned from them,
+  or the best among the same candidates for a model learned from those data
+  (2, `strBranchModel`, a perceptron read from a text file), either with new
+  dual pairs of the bounds of the variable (`intApplyStrategy` 0) or by fixing
+  it in its sub-Block (1), the columns of the global pool that the fixing
+  purges coming back at the unfixing; `vstrBranchGroups` restricts the
+  candidates to the variables of the named groups of static Variable of the
+  sub-Blocks; `LagrangianChange` is the Change it applies. Its bounds of the
+  relaxation are, on the side of the relaxation, that of the Lagrangian Dual
+  of the original objective, and, on the other, the best between the other
+  bound of that Lagrangian Dual and the value of the best solution of the
+  heuristic; its true bounds are those of `PrimalProximalHeur`
+
+- `LagrangianDualRelaxationSolverML`, in the library `LagrangianDualSolverML`
+  that is only built where Torch is: with `intBranchStrategy` 3 (`eOnline`)
+  it branches by strong branching on the first `intLearnNodes` nodes,
+  keeping the features of the candidates and their scores in the
+  `GlobalInformation` of the search, so that the workers of a parallel
+  Branch-and-Bound share them, then fits on them the model of
+  `intBranchStrategy` 2 (`intHidden`, `intTrainEpochs`, `dblLearnRate`,
+  `intLearnSeed`), which all of them use from then on and which can be
+  written to `strOnlineModel` for another run; the headers of
+  `PrimalProximalHeur` and `LagrangianDualRelaxationSolver` are installed
+
+- `get_var_solution()` and `get_dual_solution()` take a
+  `SimpleConfiguration< std::map< std::string , Configuration * > >`, the
+  type of the "meta" Configurations, that names the sub-Block whose
+  solution is written by class: only the sub-Block whose classname() is a
+  key are dealt with, each with the Configuration its class is mapped to,
+  and the key `relaxed` asks `get_dual_solution()` for the duals of the
+  relaxed constraints too, as an invalid index does in the index-based
+  forms; a configuration so names the components whose solution is needed
+  for instances whose components are numbered differently
+
+- the list of the sub-Block this Solver is told to skip, which
+  `get_excluded_blocks()` gives, is handed to the inner Solver as it is: any
+  sub-Block excluded here is a sub-Block of the Lagrangian dual or of one of
+  its descendants, so the inner Solver has to skip it as well
+
+- `intRecursive`, with which the decomposition does not stop at the children
+  of the Block: a child having the shape the Block must have, i.e., no
+  Variable and no Objective of its own and sub-Block of its own, is
+  decomposed in turn, its linking Constraint relaxed together with those of
+  the Block and its own children taking its place as components. The descent
+  goes on as deep as the shape holds, so that the components are the leaves
+  of the decomposable part of the tree and the multipliers those of every
+  level
+
+- `PrimalProximalHeur` gives a feasible solution when its relaxed Constraint
+  tie copies of a decision, x_a - x_b = 0, as the non-anticipativity ones
+  of a two-stage problem do: the copies are fixed to their mean, rounded if
+  integer, or to the value of one of them that is fixed already, and the
+  components, independent then, are solved alone with the Solver of
+  `strRecoveryBSC` by the calling thread and `intMaxThread` more
 
 ### Changed
 
+- `intMaxThread` of `PrimalProximalHeur` refers to the heuristic, as
+  `intMaxIter`, `dblRelAcc` and `dblMaxTime` do, and it is no longer passed
+  to the inner Solver: it is the number of threads that the consensus
+  recovery spawns besides the calling one, 0 (the default) solving the
+  components one at a time
+
+- the cutoffs `dblUpCutOff` and `dblLwCutOff` are passed to the inner
+  Solver as they are, a value of the Lagrangian Dual beyond one of them
+  certifying the same of the problem, and the `kCutOff` of the inner Solver
+  is returned as it is, by `PrimalProximalHeur` (which then stops, on the
+  unpenalized iteration, the only one the cutoffs are set on) and by
+  `LagrangianDualRelaxationSolver` too. The conditional bound of the
+  Lagrangian Dual Block is the value of the sub-Blocks with the opposite
+  sense on the box of their variables, by a `BoxSolver` (`box_bound()`),
+  beyond which the Lagrangian Dual proves the problem empty, when that is
+  finite (say, binary knapsacks, or thermal units with the box of their
+  power); `PrimalProximalHeur` also stops if the unpenalized Lagrangian Dual
+  is unbounded or infeasible
+
+- the BlockSolverConfig of each sub-Block is given to its LagBFunction,
+  which applies it at its first `compute()`: a sub-Block that the inner
+  Solver never computes, as the easy components of a BundleSolver, gets no
+  Solver, and `get_dual_solution()` leaves its dual values as the inner
+  Solver has written them, instead of overwriting them with those of a
+  Solver that has never solved it
+
+- a sub-Block without a BlockSolverConfig is never computed by its
+  LagBFunction, which is told that it has no inner Solver even if the
+  sub-Block has some: if the inner Solver asks for it, i.e., it does not
+  handle it as an easy one, an exception is thrown
+
+- the class comments of LagrangianDualSolver.h describe the present behaviour
+  only, write the Lagrangian Dual, the sign of the multipliers and the dual of
+  a ranged constraint in Doxygen LaTeX, and say which constraints and which
+  changes of them are refused; the doc of `int_InnerS_WVarSCfg` and
+  `int_InnerS_WDualSCfg` says which solution each retrieves, the other way
+  round than it did
+
+- the check that the Block has no Variable of its own asks it for its groups,
+  and the dictionaries of the relaxed Constraint are filled one run at a
+  time, the vectors of `boost::any` they used to read not being there any
+  more
+
+- whoever links the module keeps it: the classes of a module register
+  themselves in the factory from a static initialiser, and a linker that
+  drops what looks unused takes the registration away with it, so the target
+  now tells whoever links it to keep the symbol that forces the module in,
+  and on ELF, where naming the symbol is not enough, the library as a whole
+
+### Removed
+
+- `intInnerMaxIter` and `dblInnerRelAcc` of `PrimalProximalHeur`, the
+  `intMaxIter` and `dblRelAcc` of the inner Solver, which are now in the
+  ComputeConfig of the inner Solver, given with `str_LDSlv_ISCfg`
+
 ### Fixed
+
+- a relaxed constraint with two different finite sides (or with LHS > RHS)
+  is refused with `std::invalid_argument` also with `int_LDSlv_NNMult` 0,
+  which relaxed it as the equality on its RHS and returned that bound as
+  the optimum, and also when it is added as a dynamic constraint
+
+- a change of the sides of a relaxed constraint, or its relaxation, that
+  changes its type (equality, <=, >=, free) is refused by `compute()` with
+  `std::logic_error`, again at each call until the type is back: it was
+  taken as a change of the coefficient of a multiplier whose sign was made
+  for the old type, e.g., a minimum budget given to a pollutant constraint
+  of a UCBlock (`set_pollutant_min_budget()`) relaxed the constraint at the
+  wrong side and `compute()` returned `kOK` at the old optimum; a change
+  that keeps the type is taken whatever its sequence of Modification (two
+  sides moved one after the other through a ranged state threw), and a
+  relaxed constraint keeps a zero coefficient when its sides change
+
+- the constant term of the Objective of the Block whose constraints are
+  relaxed (with `intRecursive`, of all of them) is the constant term of the
+  Objective of the Lagrangian Dual, also after it changes, and enters
+  `box_bound()`: it was left out of the dual function and of the bounds,
+  which differed from those of a MILPSolver by it (e.g., the constant terms
+  of the NetworkBlock that a UCBlock with a single bus keeps in its
+  Objective)
+
+- with `intRecursive` the Modification of the relaxed constraints of the
+  Blocks below the root were discarded
+
+- an exception while the Modification are processed left the Block and the
+  Solver locked, so that the next `compute()` could not lock the Block
+
+- a relaxed constraint that is free or relaxed when the Solver is attached,
+  or when it is added as a dynamic constraint, crashed
+
+- removing dynamic constraints: a subset of them that is not a range
+  removed all the dynamic multipliers, a range of them one too few, with
+  `intSparseLagPairs` the dual pairs of the LagBFunction were removed by
+  the index of the multiplier among all of them rather than among their own,
+  and a constraint added and removed before the same `compute()` was given
+  a multiplier all the same
+
+- in a Branch-and-Bound, a node of `LagrangianDualRelaxationSolver` starts
+  from the Lagrangian multipliers its father ended at, which its
+  `LagrangianChange` carries, the inner Solver restarting from them, rather
+  than from those of the node solved last: after an infeasible node, whose
+  multipliers grow without bound, the next ones were solved from there and
+  their Lagrangian Dual stopped on bounds of -1e11 and below
+
+- `has_var_solution()` gives the components the Modification kept aside
+  for them, as `get_var_solution()` does, before asking the inner Solver
+  for its dual solution: those of a Solver that has changed the components
+  meanwhile (say, `PrimalProximalHeur` fixing some Variable and freeing
+  them) may take away linearizations the primal solution is made of
+
+- the primal recovery of `PrimalProximalHeur` (`recover_primal()`) fixes the
+  binaries it rounds only if they are free, and un-fixes only those it has
+  fixed: it used to un-fix all of them, so that, the sub-Blocks not being
+  copied (`int_LDSlv_iBCopy` 0), the variables fixed by the instance or by a
+  Branch-and-Bound were freed, with no Modification, after the first primal
+  recovery
+
+- a component given back to its father is always told that someone listens
+  to it, the LagrangianDualSolver: when this happened within `set_Block()`,
+  before the LagrangianDualSolver was among the Solver of its Block, the
+  component was told that nobody did, and it issued no Modification
+
+- a dynamic `FRowConstraint` added to the Block while the Solver is attached
+  no longer needs the Block to be reloaded: the Constraint removed by a
+  `BlockModRmv` are read by reference (taking them by value calls the copy
+  constructor of `Constraint`, which throws by design), the two dictionaries
+  that give the multiplier of a dynamic constraint and the constraint of a
+  multiplier are indexed from the first dynamic constraint and not from the
+  first constraint of all, they learn the new row before it is looked at,
+  and a row that is "infinitely loose" or relaxed leaves the others to be
+  dealt with instead of ending the loop over the added ones
+
+- `compute()`, `get_var_solution()` and `get_dual_solution()` unlock the
+  components that the Block, locked by the LagrangianDualSolver itself,
+  keeps locked with it, and lock them again after: when whoever calls
+  `compute()` has locked the Block and given its own id to the Solver, as
+  the `InvestmentFunction` does, the LagBFunction of a component, which
+  locks it with its own id, could not, and the inner Solver returned
+  `kError` at the first evaluation
+
+- `get_dual_solution()` asks the dual solution of a component to the Solver
+  its LagBFunction uses, and if that Solver has none at the moment (its
+  Objective having been put back after `compute()`) the component is solved
+  again at the multipliers of the solution, where its duals belong; a
+  component whose Solver cannot give duals at all (e.g., a dynamic
+  programming) leaves its Constraint as they are, which a reader such as a
+  `BendersBFunction` has to check
+
+- when a linking constraint grows, the Modification the added dual pairs of
+  every `LagBFunction` issue go in the channel the branch opens, as the one
+  of the objective of the Lagrangian Dual already did: they are one change
+  of the Lagrangian Dual and whoever observes it has to see them together,
+  which is what the branch that removes them, and the one that adds a
+  Variable to a constraint that is already there, do
+
+- `compute()` holds the components before it processes the outstanding
+  Modification, not after: those of the Variable of a component look for it
+  through the Lagrangian Dual, which is its father only while it is held,
+  and threw "Variable belonging to wrong Block"
+
+- a `NBModification` of a sub-Block no longer empties the list of the
+  Modification waiting to be processed: the Lagrangian dual discards it
+  anyway, its `LagBFunction` taking care of it, while the list lost the
+  changes of the coefficients of the relaxed constraints issued before it.
+  An `InvestmentFunction` that scaled the units of a stage and then removed
+  its cuts left the Lagrangian dual with the old coefficients, above the
+  integer optimum
+
+- several LagrangianDualSolver (a PrimalProximalHeur included) attached to
+  the same Block work together: with `int_LDSlv_iBCopy 0` each of them
+  evicted the sub-Block into its own LagBFunction when it was attached and
+  kept them there, so that the one attached later found them in the tree of
+  the first ("Variable belonging to wrong Block") or took them from it, and
+  the BlockSolverConfig of its LagBFunction, applied in differential mode,
+  replaced the inner Solver of the first on the same sub-Block, the first
+  then computing its bound with the Solver of the second. The components are
+  now held only within compute(), get_var_solution() and get_dual_solution()
+  (the Modification they issue meanwhile are handed to the LagBFunction when
+  they are held again), the BlockSolverConfig of the LagBFunction is applied
+  in additive mode, and each LagBFunction is told the position of the inner
+  Solver its configuration has registered (`intInnrSlvr`). On a TSSB of
+  thermal units the dual of the scenarios, the nested and the recursive
+  dual and the PrimalProximalHeur now give the bound each gives alone,
+  whatever the others attached and their order
+
+- on macOS a program linking the module lost the classes the module
+  registers in the factories when the linker dropped the library, as it
+  does under `-dead_strip_dylibs`, which conda sets: the target now asks the
+  linker for the symbol that forces the module in (`-u`), which ld64,
+  unlike the ELF linker, counts as a use of the library
+
+- a change to a relaxed constraint, such as a coefficient rewritten by the
+  scaling of a unit, reaches the right Lagrangian term also when
+  `intSparseLagPairs` is on (the default): each `LagBFunction` then holds only
+  the dual pairs of the constraints its sub-Block appears in, numbered among
+  themselves, while the term was looked up by the index of the constraint
+  among all the relaxed ones, which rewrote the wrong term or crashed; the
+  term is now found through its multiplier, and a sub-Block that enters a
+  relaxed constraint for the first time gets the dual pair it lacked
+
+- `has_var_solution()` answers false after a `compute()` that returned
+  `kError` or `kBlockLocked`: it asked the inner Solver whether it had a
+  dual solution, which a bundle has (the multipliers of its master problem)
+  also when the evaluation of a component failed, and the caller that
+  believed it had `get_var_solution()` throw "no coefficients stored" on the
+  component whose linearizations were never computed
+
+- `PrimalProximalHeur` records a recovered point only if it is one: a point
+  is discarded when its value beats the bound the Lagrangian Dual gives, no
+  feasible point being able to do that, and when it violates the rows of the
+  Block by more than a relative 1e-6. The branch that had none of these
+  checks is the one without static binary Variable to put the proximal term
+  on, where the heuristic skips its loop altogether and records whatever the
+  consensus recovery leaves in the Block; on a unit commitment instance
+  translated from PyPSA it reported an upper bound below its own lower bound
+  and handed over a point violating the dualised rows by 5781, which the
+  scaling of the rows of the master problem made visible by moving the
+  trajectory. Note that `Block::is_feasible()` is not the question here,
+  passing as it does over the relaxed Constraint, which are exactly the ones
+  a recovered point can violate
+
+- `int_par_idx2str()` names `intRecursive` too, the array of the names having
+  stopped one short of the parameters and answered with the name of another
+  one
+
+- `PrimalProximalHeur` counted, as the cost of a point, only the objectives
+  of the sub-Block of its Block and not those of the Block nested into them,
+  e.g., the HydroUnitBlock of a HydroSystemUnitBlock, so that the value it
+  reported was not that of the solution it gave; the objectives of the
+  whole subtree of each sub-Block are now copied and evaluated
+
+- the initial multipliers of a relaxed Constraint that is reversed (a >=
+  one in a minimization, with `int_LDSlv_NNMult`) were read from its dual
+  without changing its sign, while `get_dual_solution()` writes them with
+  the sign changed, so that a warm start, and that of `PrimalProximalHeur`
+  from the duals of the relaxation, gave these multipliers the wrong sign;
+  they are now read back as the multipliers that were written
+
+- `PrimalProximalHeur` looks for the BlockSolverConfig of its recovery after
+  the filename prefix of all Configuration, where it then opens it
+
+- with `intRecursive` the components are given back to their own fathers
+  when the Solver is detached, rather than to the root, which is not the
+  father of a component taken below it and made the detach read past the
+  end of its sub-Block
+
+- makefile-c and makefile-s bring in MILPSolver, which PrimalProximalHeur
+  needs, rather than leaving $(MILPSINC) to the including makefile
 
 ## [0.4.0] - 2026-09-13
 
@@ -62,7 +394,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2025-12-12
 
-### Added 
+### Added
 
 - [huge] PrimalProximalHeur Lagrangian-based math-heuristic
 
@@ -70,13 +402,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Configuration for get\_[var/dual]\_solution() of the InnerSolver can now be set
 
-### Changed 
+### Changed
 
 - [big] managing of intPushCostToOwner parameter of LagBFunction
 
 - adapted to new un\_any\_count thing
 
-### Fixed 
+### Fixed
 
 - added missing parameter initialization
 
@@ -86,17 +418,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - right solver called in get\_dual\_solution()
 
-- avoided static vectors prone to static initialization fiasco 
+- avoided static vectors prone to static initialization fiasco
 
 - a bunch of stupid bugs
 
 ## [0.1.3] - 2024-02-28
 
-### Changed 
+### Changed
 
 - adapted to new CMake / makefile organisation
 
-### Fixed 
+### Fixed
 
 - exploiting the new "father of LagBFunction" mechanism to make Modification
   from sub-Bloch to reach their original father (instead of UpdateSolver)
@@ -105,7 +437,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.2] - 2022-06-28
 
-### Fixed 
+### Fixed
 
 - locking the Solver inside compute()
 
@@ -115,11 +447,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Minor point release to avoid the master branch to become too stale:
 
+### Changed
+
 - significant improvements in handling Configurations
 
-- fixed a number of issues (get_lb/ub exchanged, computation of solutions)
-
 - Lagrangian variables now initialized with dual variables from the FRowConstraint
+
+### Fixed
+
+- fixed a number of issues (get_lb/ub exchanged, computation of solutions)
 
 ## [0.1.0] - 2021-05-02
 
@@ -129,7 +465,9 @@ Initial release
 
 - Initial release.
 
-[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.3.0...develop
+[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.5.0...develop
+[0.5.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.4.0...0.5.0
+[0.4.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.3.0...0.4.0
 [0.3.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.2.0...0.3.0
 [0.2.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.3...0.2.0
 [0.1.3]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.1.2...0.1.3

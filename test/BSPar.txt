@@ -1,0 +1,81 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - BSPar.txt - - - - - - - - - - - - - - - - -
+#
+# A txt description of the BlockSolverConfig of the module test: two
+# LagrangianDualSolver, both with LDCfg.txt, the first with nonpositive
+# multipliers allowed (int_LDSlv_NNMult 0) and the second with the default
+# int_LDSlv_NNMult 1, under which the rows whose natural multiplier is
+# nonpositive are reversed. The tester checks the Lagrangian Dual each of
+# them forms, in this order.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig  # exact type of the Configuration object
+
+0  # the BlockSolverConfig is not a "differential" one
+
+2  # number of (the names of) Solver in this BlockSolverConfig
+
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+LagrangianDualSolver  # name of 1st Solver
+LagrangianDualSolver  # name of 2nd Solver
+
+2  # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# that of LDCfg.txt with nonpositive multipliers allowed; as an override
+# that is not the last in the list, it ends with the "extra" Configuration
+
+*LDCfg.txt +
+
+1  # f_diff == 1 ==> only the entries listed below are changed
+
+1  # number of integer parameters
+
+# now all the integer parameters
+int_LDSlv_NNMult   0  # multipliers of either sign
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+* # [none]
+
+# end of 1st ComputeConfig  - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# 2nd ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# that of LDCfg.txt as it is
+
+*LDCfg.txt
+
+# end of 2nd ComputeConfig  - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# end of BlockSolverConfig  - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - END BSPar.txt - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

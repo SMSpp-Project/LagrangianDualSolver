@@ -35,12 +35,22 @@
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 LgDSLVOBJ = $(LgDSLVSDR)/obj/LagrangianDualSolver.o \
-	$(LgDSLVSDR)/obj/PrimalProximalHeur.o
+	$(LgDSLVSDR)/obj/PrimalProximalHeur.o \
+	$(LgDSLVSDR)/obj/LagrangianDualRelaxationSolver.o
 
 LgDSLVINC = -I$(LgDSLVSDR)/include
 
 LgDSLVH   = $(LgDSLVSDR)/include/LagrangianDualSolver.h \
-	$(LgDSLVSDR)/include/PrimalProximalHeur.h
+	$(LgDSLVSDR)/include/PrimalProximalHeur.h \
+	$(LgDSLVSDR)/include/LagrangianDualRelaxationSolver.h
+
+# LagrangianDualRelaxationSolverML requires Torch: it is only compiled if
+# $(LgDSLVML) is set (see makefile-c / makefile-s), in which case
+# $(libTorchINC) is the -I< include directories > for Torch
+ifdef LgDSLVML
+    LgDSLVOBJ += $(LgDSLVSDR)/obj/LagrangianDualRelaxationSolverML.o
+    LgDSLVH += $(LgDSLVSDR)/include/LagrangianDualRelaxationSolverML.h
+endif
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -59,5 +69,18 @@ $(LgDSLVSDR)/obj/PrimalProximalHeur.o: \
 	$(LgDSLVSDR)/src/PrimalProximalHeur.cpp $(LgDSLVH) $(SMS++OBJ)
 	$(CC) -c $(LgDSLVSDR)/src/PrimalProximalHeur.cpp -o $@ \
 	$(LgDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
+
+$(LgDSLVSDR)/obj/LagrangianDualRelaxationSolver.o: \
+	$(LgDSLVSDR)/src/LagrangianDualRelaxationSolver.cpp $(LgDSLVH) $(SMS++OBJ)
+	$(CC) -c $(LgDSLVSDR)/src/LagrangianDualRelaxationSolver.cpp -o $@ \
+	$(LgDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
+
+ifdef LgDSLVML
+$(LgDSLVSDR)/obj/LagrangianDualRelaxationSolverML.o: \
+	$(LgDSLVSDR)/src/LagrangianDualRelaxationSolverML.cpp $(LgDSLVH) \
+	$(SMS++OBJ)
+	$(CC) -c $(LgDSLVSDR)/src/LagrangianDualRelaxationSolverML.cpp -o $@ \
+	$(LgDSLVINC) $(SMS++INC) $(MILPSINC) $(libTorchINC) $(SW)
+endif
 
 ########################## End of makefile ###################################

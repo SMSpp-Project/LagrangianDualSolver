@@ -64,6 +64,17 @@ Lagrangian-based Primal Proximal heuristic proposed in
 A. Daniilidis, C. Lemar&eacute;chal "On a primal-proximal heuristic in
 discrete optimization" *Mathematical Programming* 104, 105-128, 2005
 
+and the `LagrangianDualRelaxationSolver`, that derives from
+`PrimalProximalHeur` and uses the Lagrangian Dual of (B) as the relaxation of
+the nodes of a Branch-and-Bound (such as the `BranchAndXSolver`), branching on
+a variable that is fractional in the convexified solution: the most
+fractional one, the best one by strong branching, or the one that a model
+learned from the data of strong branching ranks first. Its variant
+`LagrangianDualRelaxationSolverML` learns that model while the
+Branch-and-Bound goes on, from the strong branching of its first nodes, by
+the Torch C++ API; it is in a library of its own,
+`LagrangianDualSolverML`, which is only built where Torch is.
+
 
 ## Getting started
 
@@ -71,21 +82,37 @@ These instructions will let you build `LagrangianDualSolver` and
 `PrimalProximalHeur`.
 
 
-The module also comes ready-made: `sudo apt install libsmspp-lds-dev` from the
-[PPA of the project](https://launchpad.net/~smspp/+archive/ubuntu/ppa), and
-`vcpkg install "smspp[core,lds]"` from the [SMS++ vcpkg
-registry](https://gitlab.com/smspp/vcpkg-registry); `conda install -c
-conda-forge smspp-project` and `brew install smspp`, from the [tap of the
-project](https://github.com/SMSpp-Project/homebrew-smspp), carry the whole
-framework. What follows is about building it yourself.
+The module also comes ready-made, in any of
+
+```sh
+sudo add-apt-repository ppa:smspp-project/smspp   # Ubuntu
+sudo apt install libsmspp-lds-dev
+
+conda install -c conda-forge smspp-project        # Linux, macOS, Windows
+
+brew tap SMSpp-Project/smspp                      # macOS, Linux
+brew install smspp
+
+vcpkg install "smspp[core,lds]"                   # from the sources
+```
+
+where apt and the port give the module alone, while conda and the tap carry
+the whole framework. What follows is about building it yourself.
 
 ### Requirements
 
 - [SMS++ core library](https://gitlab.com/smspp/smspp)
 
+- [SMS++ MILPSolver](https://gitlab.com/smspp/milpsolver), which
+  `PrimalProximalHeur` uses to warm-start the heuristic
+
 It's not a build requirement but you will need a SMS++ `Solver`
 capable of solving the Lagrangian Dual, such as
 [BundleSolver](https://gitlab.com/smspp/bundlesolver).
+
+Optionally, [Torch](https://pytorch.org) (its C++ distribution, libtorch),
+for `LagrangianDualSolverML`; CMake finds it on its own or at `Torch_ROOT`,
+the makefiles at `$(Torch_ROOT)`.
 
 
 ### Build and install with CMake
@@ -116,6 +143,9 @@ After the library is built, you can use it in your CMake project with:
 find_package(LagrangianDualSolver)
 target_link_libraries(<my_target> SMS++::LagrangianDualSolver)
 ```
+
+and, to use `LagrangianDualRelaxationSolverML`, with
+`SMS++::LagrangianDualSolverML`, which brings the other one along with it.
 
 ### Build and install with makefiles
 
@@ -170,6 +200,10 @@ conduct, and the process for submitting merge requests to us.
   Università di Cagliari
 
 - **Luca Mencarelli**  
+  Dipartimento di Informatica  
+  Università di Pisa
+
+- **Donato Meoli**  
   Dipartimento di Informatica  
   Università di Pisa
 

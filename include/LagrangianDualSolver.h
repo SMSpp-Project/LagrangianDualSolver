@@ -30,6 +30,8 @@
 
 #include "AbstractBlock.h"
 
+#include "BoxSolver.h"
+
 #include "CDASolver.h"
 
 #include "LagBFunction.h"
@@ -37,6 +39,12 @@
 #include "LinearFunction.h"
 
 #include "UpdateSolver.h"
+
+#include <algorithm>
+
+#include <atomic>
+
+#include <unordered_map>
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
@@ -53,8 +61,8 @@ namespace SMSpp_di_unipi_it
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /// A CDASolver solving the Lagrangian Dual of a "generic" Block
-/** The LagrangianDualSolver class implements the CDASolver interface within
- * the SMS++ framework for a "generic" Lagrangian-based Solver.
+/** LagrangianDualSolver implements the CDASolver interface within the SMS++
+ * framework for a "generic" Lagrangian-based Solver.
  *
  * This can "solve" (see below for the reason of the scare quotes) any Block
  * (B) with the following structure:
@@ -64,14 +72,15 @@ namespace SMSpp_di_unipi_it
  * - (B) has at least one sub-Block (necessarily, for otherwise it would be
  *   "completely empty").
  *
- * - No Objective in (B) (which makes sense: since all Variable in (B)
- *   actually belong to the sub-Block, recursively, it's them who define
- *   the Objective for these Variable: no need for (B) to do it).
+ * - No Objective in (B), or one with no Variable (which makes sense: since
+ *   all Variable in (B) actually belong to the sub-Block, recursively, these
+ *   define the Objective for their Variable, and there is no need for (B) to
+ *   do it). Such an Objective may have a constant term \f$ c^0 \f$, which is
+ *   part of the value of (B) and therefore of the Lagrangian Dual.
  *
  * - (B) and all its sub-Block, recursively, do not depend on any "external"
  *   Variable, i.e., a Variable that does not belong to (B) (actually, to any
- *   of its sub-Block, recursively, since (B) cannot have any Variable of its
- *   own).
+ *   of its sub-Block, recursively, since (B) cannot have any Variable).
  *
  * - If there is more than one sub-Block, the Constraint in (B) are all and
  *   only the ones that link the sub-Block between them; that is, no sub-Block
@@ -80,12 +89,10 @@ namespace SMSpp_di_unipi_it
  *
  * - All the Constraint in (B) are "linear constraint", i.e., FRowConstraint
  *   with a LinearFunction inside. Note that OneVarConstraint are "linear
- *   constraint" as well, but since they only concern one variable they
- *   cannot be "linking constraints". Although it may in principle be that
- *   one may want to deal with them in a Lagrangian fashion, in most of the
- *   cases including them in the subproblem is better, and therefore
- *   LagrangianDualSolver currently does not support them (although this may
- *   change later if a serious use case arises).
+ *   constraint" as well, but since they only concern one variable they cannot
+ *   be "linking constraints". Although in principle one may want to deal with
+ *   them in a Lagrangian fashion, including them in the subproblem is usually
+ *   better, and therefore LagrangianDualSolver does not support them.
  *
  * - Each sub-Block of (B) may never make any assumption on which type (B) is
  *   or make any direct reference to any of its data.
@@ -96,239 +103,279 @@ namespace SMSpp_di_unipi_it
  * inside it while not changing the pointers in (B). In fact, LB is
  * constructed with as many sub-Block as those of (B); for each sub-Block
  * (B_i) of (B) a sub-Block (LB_i) of (LB) is constructed. (LB_i) is empty
- * save for a FRealObjective that contains a LagBFunction; in turn, (B_i)
- * is set as the Block inside that LagBFunction. That is, the father of
- * (B_i) is set to the LagBFunction in (LB_i) (which is both a Function and
- * a Block, hence can be a father), while (B) still "believes" that (B_i)
- * remains its sub-Block. This is undone when the LagrangianDualSolver is
- * unregistered from (B). Consistency is kept, in that any Modification
- * coming from (B_i) is also "forwarded" to (B) by the trick of setting (B)
- * as the father Block of the LagBFunction, exploiting the support that
- * LagBFunction provides for this (somehow tricky) use case. Note that these
- * Modification also reach the LagBFunction, where they are "translated" into
- * FunctionMod; these are the, forwarded to (LB_i) (which Observe-s the
- * LagBFunction via the FRealObjective) and then to (LB) and all the Solver
- * registered to it (not to any Solver registered to the LagBFunction, since
- * there must not be any). Thus, the Modification reach both (LB) (having
- * been properly "translated") and the original father (B) of (B_i). This also
- * has the advantage of partly reconstructing the two-way link between (B)
- * and the (B_i): not only "going down from (B) one reaches the (B_i)", but
- * also "going up from the (B_i) one eventually gets to (B)". The mapping is
- * not perfectly kept since now (B_i) is a "grandson" of (B) rather than a
- * "son" (the LagBFunction having been slotted in the middle), but this is
- * still good enough for any operation that just requires to be able to
- * eventually reach up (B) from (B_i) up the father Block chain. An important
- * example of such an operation is MILPSolver::is_mine(), which checks if a
- * given Block is a sub-Block of the one the MILPSolver is registered to. By
- * the above trick the operation still works even if a LagrangianDualSolver
- * has been registered to (B) before the MILPSolver is (while otherwise it
- * would break).
+ * save for a FRealObjective that contains a LagBFunction; in turn, (B_i) is
+ * set as the Block inside that LagBFunction. That is, the father of (B_i) is
+ * set to the LagBFunction in (LB_i) (which is both a Function and a Block,
+ * hence can be a father), while (B) still "believes" that (B_i) remains its
+ * sub-Block. This is undone when the LagrangianDualSolver is unregistered
+ * from (B). Consistency is kept, in that any Modification coming from (B_i)
+ * is also "forwarded" to (B) by the trick of setting (B) as the father Block
+ * of the LagBFunction, exploiting the support that LagBFunction provides for
+ * this (somewhat tricky) use case. Note that these Modification also reach
+ * the LagBFunction, where they are "translated" into FunctionMod; these are
+ * then forwarded to (LB_i) (which Observe-s the LagBFunction via the
+ * FRealObjective) and then to (LB) and all the Solver registered to it (not
+ * to any Solver registered to the LagBFunction, since there must not be any).
+ * Thus, the Modification reach both (LB) (having been properly "translated")
+ * and the original father (B) of (B_i). This also has the advantage of partly
+ * reconstructing the two-way link between (B) and the (B_i): not only "going
+ * down from (B) one reaches the (B_i)", but also "going up from the (B_i) one
+ * eventually gets to (B)". The mapping is not perfectly kept since (B_i) is a
+ * "grandson" of (B) rather than a "son" (the LagBFunction having been slotted
+ * in the middle), but this is still good enough for any operation that just
+ * requires to be able to eventually reach up (B) from (B_i) up the father
+ * Block chain. An important example of such an operation is
+ * MILPSolver::is_mine(), which checks if a given Block is a sub-Block of the
+ * one the MILPSolver is registered to. By the above trick the operation still
+ * works even if a LagrangianDualSolver has been registered to (B) before the
+ * MILPSolver is (while otherwise it would break).
  *
  * In case this is still not enough, i.e., something in (B) or in any other
  * Solver attached to it requires to keep the original father-son relationship
- * between (B) and its (B_i), the parameter int_LDSlv_iBCopy allows to
- * instruct LagrangianDualSolver to rather build a copy (B'_i) of (B_i) and
+ * between (B) and its (B_i), the parameter int_LDSlv_iBCopy allows one to
+ * instruct LagrangianDualSolver to build instead a copy (B'_i) of (B_i) and
  * insert (B'_i) into the LagBFunction, with an UpdateSolver forwarding all
  * Modification from (B_i) to (B'_i). However
  *
  *     THIS REQUIRES get_R3_Block( nullptr ) AND map_back_solution() TO
  *     WORK FOR ALL (B_i)
  *
- * Mathematically speaking, the original (B) can be seen as
- *
- *  (B)   max / min 0
- *                  l <= \sum_{k \in K} g^k( x^k ) <= u
- *                  B^k    k \in K
- *
- * where
- *
- *   (B^k)   max / min c^k(x^k) : x^k \in X^k
- *
- * for each k \in K are all its sub-Block. There is basically no requirement
- * on X^k, save that the corresponding Solver be able to "efficiently" solve
- * the corresponding problem (albeit this can be done only approximately);
- * the same would be true for c^k(), except that we currently need an "easy"
- * function whose abstract representation we can manipulate since this is how
- * LagBFunction works. However, note that arbitrarily complex Objective could
- * be present in any sub-Block of B^k, again provided that the Solver can
+ * Mathematically speaking, let \f$ K \f$ be the set of the sub-Block of (B),
+ * where the k-th of them is
+ * \f[
+ *   ( B^k ) \qquad \min / \max \; \{ \, c^k( x^k ) \; : \; x^k \in X^k
+ *   \, \} \; ;
+ * \f]
+ * then (B) is
+ * \f[
+ *   ( B ) \qquad \min / \max \; \Bigl\{ \, c^0 + \sum_{ k \in K }
+ *   c^k( x^k ) \; : \; l \le \sum_{ k \in K } g^k( x^k ) \le u \; , \;
+ *   x^k \in X^k \;\; k \in K \, \Bigr\} \; ,
+ * \f]
+ * where \f$ c^0 \f$ is the constant term of the Objective of (B), if any
+ * (with intRecursive, the sum of those of all the Block whose constraints
+ * are relaxed). Each component of the vector inequality is a
+ * FRowConstraint of (B), whose LinearFunction (which must have no constant
+ * term) is split into the parts \f$ g^k \f$ that concern the Variable of
+ * each sub-Block, and \f$ l \f$ and \f$ u \f$ are its LHS and RHS, each
+ * possibly infinite.
+ * There is basically no requirement on \f$ X^k \f$, save that the
+ * corresponding Solver be able to "efficiently" solve the corresponding
+ * problem (albeit possibly only approximately); the same would be true for
+ * \f$ c^k \f$, except that an "easy" function whose abstract representation
+ * can be manipulated is needed, since this is how LagBFunction
+ * works. Note, however, that arbitrarily complex Objective may be present
+ * in any sub-Block of \f$ ( B^k ) \f$, again provided that its Solver can
  * handle them.
  *
- * It is important to remark that LagrangianDualSolver does not solve (B)
- * but rather its Lagrangian Dual. This is obtained by relaxing the linking
- * constraints, and here immediately comes some caveat. Indeed, the linking
- * FRowConstraint in (B) in general have the form l <= g( x ) <= u, i.e.,
- * they correspond to *two* linear constraints. However, in many cases only
- * *one* Lagrangian multiplier need be defined for them:
+ * We remark that LagrangianDualSolver does not solve (B) but its Lagrangian
+ * Dual, which is obtained by relaxing the linking constraints, and here a
+ * caveat immediately arises. Indeed, writing from now on
+ * \f$ g( x ) = \sum_{ k \in K } g^k( x^k ) \f$ for the linear part of one
+ * linking constraint, the row \f$ l \le g( x ) \le u \f$ in general stands
+ * for *two* linear constraints; however, in many cases only *one* Lagrangian
+ * multiplier needs to be defined for it, namely:
  *
- * - if l == u, i.e., the equality constraint g( x ) = u (= l), in which case
- *   the corresponding Lagrangian multiplier is unconstrained in sign;
+ * - if \f$ l = u \f$, i.e., for the equality constraint \f$ g( x ) = u \f$,
+ *   in which case the multiplier is unconstrained in sign;
  *
- * - if l == -INF and u < INF, i.e., the less-than constraint g( x ) <= u, in
- *   which case the corresponding Lagrangian multiplier is constrained in
- *   sign;
+ * - if \f$ l = -\infty \f$ and \f$ u < +\infty \f$, i.e., for the
+ *   less-than constraint \f$ g( x ) \le u \f$, in which case the multiplier
+ *   is constrained in sign;
  *
- * - if l > -INF and u == INF, i.e., the greater-than constraint g( x ) >= l,
- *   in which case the corresponding Lagrangian multiplier is constrained in
- *   sign.
+ * - if \f$ l > -\infty \f$ and \f$ u = +\infty \f$, i.e., for the
+ *   greater-than constraint \f$ g( x ) \ge l \f$, in which case the
+ *   multiplier is constrained in sign as well.
  *
- * Save for the degenerate case l == -INF and u == INF, which is not allowed,
- * this leaves the case -INF < l < u < INF. One possible approach for this
- * would be to consider the constraint as actually being the two less-than
- * and greater-than [g( x ) <= u, g( x ) >= l] with two different Lagrangian
- * multipliers, both constrained in sign (in the right way). However, this
- * would significantly complicate the handling of these constraints since
- * each original one may give rise to either one or two multipliers, which
- * would be very though especially if changing the rhs/lhs of the constraint
- * would change its two-sidedness status (say, an equality constraint becoming
- * a ranged one, or an INF bound becoming finite). A different approach is to
- * reformulate the constraint as
+ * A row with \f$ l = -\infty \f$ and \f$ u = +\infty \f$, as well as a row
+ * that is relaxed [see Constraint::relax()], constrains nothing: it is given
+ * a multiplier all the same, with an empty Lagrangian term and a zero
+ * coefficient in the Objective of the Lagrangian Dual, and therefore the
+ * multiplier has no effect. This leaves the ranged case
+ * \f$ -\infty < l < u < +\infty \f$, which is discussed after the other three
+ * (cf. (10) and (11)).
  *
- *   g( x ) - s = 0  ,  l <= s <= u
+ * The choice of the sign in the relaxed constraints determines the sign
+ * constraints of the multipliers, and it has to agree with the standard
+ * set by RowConstraint for its dual values [see RowConstraint.h], since the
+ * multipliers are what get_dual_solution() writes there. Writing (B) for
+ * short as \f$ \min / \max \{ c( x ) : l \le g( x ) \le u \, , \, x \in X
+ * \} \f$, the Lagrangian function in the minimization case is
+ * \f{align*}{
+ *   L^-( w , z ) &= \min \{ \, c( x ) + w ( l - g( x ) ) + z ( g( x ) - u )
+ *                   \; : \; x \in X \, \} \\
+ *                &= w l - z u + \min \{ \, c( x ) + ( z - w ) g( x ) \; :
+ *                   \; x \in X \, \} \; , \tag{1}
+ * \f}
+ * where \f$ z \ge 0 \f$ is the multiplier of \f$ g( x ) \le u \f$ and
+ * \f$ w \ge 0 \f$ that of \f$ l \le g( x ) \f$. The Lagrangian Dual of (B)
+ * is then
+ * \f[
+ *   ( D^- ) \qquad \max \; \{ \, L^-( w , z ) \; : \; w \ge 0 \, , \,
+ *   z \ge 0 \, \} \; . \tag{2}
+ * \f]
+ * In the maximization case things are analogous but the signs differ:
+ * \f{align*}{
+ *   L^+( w , z ) &= \max \{ \, c( x ) + w ( g( x ) - l ) + z ( u - g( x ) )
+ *                   \; : \; x \in X \, \} \\
+ *                &= z u - w l + \max \{ \, c( x ) + ( w - z ) g( x ) \; :
+ *                   \; x \in X \, \} \; , \tag{3}
+ * \f}
+ * \f[
+ *   ( D^+ ) \qquad \min \; \{ \, L^+( w , z ) \; : \; w \ge 0 \, , \,
+ *   z \ge 0 \, \} \; . \tag{4}
+ * \f]
+ * Only *one* multiplier is used for each row, since at optimality at most
+ * one of \f$ z \f$ and \f$ w \f$ needs to be nonzero; the standard set by
+ * RowConstraint is that the dual value of the row is
+ * \f[
+ *   y = z - w \;\; \text{for a minimization problem,} \qquad
+ *   y = w - z \;\; \text{for a maximization problem.} \tag{5}
+ * \f]
+ * For an equality constraint (\f$ l = u \f$), (2) and (4) become
+ * \f[
+ *   ( D^- ) \;\; \max_y \; - y u + \min \{ c( x ) + y g( x ) : x \in X \}
+ *   \; , \qquad
+ *   ( D^+ ) \;\; \min_y \; - y u + \max \{ c( x ) + y g( x ) : x \in X \}
+ *   \; , \tag{6}
+ * \f]
+ * where \f$ y \f$ is unconstrained in sign (and beware of the initial
+ * minus sign). The inequality case is different. For the less-than
+ * constraint \f$ g( x ) \le u \f$ (\f$ l = -\infty \f$) only \f$ z \f$ is
+ * defined, and
+ * \f[
+ *   L^-( z ) = - z u + \min \{ c( x ) + z g( x ) : x \in X \} \; , \qquad
+ *   L^+( z ) = z u + \max \{ c( x ) - z g( x ) : x \in X \} \; .
+ * \f]
+ * Because of (5), \f$ y = z \f$ in the first case and \f$ y = - z \f$ in
+ * the second, whence
+ * \f[
+ *   ( D^- ) \;\; \max_{ y \ge 0 } \; - y u + \min \{ c( x ) + y g( x ) :
+ *   x \in X \} \; , \qquad
+ *   ( D^+ ) \;\; \min_{ y \le 0 } \; - y u + \max \{ c( x ) + y g( x ) :
+ *   x \in X \} \; . \tag{7}
+ * \f]
+ * For the greater-than constraint \f$ g( x ) \ge l \f$ (\f$ u = +\infty
+ * \f$) only \f$ w \f$ is defined, and
+ * \f[
+ *   L^-( w ) = w l + \min \{ c( x ) - w g( x ) : x \in X \} \; , \qquad
+ *   L^+( w ) = - w l + \max \{ c( x ) + w g( x ) : x \in X \} \; .
+ * \f]
+ * With \f$ y = - w \f$ in the first case and \f$ y = w \f$ in the second,
+ * one obtains
+ * \f[
+ *   ( D^- ) \;\; \max_{ y \le 0 } \; - y l + \min \{ c( x ) + y g( x ) :
+ *   x \in X \} \; , \qquad
+ *   ( D^+ ) \;\; \min_{ y \ge 0 } \; - y l + \max \{ c( x ) + y g( x ) :
+ *   x \in X \} \; . \tag{8}
+ * \f]
+ * Summarizing, for each row that is not ranged the Lagrangian Dual has the
+ * form
+ * \f[
+ *   \max_y \; - y r + \min \{ c( x ) + y g( x ) : x \in X \} \qquad
+ *   \text{or} \qquad
+ *   \min_y \; - y r + \max \{ c( x ) + y g( x ) : x \in X \} \tag{9}
+ * \f]
+ * for an original minimization or maximization problem, respectively,
+ * where \f$ r \f$ is the finite one between \f$ l \f$ and \f$ u \f$ and
+ * \f$ y \f$ is
  *
- * and relax it, with an *unconstrained* multiplier (call it y). This would
- * lead to the same single Lagrangian term y g( x ), plus the extra "mini
- * Lagrangian subproblem"
+ * - unconstrained in sign for an equality constraint;
  *
- *   max / min { y ( - s ) : l <= s <= u }
+ * - \f$ y = z \ge 0 \f$ for \f$ g( x ) \le u \f$ and \f$ y = - w \le 0 \f$
+ *   for \f$ g( x ) \ge l \f$, if (B) is a minimization problem;
  *
- * All these may be gathered as a very simple inner Block into a single very
- * simple LagBFunction, to which possibly a BoxSolver could be attached.
- * Alternatively, each of these may be represented as a separate one-variable
- * LagBFunction (again, possibly solved by a BoxSolver). Even better, Solver
- * capable of exploiting the structure of the LagBFunction to properly modify
- * the Master Problem could see this to reformulate the Master Problem at
- * basically 0-cost, which would most likely be the best approach. If one
- * really wants to handle all the cases of changes in the lhs/rhs, even those
- * changing the two-sidedness status, this (these) extra LagBFunction(s)
- * would need to be dynamic and allow new s variables to be created and
- * destroyed; yet, this is in general possible.
+ * - \f$ y = - z \le 0 \f$ for \f$ g( x ) \le u \f$ and \f$ y = w \ge 0 \f$
+ *   for \f$ g( x ) \ge l \f$, if (B) is a maximization problem.
  *
- * Hence, LagrangianDualSolver ASSUMES ONLY ONE MULTIPLIER PER RELAXED
- * CONSTRAINTS IN ALL CASES. However, THE CONSTRUCTION OF THE
- * "MINI-LagBFunction" FOR THE s VARIABLE IS NOT SUPPORTED YET, WHICH MEANS
- * THAT TRUE TWO-SIDED FRowConstraint ARE NOT ALLOWED YET. Fortunately, true
- * two-sided FRowConstraint are rare in practice, and they can always be
- * avoided by explicitly modeling them as the less-than and greater-than
- * version if needed. Yet, the mini-LagBFunction will hopefully one day be
- * actually handled.
+ * The constant \f$ c^0 \f$, which has been left out above for simplicity, is
+ * added to the Lagrangian function, and therefore to the dual function, as it
+ * is, in both the minimization and the maximization case. In the Lagrangian
+ * Dual Block it is the constant term of the (linear) Objective, which
+ * compute() updates when that of (B) changes, and therefore the value of the
+ * Lagrangian Dual, and the bounds reported, are those of (B).
  *
- * A different issue is that (B) may represent a convex program which is
- * "nonlinear enough" so that strong duality does not hold; say, the primal
- * problem may not have finite optimum (and not be unbounded), or the dual
- * problem may be infeasible even if the primal does have an optimal solution.
+ * In the Lagrangian Dual Block, \f$ - r \f$ is the coefficient of the
+ * multiplier in the (linear) Objective, and \f$ y g^k( x^k ) \f$ is its
+ * Lagrangian term in the LagBFunction of the k-th sub-Block. With
+ * int_LDSlv_NNMult nonzero (the default) the inner Solver is only presented
+ * with nonnegative multipliers of the inequality constraints. This is
+ * achieved by letting a row whose multiplier would be nonpositive
+ * (\f$ g( x ) \ge l \f$ in a minimization problem, \f$ g( x ) \le u \f$ in a
+ * maximization one) enter the Lagrangian Dual multiplied by \f$ -1 \f$, both
+ * in its coefficients and in \f$ r \f$. Its multiplier is changed in sign
+ * again when it is written as the dual value of the row, which keeps all this
+ * hidden from the outside user.
+ *
+ * In the ranged case \f$ -\infty < l < u < +\infty \f$ both \f$ w \f$ and
+ * \f$ z \f$ are defined. Taking, at optimality, \f$ z = \max \{ y , 0 \}
+ * \f$ and \f$ w = \max \{ - y , 0 \} \f$ in (1), and \f$ w = \max \{ y , 0
+ * \} \f$ and \f$ z = \max \{ - y , 0 \} \f$ in (3), the dual of the row in
+ * the single multiplier \f$ y \f$ of (5), which is unconstrained in sign,
+ * is
+ * \f{align*}{
+ *   ( D^- ) \quad & \max_y \; - \max \{ \, y l \, , \, y u \, \} +
+ *                   \min \{ c( x ) + y g( x ) : x \in X \} \; , \tag{10} \\
+ *   ( D^+ ) \quad & \min_y \; - \min \{ \, y l \, , \, y u \, \} +
+ *                   \max \{ c( x ) + y g( x ) : x \in X \} \; . \tag{11}
+ * \f}
+ * The first term is the value of the "mini Lagrangian subproblem"
+ * \f$ \min \{ - y s : l \le s \le u \} \f$ (respectively,
+ * \f$ \max \{ - y s : l \le s \le u \} \f$), i.e., (10) and (11) are what one
+ * obtains by writing the row as \f$ g( x ) - s = 0 \f$, \f$ l \le s \le u \f$
+ * and relaxing the equality with the multiplier \f$ y \f$; for \f$ l = u \f$
+ * they reduce to (6). The term is piecewise-linear in \f$ y \f$, concave in
+ * (10) and convex in (11), with a kink at \f$ y = 0 \f$, and therefore it
+ * cannot be a coefficient of the linear Objective of the Lagrangian Dual. The
+ * term could be handled in a few ways. Two multipliers \f$ w , z \ge 0 \f$
+ * could be used, which makes the number of multipliers of a row depend on its
+ * type, and change when a change of the sides changes the type (say, an
+ * equality constraint becoming a ranged one). The term could be a separate,
+ * very simple LagBFunction whose inner Block holds the variables \f$ s \f$ of
+ * all the ranged rows (to which, e.g., a BoxSolver could be attached).
+ * Possibly the best option is a Solver of the Lagrangian Dual capable of
+ * recognizing this structure and of reformulating its master problem at
+ * basically no cost. None of these is implemented: LagrangianDualSolver uses
+ * one multiplier per relaxed row, and a ranged row is refused, whatever the
+ * value of int_LDSlv_NNMult, with a std::invalid_argument exception, thrown
+ * by set_Block() for a row that is there when the Block is set and by
+ * compute() for a dynamic one added later; so is a row with \f$ l > u \f$,
+ * which no \f$ x \f$ satisfies. Ranged rows are rare in practice, and they
+ * can always be written as the pair of one-sided rows \f$ g( x ) \le u \f$
+ * and \f$ g( x ) \ge l \f$. The dynamic rows added before a call to compute()
+ * are checked before anything is changed, and therefore, if one of them is
+ * refused, the Lagrangian Dual stays as it was and the refusal is repeated at
+ * each following call, until the row is removed or changed into a supported
+ * one.
+ *
+ * For the same reason the type of a relaxed row (equality, less-than,
+ * greater-than or free) is fixed when its multiplier is created, since the
+ * sign constraint of the multiplier and the sign of the Lagrangian term
+ * depend on it. A change of the LHS or of the RHS of the row, or of whether
+ * it is relaxed, is handled by compute() if the row keeps its type; only the
+ * coefficient \f$ - r \f$ (or \f$ r \f$, if the row is multiplied by
+ * \f$ -1 \f$) changes then. Otherwise the change is refused with a
+ * std::logic_error exception, as it happens, e.g., when a finite LHS is given
+ * to a less-than row (which becomes ranged) or when the two sides of an
+ * equality row are moved apart. The refused Modification are kept, and
+ * therefore each following call to compute() throws as well, until the row
+ * gets its type back. Only the type of the row at the time compute() is
+ * called matters, whatever the sequence of changes that brought it there.
+ *
+ * A different issue is that (B) may be a convex program which is
+ * "nonlinear enough" for strong duality not to hold; say, the primal
+ * problem may not have a finite optimum (and not be unbounded), or the dual
+ * problem may be infeasible even if the primal one has an optimal solution.
  * We assume that these cases either do not occur or are dealt with by the
  * user of LagrangianDualSolver.
  *
- * A final important note regards the choice of the "sign" in the relaxed
- * constraints, since this impact on the sign constraints of the Lagrangian
- * multipliers. Rewriting (B) for simplicity as
- *
- *   (B)   max / min c(x) : l <= g( x ) <= u , x \in X
- *
- * the exact form of the Lagrangian Dual, and of its Variable y, can actually
- * be done in different ways. Since y will be used as the dual value for the
- * constraints, we need to be consistent with the standards set by
- * RowConstraint [see RowConstraint.h], which are now recalled and discussed.
- * Let us start with the minimization case; then, the Lagrangian function
- * associated with (B)
- *
- *   L-( w , z ) = min c( x ) + w ( l - g( x ) ) + z ( g( x ) - u ) : x \in X
- *               = w l - z  u + min c( x ) + ( z - w ) g( x ) : x \in X   ,
- *
- * where z >= 0 is the Lagrangian multiplier of the constraint g( x ) <= u,
- * while w >= 0 is the Lagrangian multiplier of the constraint l <= g( x ).
- * The Lagrangian dual of (B) is then
- *
- *   (D-)   max  w l - z u + min { c( x ) + ( z - w ) g( x ) : x \in X }
- *               w >= 0  ,  z >= 0
- *
- * Note that in the maximization case things are analogous but different:
- *
- *   L+( w , z ) = max c( x ) + w ( g( x ) - l ) + z ( u - g( x ) ) : x \in X
- *               = z u - w l + max { c( x ) + ( w - z ) g( x ) : x \in X }  ,
- *
- *   (D+)   min  z u - w l + max { c( x ) + ( w - z ) g( x ) : x \in X } 
- *               w >= 0  ,  z >= 0
- *
- * As previously discussed, we will only consider *one* Lagrangian multiplier.
- * This is due to the fact that, at optimality, only one between z and w need
- * be nonzero. The standard set out by RowConstraint is that
- *
- * - for a minimization problem,  y = z - w   (-)
- *
- * - for a maximization problem,  y = w - z   (+)
- *
- * is the value to be written in the dual value of the RowConstraint. In the
- * case l == u (an equality constraint) then (D-) and (D+) become the same
- *
- *   (D-)   max  - y l + min { c( x ) + y g( x ) : x \in X }
- *
- *   (D+)   min  - y l + max { c( x ) + y g( x ) : x \in X } 
- *
- * where y is unconstrained in sign (and beware of the initial "-"). However,
- * in the inequality case things are different. Indeed, let us consider the
- * case of the single inequality constraint g( x ) <= u (l == -INF), whereby
- * then only z is defined: we have
- *
- *   L-( z ) = - z u + min c( x ) + z g( x ) : x \in X   ,
- *
- *   (D-)   max  - z u + min { c( x ) + z g( x ) : x \in X } : z >= 0
- *
- *   L+( z ) = z u + max { c( x ) - z g( x ) : x \in X }  ,
- *
- *   (D+)   min  z u + max { c( x ) - z g( x ) : x \in X } : z >= 0
- *
- * Yet, because of the two different choices (-) and (+), where we take
- * w == 0  ==>  y = z in (-) and y = -z in (+), whence
- *
- *   (D-)   max  - y u + min { c( x ) + y g( x ) : x \in X } : y >= 0
- *
- *   (D+)   min  - y u + max { c( x ) + y g( x ) : x \in X } : y <= 0
- *
- * In the opposite case of the single inequality constraint g( x ) >= l
- * (u == INF) only w is defined and we rather have
- *
- *   L-( w ) = w l + min c( x ) - w g( x ) : x \in X   ,
- *
- *   (D-)   max  w l + min { c( x ) - w g( x ) : x \in X } : w >= 0
- *
- *   L+( w ) = - w l + max { c( x ) + w g( x ) : x \in X }  ,
- *
- *   (D+)   min  - w l + max { c( x ) + w g( x ) : x \in X } : w >= 0
- *
- * Again, due to the difference between (-) and (+), we end up with
- *
- *   (D-)   max  - y l + min { c( x ) + y g( x ) : x \in X } : y <= 0
- *
- *   (D+)   min  - y l + max { c( x ) + y g( x ) : x \in X } : y >= 0
- *
- * To summarise, the Lagrangian Dual always has the form
- *
- *   (D)   max  - y r + min { c( x ) + y g( x ) : x \in X }
- *
- * where r is the non-INF between the two bounds. Then:
- *
- * - for a original maximization problem, corresponding to a minimization
- *   Lagrangian dual (D+):
- *   = for a g( x ) <= u constraint, y = - z <= 0
- *   = for a g( x ) >= l constraint, y =   w >= 0
- *
- * - for a original minimization problem, corresponding to a maximization
- *   Lagrangian dual (D-):
- *   = for a g( x ) <= u constraint, y =   z >= 0
- *   = for a g( x ) >= l constraint, y = - w <= 0
- *
- * Note that LagrangianDualSolver provides a mechanism whereby the inner
- * Solver is only presented with y >= 0 constraints by appropriately changing
- * sign on the data, but this is kept completely hidden from the outside user.
- *
- * After all is said and done, an appropriate Solver is then registered to
- * the Lagrangian Dual Block, and it is used to solve it. The solution is
- * used as the dual solution for (B), while a primal solution is constructed
- * by convexification. Hence, if (B) is *not* a convex program (say, some
- * sub-Block (B_i) has integer variables), then the Lagrangian Dual Block is
- * *not* equivalent to (B) but to its "convexified relaxation", and this is
- * what is solved. */
+ * After all is said and done, an appropriate Solver is registered to the
+ * Lagrangian Dual Block and used to solve it. Its solution is used as the
+ * dual solution of (B), while a primal solution is constructed by
+ * convexification. Hence, if (B) is *not* a convex program (say, some
+ * sub-Block has integer variables), the Lagrangian Dual Block is *not*
+ * equivalent to (B) but to its "convexified relaxation", which is then the
+ * problem actually solved. */
 
 class LagrangianDualSolver : public CDASolver
 {
@@ -384,7 +431,7 @@ public:
   * reduces setup time, peak memory, and the work the inner Solver has to
   * do per iteration. As a consequence the LagBFunctions may expose
   * different sets of "active" Variables: it is then the responsibility
-  * of the inner Solver to handle that — say, by considering each
+  * of the inner Solver to handle that, say, by considering each
   * "active" Variable of each LagBFunction as a subset of some "global
   * variable space", which is the union of all of them. The inner Solver
   * may auto-detect the sparse case and switch to a sparse code path, or
@@ -392,10 +439,32 @@ public:
   * the full union: in the latter case the sparse setting has no
   * measurable cost.
   *
-  * Set to 0 to force the legacy "every LagBFunction sees all multipliers
-  * as dense active vars" construction (useful for an inner Solver that
-  * cannot handle heterogeneous active sets, or for reproducing the
-  * pre-Phase-A behavior for debugging). */
+  * Set to 0 to have every LagBFunction see all the multipliers as dense
+  * active Variable (useful for an inner Solver that cannot handle
+  * heterogeneous active sets, or for debugging). */
+
+ intRecursive ,
+ ///< decompose the descendants too, and not the children alone
+ /**< If nonzero, the decomposition does not stop at the children of the
+  * Block: a child that has the same shape the Block must have, i.e., no
+  * Variable and no Objective of its own and sub-Block of its own, is
+  * decomposed in turn, its linking Constraint being relaxed together with
+  * those of the Block and its own children taking its place as components.
+  * The descent goes on as deep as the shape holds, so that the components
+  * are the leaves of the decomposable part of the tree rather than the
+  * children of the root, and the multipliers are those of every level.
+  *
+  * With this off, a child that is itself decomposable is one component,
+  * solved by whichever Solver is attached to it. If that Solver is exact
+  * (e.g., a :MILPSolver), the bound is that of the dual of the children,
+  * which is at least as strong as the one given with this on; if it is a
+  * LagrangianDualSolver in turn, the two settings solve the same dual in
+  * two ways and give the same bound, i.e., that of the convexified
+  * relaxation w.r.t. the leaves: a dual inside a dual with this off, and a
+  * single dual with all the multipliers of all the levels, and one master
+  * instead of many, with this on. Which of the two is faster is a matter of
+  * the instance, hence the parameter. Default 0, i.e., the children are the
+  * components. */
 
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -427,6 +496,8 @@ public:
 
  enum str_par_type_LDSlv {
   str_LDSlv_ISName = strLastParCDAS ,  ///< classname of the inner Solver
+
+  str_LDSlv_ISCfg ,   ///< filename of the ComputeConfig of the inner Solver
 
   str_LagBF_BCfg ,
   ///< filename of the "default" BlockConfig of the LagBFunction(s)
@@ -516,9 +587,10 @@ public:
  /// constructor: ensure every field is initialized
 
  LagrangianDualSolver( void ) : CDASolver() , NumVar( 0 ) , f_nsb( 0 ) ,
+  f_status( kUnEval ) ,
   f_max( false ) , LagrDual( nullptr ) , f_BCfg( nullptr ) ,
   f_BSCfg( nullptr ) ,  f_DBCfg( nullptr ) , f_DBSCfg( nullptr ) ,
-  f_DBSCfg_map( nullptr ) , static_cons( 0 ) {
+  f_DBSCfg_map( nullptr ) , static_cons( 0 ) , f_held( 0 ) {
   // ensure all parameters are properly given their default value
   iBCopy          = get_dflt_int_par( int_LDSlv_iBCopy );
   NNMult          = get_dflt_int_par( int_LDSlv_NNMult );
@@ -526,6 +598,7 @@ public:
   WDualSCfg       = get_dflt_int_par( int_InnerS_WDualSCfg );
   PushCostToOwner = get_dflt_int_par( intPushCostToOwner );
   SparseLagPairs  = get_dflt_int_par( intSparseLagPairs );
+  Recursive       = get_dflt_int_par( intRecursive );
   ISName          = get_dflt_str_par( str_LDSlv_ISName );
   // all the other string parameters are empty by default, which corresponds
   // to f_BCfg == f_BSCfg == f_DBCfg == f_DBSCfg == nullptr
@@ -590,7 +663,13 @@ public:
   * representation to work. All this is irrelevant is sub-Block are evicted,
   * since they will need to be BlockConfig-ured from the start and
   * generate_abstract_*() is (supposedly) called for them when it is for the
-  * father \p block. */
+  * father \p block.
+  *
+  * A relaxed constraint with two different finite sides (a ranged one, or
+  * an empty one) is not supported [see the class comments], and if \p block
+  * has one set_Block() throws std::invalid_argument; as for the other
+  * conditions on \p block that are checked here, the Lagrangian Dual is
+  * then only partly formed, and this Solver cannot be used on \p block. */
  
  void set_Block( Block * block ) override;
 
@@ -613,13 +692,16 @@ public:
   *
   * - int_InnerS_WVarSCfg [-1]: the index in the "cache of Configurations"
   *   created with vstr_LDSl_Cfg of the Configuration that is used in the
-  *   call of InnerSolver->get_var_solution() to retrieve the dual solution
-  *   of the Lagrangian Dual.
+  *   call of InnerSolver->get_var_solution() to retrieve the var solution
+  *   of the Lagrangian Dual, i.e., the Lagrangian multipliers, which are a
+  *   dual solution of the original Block [see get_dual_solution()].
   *
   * - int_InnerS_WDualSCfg [-1]: the index in the "cache of Configurations"
   *   created with vstr_LDSl_Cfg of the Configuration that is used in the
-  *   call of InnerSolver->get_dual_solution() to retrieve the var solution
-  *   of the Lagrangian Dual.
+  *   call of InnerSolver->get_dual_solution() to retrieve the dual solution
+  *   of the Lagrangian Dual, i.e., the convex multipliers out of which the
+  *   (convexified) var solution of the original Block is formed [see
+  *   get_var_solution()].
   *
   * - intPushCostToOwner [1]: whether the LagBFunction are instructed (via
   *   the same-named parameter) to change the Objective of all the sub-Block
@@ -638,7 +720,14 @@ public:
  /// set the double parameters of LagrangianDualSolver / the inner Solver
  /** Set the double parameters specific of LagrangianDualSolver, and allow to
   * directly set those of the inner Solver used to solve the Lagrangian Dual;
-  * see the comments to set_ComputeConfig() for details. */
+  * see the comments to set_ComputeConfig() for details.
+  *
+  * The cutoffs dblUpCutOff and dblLwCutOff are passed to the inner Solver
+  * as they are: the value of the Lagrangian Dual is a bound on that of (B),
+  * from below for a minimization problem and from above for a maximization
+  * one, so that a value of the Lagrangian Dual at least dblUpCutOff (at most
+  * dblLwCutOff) certifies the same of (B); the inner Solver that stops there
+  * returns kCutOff, which compute() returns as it is. */
 
  void set_par( idx_type par , double value ) override {
   InnerSolver->set_par( dbl_par_lds( par ) , value );
@@ -659,6 +748,21 @@ public:
   *   for LagrangianDualSolver to work, but at least it ensures that
   *   LagrangianDualSolver is not dependent on any other SMS++ module except
   *   the "core" SMS++.
+  *
+  * - str_LDSlv_ISCfg [""]: the filename of a ComputeConfig that is given
+  *   to the inner Solver with set_ComputeConfig(). It is applied as soon as
+  *   the parameter changes, if the inner Solver exists, and again each time
+  *   the inner Solver is re-created by a change of str_LDSlv_ISName; with
+  *   the empty string, which is the default, nothing is applied. The
+  *   ComputeConfig is the one of the inner Solver, hence its parameters
+  *   have the names and the indices of the inner Solver, and it is the way
+  *   to set those parameters of the inner Solver that a derived class keeps
+  *   for itself, as PrimalProximalHeur does with intMaxIter and dblRelAcc;
+  *   any parameter that LagrangianDualSolver forwards to the inner Solver
+  *   and that is set after the ComputeConfig is applied overrides the value
+  *   in there [see set_ComputeConfig() for the order within a ComputeConfig
+  *   of LagrangianDualSolver]. A file that does not exist or does not hold
+  *   a ComputeConfig makes it throw std::invalid_argument.
   *
   * - str_LagBF_BCfg [""]: the filename of the "default" BlockConfig of the
   *   inner Block of the LagBFunction(s). If non-empty(), this parameter is
@@ -688,7 +792,7 @@ public:
   *   BlockConfig of the inner Block in the LagBFunction (since the
   *   Lagrangian Dual Block itself has no significant BlockConfig) but it has
   *   to be structured properly, i.e., knowing that the original sub-Block of
-  *   the original Block (either itself or a copy) is now set as the inner
+  *   the original Block (either itself or a copy) is set as the inner
   *   Block of a LagBFunction inside the FRealObjective of the corresponding
   *   sub-Block of the Lagrangian Dual Block. doing so allows complete and
   *   fine control on what is done at the cost of being a bit more complex
@@ -729,7 +833,16 @@ public:
   *   note that each LagBFunction does require a working Solver attached to
   *   its inner Block (unless the inner Solver can avoid it for some specially
   *   structured inner Block), so this will have to be provided in some way,
-  *   this parameter being one of the many */
+  *   this parameter being one of the many; a sub-Block that gets no Solver
+  *   by any of them is assumed never to be computed, and its LagBFunction
+  *   uses no Solver even if the sub-Block already had some before the
+  *   LagrangianDualSolver was registered [see LagBFunction::intInnrSlvr],
+  *   so that it throws if it is ever computed. Conversely, as the
+  *   BlockSolverConfig of str_LagBF_BSCfg and vstr_LDSl_Cfg are only
+  *   apply()-ed at the first compute() of the LagBFunction, a sub-Block that
+  *   the inner Solver never computes (say, an "easy" component of a
+  *   BundleSolver) gets no Solver, so these can be given to all the
+  *   sub-Block alike */
 
  void set_par( idx_type par , std::string && value ) override;
 
@@ -846,7 +959,11 @@ public:
   *   or any other Configuration, whose elements can then be used for
   *   various purposes; see all times where vstr_LDSl_Cfg is mentioned, such
   *   as str_LagBF_BCfg, str_LDBlck_BCfg, str_LagBF_BSCfg and
-  *   str_LDBlck_BSCfg. */
+  *   str_LDBlck_BSCfg.
+  *
+  * Any other parameter is one of the inner Solver, to which it is given;
+  * this is the case, e.g., of the classname() of the components that a
+  * BundleSolver must never treat as "easy" (see its vstrNoEasy). */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
@@ -1138,6 +1255,20 @@ public:
   * standard ThinComputeInterface::set_ComputeConfig() is called to do the
   * bulk of the work.
   *
+  * The same holds for the ComputeConfig of the inner Solver in the file
+  * "str_LDSlv_ISCfg". If \p scfg is differential, "str_LDSlv_ISName" and
+  * then "str_LDSlv_ISCfg" are acted upon first, wherever they are in \p
+  * scfg, so that the ComputeConfig of the inner Solver is applied before
+  * all the other parameters in \p scfg, and those among them that are
+  * forwarded to the inner Solver override the values it gives. If \p scfg
+  * is not differential, instead, the "factory reset" of all the parameters
+  * that comes first re-creates the inner Solver of the default classname
+  * (and empties "str_LDSlv_ISCfg" without applying anything); the inner
+  * Solver of \p scfg and its ComputeConfig are then created and applied
+  * when the string parameters are read, i.e., after the int and double
+  * ones of \p scfg, which therefore reach the inner Solver of the default
+  * classname and not the final one.
+  *
   * However, set_ComputeConfig() also manages f_extra_Configuration. If not
   * nullptr, the field can contain any amongst
   *
@@ -1225,8 +1356,36 @@ public:
  *  @{ */
 
  /// (try to) solve the Lagrangian Dual of the given Block
+ /** The Modification issued by the Block since the last call are first
+  * reflected in the Lagrangian Dual, then the inner Solver is called. A
+  * change that is not supported is refused before anything is changed (see
+  * the class comments): a relaxed constraint whose type (equality, <=, >=
+  * or free) is not the one it had when its multiplier was created throws
+  * std::logic_error, and a ranged dynamic constraint added since the last
+  * call throws std::invalid_argument; in both cases the Block and this
+  * Solver are left unlocked, the Lagrangian Dual is the one of the last
+  * call, and the Modification are kept, so that each following call throws
+  * again until the change is undone. */
 
  int compute( bool changedvars = true ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// receives a Modification of the Block, or of a component
+ /** Unless the sub-Block are copied, a component is the son of its
+  * LagBFunction only while this Solver needs the Lagrangian Dual whole, i.e.,
+  * within compute(), get_var_solution() and get_dual_solution(), and it is
+  * given back to its original father otherwise [see hold_components()]. A
+  * Modification that a component issues while it is given back reaches this
+  * Solver through the original father, and not the LagBFunction, which would
+  * translate it: it is kept aside and handed to the LagBFunction (or to
+  * whoever holds the component, see v_held) when the component is taken
+  * again. A NBModification of a sub-Block is not queued at all: it only
+  * concerns that sub-Block, which its LagBFunction takes care of, and
+  * queued it would empty the list, losing the changes to the relaxed
+  * constraints issued before it. Any other Modification is queued as by the
+  * base class. */
+
+ void add_Modification( sp_Mod & mod ) override;
 
 /*--------------------------------------------------------------------------*/
  /// returns the "inner" CDASolver used to solve the Lagrangian Dual
@@ -1271,10 +1430,30 @@ public:
 /*--------------------------------------------------------------------------*/
 
  bool has_var_solution( void ) override {
+  // after a failed compute() the inner Solver may still have a dual
+  // solution, e.g., the multipliers of the master problem of a bundle, but
+  // the linearizations the primal one is made of are missing for the
+  // component whose evaluation failed
+  if( ( f_status == kError ) || ( f_status == kBlockLocked ) )
+   return( false );
+
+  // the Modification of the components kept aside since then reach them
+  // now [see hold_components()], as they would in get_var_solution(): they
+  // may take away from the global pools some of the linearizations the
+  // solution is made of, which the inner Solver then says
+  ComponentHold hold( *this );
+  ComponentUnlock unlocked( *this );
   return( InnerSolver->has_dual_solution() );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ /** The dual solution of the Block is that of the relaxed Constraint, which
+  * the inner Solver gives, and that of the Constraint inside each component,
+  * which only the Solver of the component can give [see
+  * get_dual_solution()]: a component whose Solver has none (say, a dynamic
+  * programming, or a MILP) leaves its Constraint with whatever dual value
+  * they had, which who reads them has to check. */
 
  bool has_dual_solution( void ) override {
   return( InnerSolver->has_var_solution() );
@@ -1323,8 +1502,20 @@ public:
   * replication); the solution of the i-th sub-Block is computed only if i
   * is found anywhere in solc->value.
   *
-  * If solc == nullptr, the variable solution is constructed for all the
-  * sub-Block. */
+  * If *solc is a SimpleConfiguration< std::map< std::string ,
+  * Configuration * > >, the same type as the "meta" Configurations that
+  * dispatch by class, the sub-Block are chosen by class rather than by
+  * index: the solution of a sub-Block is computed if and only if its
+  * classname() is a key of solc->value, and the sub-Block of any other class
+  * are skipped. This
+  * lets one configuration name the sub-Block whose solution is needed for
+  * instances whose sub-Block are numbered differently. The Configuration
+  * the key is mapped to (which can be nullptr, meaning all of it) is the
+  * one passed to map_back_solution() if the sub-Block are copies, and it is
+  * not used otherwise.
+  *
+  * If solc == nullptr, or any other Configuration, the variable solution is
+  * constructed for all the sub-Block. */
 
  void get_var_solution( Configuration * solc = nullptr ) override;
 
@@ -1335,8 +1526,9 @@ public:
   *
   * Since LagrangianDualSolver hinges on the InnerSolver to actually solve
   * the Lagrangian Dual, it must first of all call get_var_solution() to
-  * retrieve the optimal var solution there (a primal solution for the
-  * original Block, since the Lagrangia Dual is its dual). This may require
+  * retrieve the optimal var solution there, i.e., the Lagrangian
+  * multipliers, which are a dual solution of the original Block since the
+  * Lagrangian Dual is its dual. This may require
   * an appropriate Configuration to be passed, which is handled via the
   * int_InnerS_WVarSCfg parameter, giving the index into the "cache of
   * Configuration" constructed via vstr_LDSl_Cfg; if the index provided in
@@ -1363,6 +1555,31 @@ public:
   *   sub-Block happen with nullptr Configuration (meaning, all of it).
   *
   * - If \p solc is not nullptr, then it can be:
+  *
+  *   = a pointer to a SimpleConfiguration< std::map< std::string ,
+  *     Configuration * > >, the same type as the "meta" Configurations that
+  *     dispatch by class. In this case the sub-Block are chosen by class
+  *     rather than by index: the dual solution is only written for those
+  *     sub-Block whose classname() is a key of solc->f_value, the
+  *     Configuration that the key is mapped to being passed as the argument
+  *     to get_dual_solution() (which can be nullptr, meaning all of it),
+  *     while the sub-Block of any other class are skipped. The dual solution
+  *     of the relaxed constraints in the father Block is written if and only
+  *     if "relaxed" is a key of solc->f_value, in which case the
+  *     Configuration it is mapped to is ignored; no Block has that
+  *     classname(), which is not a class name by the naming convention of
+  *     SMS++. That is, if one only wants the dual solution of the relaxed
+  *     constraints and of the sub-Block of class C, then setting
+  *     solc->f_value = { { "relaxed" , nullptr } , { "C" , nullptr } } does
+  *     the job, and in a text file this is
+  *
+  *         SimpleConfiguration<std::map<std::string,Configuration*>>
+  *         2   # the number of elements in the map
+  *         relaxed  *
+  *         C        *
+  *
+  *     This lets one configuration name the sub-Block whose dual solution is
+  *     needed for instances whose sub-Block are numbered differently.
   *
   *   = a pointer to a SimpleConfiguration< std::vector< std::pair< int ,
   *     Configuration * > > >. In this case, the dual solution is only
@@ -1539,6 +1756,7 @@ public:
     1 , // intPushCostToOwner
     1 , // intSparseLagPairs (default on; sparse path is bit-equivalent
         //                   to dense and unlocks DoEasy=1 in LDS)
+    0 , // intRecursive (default off: the children are the components)
    };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastLDSlvPar ) )
@@ -1557,8 +1775,9 @@ public:
  
  [[nodiscard]] const std::string & get_dflt_str_par( idx_type par ) const
   override {
-  static const std::array< std::string , 5 > dflt_str_par = {
+  static const std::array< std::string , 6 > dflt_str_par = {
    "FakeCDASolver" ,  // str_LDSlv_ISName
+   "" ,               // str_LDSlv_ISCfg
    "" ,               // str_LagBF_BCfg
    "" ,               // str_LagBF_BSCfg
    "" ,               // str_LDBlck_BCfg
@@ -1612,6 +1831,7 @@ public:
    case( int_InnerS_WDualSCfg ): return( WDualSCfg );
    case( intPushCostToOwner ):   return( PushCostToOwner );
    case( intSparseLagPairs ):    return( SparseLagPairs );
+   case( intRecursive ):         return( Recursive );
    }
 
   return( InnerSolver->get_int_par( int_par_lds( par ) ) );
@@ -1629,6 +1849,7 @@ public:
   const override {
   switch( par ) {
    case( str_LDSlv_ISName ): return( ISName );
+   case( str_LDSlv_ISCfg ):  return( ISCfg );
    case( str_LagBF_BCfg ):   return( LagBF_BCfg );
    case( str_LagBF_BSCfg ):  return( LagBF_BSCfg );
    case( str_LDBlck_BCfg ):  return( LDBlck_BCfg );
@@ -1680,7 +1901,8 @@ public:
    { "int_InnerS_WVarSCfg"  , int_InnerS_WVarSCfg } ,
    { "int_InnerS_WDualSCfg" , int_InnerS_WDualSCfg } ,
    { "intPushCostToOwner"   , intPushCostToOwner } ,
-   { "intSparseLagPairs"    , intSparseLagPairs }
+   { "intSparseLagPairs"    , intSparseLagPairs } ,
+   { "intRecursive"         , intRecursive }
    };
 
   const auto it = int_pars_map.find( name );
@@ -1703,6 +1925,7 @@ public:
   const override {
   static const std::map< std::string , idx_type > str_pars_map = {
    { "str_LDSlv_ISName" , LagrangianDualSolver::str_LDSlv_ISName } ,
+   { "str_LDSlv_ISCfg"  , LagrangianDualSolver::str_LDSlv_ISCfg } ,
    { "str_LagBF_BCfg"   , LagrangianDualSolver::str_LagBF_BCfg } ,
    { "str_LagBF_BSCfg"  , LagrangianDualSolver::str_LagBF_BSCfg } ,
    { "str_LDBlck_BCfg"  , LagrangianDualSolver::str_LDBlck_BCfg } ,
@@ -1756,9 +1979,10 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 6 > int_pars_str = {
+  static const std::array< std::string , 7 > int_pars_str = {
    "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_InnerS_WVarSCfg" ,
-   "int_InnerS_WDualSCfg" , "intPushCostToOwner" , "intSparseLagPairs" };
+   "int_InnerS_WDualSCfg" , "intPushCostToOwner" , "intSparseLagPairs" ,
+   "intRecursive" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
@@ -1777,9 +2001,9 @@ public:
 
  [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 5 > str_pars_str = {
-   "str_LDSlv_ISName" , "str_LagBF_BCfg" , "str_LagBF_BSCfg" ,
-   "str_LDBlck_BCfg" , "str_LDBlck_BSCfg" };
+  static const std::array< std::string , 6 > str_pars_str = {
+   "str_LDSlv_ISName" , "str_LDSlv_ISCfg" , "str_LagBF_BCfg" ,
+   "str_LagBF_BSCfg" , "str_LDBlck_BCfg" , "str_LDBlck_BSCfg" };
 
   if( ( idx >= strLastParCDAS ) && ( idx < strLastLDSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
@@ -1903,11 +2127,71 @@ public:
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
+ /// the conditional bound of the Lagrangian Dual Block
+ /** If \p on, sets the conditional bound of LagrDual to box_bound();
+  * otherwise (say, for a dual whose objective is not that of (B), as in the
+  * penalized iterations of PrimalProximalHeur) removes it. The Lagrangian
+  * Dual of a minimization problem is a maximization one, whose value this
+  * bounds from above if (B) is not empty, and conversely; the inner Solver
+  * that proves the Lagrangian Dual beyond it then proves (B) empty. */
+
+ void set_conditional_bound( bool on ) {
+  if( ! LagrDual )
+   return;
+  if( f_max )
+   LagrDual->set_valid_lower_bound( on ? box_bound() : - Inf< double >() ,
+				    true );
+  else
+   LagrDual->set_valid_upper_bound( on ? box_bound() : Inf< double >() ,
+				    true );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// the value of (B) without the relaxed Constraint, with the other sense
+ /** The sum over the sub-Blocks of the optimal value of their Objective with
+  * the sense opposite to that of (B), only on the box of their variables (a
+  * BoxSolver ignores the other Constraint, and takes the fixed variables at
+  * their value), plus the constant term of the Objective of the relaxed
+  * Blocks (relaxed_constant()), which is in the value of (B) and in that of
+  * the Lagrangian Dual alike. If (B) is not empty, its optimal value is no
+  * larger than this for a minimization problem (no smaller for a
+  * maximization one), and so is that of the Lagrangian Dual, so that a
+  * Lagrangian Dual proven beyond it proves (B) empty. It is + infinity for
+  * a minimization problem (- infinity for a maximization one) if some
+  * sub-Block is not bounded on its box, and when the sub-Blocks are copied
+  * (int_LDSlv_iBCopy), whose Objective is then not that of (B). */
+
+ double box_bound( void );
+
+/*--------------------------------------------------------------------------*/
+ /// gives the inner Solver the ComputeConfig in the file ISCfg, if any
+ /** Does nothing if ISCfg is empty; throws std::invalid_argument if the
+  * file cannot be read or does not hold a ComputeConfig, since a
+  * ComputeConfig that is not applied would leave the inner Solver with
+  * its default parameters, and nothing would tell. */
+
+ void apply_inner_ComputeConfig( void );
+
+/*--------------------------------------------------------------------------*/
+
+ /// attaches the inner Solver to the Lagrangian Dual
+ /** Nothing is done before the Lagrangian Dual is formed; set_Block() calls
+  * this last, when the ComputeConfig of this Solver, and with it all the
+  * parameters of the inner Solver, has been set (BlockSolverConfig sets it
+  * before registering the Solver): a parameter that the inner Solver reads
+  * only when it is attached, as BundleSolver does with vintNoEasy and
+  * vstrNoEasy, is therefore there by then. */
+
  void register_inner_Solver( void ) {
   if( ! LagrDual )
    return;
 
   InnerSolver->set_id( this );
+  // forward the exclusion list verbatim: any sub-Block this Solver was
+  // told to skip is, by construction, a sub-Block of LagrDual or of one
+  // of its descendants, so the inner Solver needs to skip it as well
+  if( ! get_excluded_blocks().empty() )
+   InnerSolver->set_excluded_blocks( & get_excluded_blocks() );
   LagrDual->register_Solver( InnerSolver );
   }
 
@@ -2059,6 +2343,41 @@ FRowConstraint * constraint_with_index( Index i ) {
  bool to_be_reversed( const FRowConstraint & con );
 
 /*--------------------------------------------------------------------------*/
+/* The Lagrangian multiplier corresponding to the current dual of the
+ * FRowConstraint con, i.e., the dual changed sign if con is reversed [see
+ * to_be_reversed()]: the inverse of what get_dual_solution() does, so that
+ * the duals it writes are read back as the same multipliers. */
+
+ double dual2mult( const FRowConstraint & con );
+
+/*--------------------------------------------------------------------------*/
+/** The sum of the constant terms of the Objective of the Block whose
+ * constraints are relaxed [see v_relaxed], which have no Variable: it is the
+ * constant term of the Lagrangian function, hence of the Objective of the
+ * Lagrangian Dual. */
+
+ double relaxed_constant( void ) const;
+
+/*--------------------------------------------------------------------------*/
+/** The type of a relaxed FRowConstraint, as its Lagrangian multiplier and
+ * Lagrangian term see it: free (both sides infinite, or relaxed, hence no
+ * Lagrangian term and a zero coefficient), an equality, a <= or a >= one,
+ * or ranged (two different finite sides, or an empty row), which is not
+ * supported. The type of each relaxed constraint is recorded when its
+ * multiplier is created [see v_row_kind], and a change of its sides is only
+ * handled if it leaves the type as it is. */
+
+ enum row_kind_type : unsigned char {
+  eFreeRow = 0 , eEqualityRow , eLessRow , eGreaterRow , eRangedRow };
+
+ /// the row_kind_type of the relaxed FRowConstraint con
+ static row_kind_type row_kind( const FRowConstraint & con );
+
+/*--------------------------------------------------------------------------*/
+/* The coefficient of the Lagrangian multiplier lvar of the relaxed
+ * FRowConstraint con in the Objective of the Lagrangian Dual, the sign
+ * constraint of lvar being set meanwhile; throws std::invalid_argument if
+ * con is ranged. */
 
  double constr2val( const FRowConstraint & con , ColVariable & lvar );
 
@@ -2088,9 +2407,14 @@ FRowConstraint * constraint_with_index( Index i ) {
  bool PushCostToOwner;  ///< how to set the same-named LagBFunction parameter
 
  bool SparseLagPairs;
+
+ /// true if the decomposable descendants are decomposed in turn
+ bool Recursive;
  ///< true if dual pairs with empty Lagrangian term are skipped in set_Block
 
  std::string ISName;  ///< classname of the inner Solver
+
+ std::string ISCfg;   ///< filename of the ComputeConfig of the inner Solver
 
  std::string LagBF_BCfg;
  ///< the filename for the BlockConfig of the individual LagBFunction
@@ -2122,7 +2446,11 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  Index f_nsb;       ///< number of sub-Block
 
+ int f_status;      ///< the value returned by the last compute()
+
  bool f_max;        ///< true if (B) was a max problem, false otherwise
+
+ BoxSolver * f_box = nullptr;  ///< the BoxSolver of box_bound()
 
  LagrangianDualBlock * LagrDual;
                     ///< the automatically constructed Lagrangian Dual
@@ -2145,7 +2473,8 @@ FRowConstraint * constraint_with_index( Index i ) {
   * allows a single str_LagBF_BSCfg to configure inner Blocks of different
   * types (e.g. ThermalUnitBlock and HydroSystemUnitBlock) at once. Exactly one
   * of f_DBSCfg / f_DBSCfg_map is non-null (or both null). */
- SimpleConfiguration< std::map< std::string , Configuration * > > * f_DBSCfg_map;
+ SimpleConfiguration< std::map< std::string , Configuration * > > *
+                                                              f_DBSCfg_map;
 
  /// the default individual BlockSolverConfig for inner Block \p inner
  /** Returns the BlockSolverConfig to use as the "default" for the inner Block
@@ -2161,15 +2490,6 @@ FRowConstraint * constraint_with_index( Index i ) {
   * configuration is un-done. nullptr if LagrDual is not configured. */
  BlockSolverConfig * f_aBSCfg = nullptr;
 
- /// the cleared BlockSolverConfig that configured each inner Block
- /** For each sub-Block, the clone of the BlockSolverConfig that has actually
-  * been apply()-ed to it, kept clear()-ed [see f_aBSCfg]. A clone per Block
-  * is necessary because the same BlockSolverConfig is typically apply()-ed
-  * to many sub-Block, while the record of the registered Solver that its
-  * cleared apply() uses is per-Block. Entries are nullptr where no
-  * BlockSolverConfig applied. */
- std::vector< BlockSolverConfig * > v_aBSCfg;
-
  std::vector< Configuration * > v_Cfg;  ///< the "Configuration cache"
 
  std::vector< UpdateSolver * > v_US;   /// the UpdateSolvers
@@ -2177,6 +2497,14 @@ FRowConstraint * constraint_with_index( Index i ) {
  std::vector< LagBFunction * > v_LBF;  /// the LagBFunction
 
  // dictionaries- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ /// the type of each relaxed constraint when its multiplier was created
+ /** v_row_kind[ i ] is the row_kind_type the i-th relaxed constraint (in
+  * the order of the multipliers: the static ones first, then the dynamic
+  * ones) had when its multiplier, and therefore the sign constraint of the
+  * latter and the sign of its Lagrangian term, were defined. */
+
+ std::vector< row_kind_type > v_row_kind;
 
  Index static_cons;  ///< number of static constraints
                      /** Total number of static constraints in the Block: the
@@ -2214,6 +2542,128 @@ FRowConstraint * constraint_with_index( Index i ) {
  typedef std::pair< FRowConstraint * , Index > const_int;
  typedef std::pair< Index , FRowConstraint * > int_const;
  typedef std::tuple< FRowConstraint * , Index , Index > con_int_int;
+
+ /// the Block whose linking Constraint are relaxed, the root first
+ /** The Block whose Constraint become Lagrangian terms, in the order they are
+  * visited: the Block this Solver is attached to, and, when the recursive
+  * decomposition is on, those of its descendants that are decomposed in turn.
+  * The dictionaries below are the concatenation, in this very order, of the
+  * groups of Constraint of each of them, hence any scan of the relaxed
+  * Constraint has to run over this vector rather than over the root alone. */
+
+ std::vector< Block * > v_relaxed;
+
+ /// the components of the decomposition, and the father of each of them
+ /** v_component[ i ] is the Block of the LagBFunction v_LBF[ i ] (the
+  * original one, if it is copied), and v_father[ i ] its father before the
+  * LagBFunction took it, to which it is given back; with Recursive on the
+  * father need not be f_Block. */
+
+ std::vector< Block * > v_component;
+ std::vector< Block * > v_father;
+
+ /// the father each component has while this Solver holds it
+ /** Unless the sub-Block are copied, v_component[ i ] is the son of
+  * v_held[ i ] only while this Solver holds the components, i.e., within
+  * compute(), get_var_solution() and get_dual_solution(); v_held[ i ] is its
+  * LagBFunction, or the MasterProblemBlock of the inner Solver where the
+  * component is easy, and it is recorded each time the component is given
+  * back to v_father[ i ]. The rest of the time the Block to which this Solver
+  * is attached is whole, so that any other Solver attached to it, another
+  * LagrangianDualSolver included, finds it as it is. Empty when the sub-Block
+  * are copied, or before the Lagrangian Dual is formed. */
+
+ std::vector< Block * > v_held;
+
+ /// the Modification each component issued while it was given back
+ std::vector< Lst_sp_Mod > v_missed;
+
+ /// the index of each component in v_component
+ std::unordered_map< const Block * , Index > f_comp_index;
+
+ /// how many nested holds of the components are open
+ std::atomic< int > f_held;
+
+ /// takes the components from their fathers back to whoever holds them
+ /** The first of nested calls sets v_component[ i ] as the son of
+  * v_held[ i ] and hands to the latter the Modification the component
+  * issued while it was given back [see add_Modification()]. */
+
+ void hold_components( void );
+
+ /// gives the components back to their fathers
+ /** The last of nested calls records in v_held[ i ] the father of
+  * v_component[ i ] and makes it the son of v_father[ i ] again. */
+
+ void release_components( void );
+
+ /// the index in v_component of the component \p b is in, if any
+ /** Walks up from \p b to f_Block; returns f_nsb if \p b is not inside any
+  * component. */
+
+ Index component_of( const Block * b ) const;
+
+ /// the Solver that the LagBFunction of the b-th component uses, if any
+ /** nullptr if it is not a CDASolver, or if there is none. */
+
+ CDASolver * component_solver( Index b ) const;
+
+ /// unlocks the components that f_Block, locked by this Solver, has locked
+ /** A component stays among the sub-Block of its father while it is held,
+  * hence locking f_Block locks it too. If f_Block stays locked by this
+  * Solver while the inner Solver runs, as it does when whoever called
+  * compute() had locked it and given its own id to this Solver, the
+  * LagBFunction of a component, which locks it with its own id, could not:
+  * the components locked by this Solver are unlocked for the lifetime of the
+  * object, and locked again after, since unlocking f_Block unlocks them. */
+
+ class ComponentUnlock {
+  public:
+  explicit ComponentUnlock( LagrangianDualSolver & lds ) : f_lds( lds ) {
+   if( lds.f_id && lds.f_Block->is_owned_by( lds.f_id ) )
+    for( auto c : lds.v_component )
+     if( c->is_owned_by( lds.f_id ) ) {
+      c->unlock( lds.f_id );
+      f_unlocked.push_back( c );
+      }
+   }
+  ~ComponentUnlock() {
+   for( auto c : f_unlocked )
+    c->lock( f_lds.f_id );
+   }
+  ComponentUnlock( const ComponentUnlock & ) = delete;
+  ComponentUnlock & operator=( const ComponentUnlock & ) = delete;
+  private:
+  LagrangianDualSolver & f_lds;
+  std::vector< Block * > f_unlocked;
+  };
+
+ /// holds the components for the lifetime of the object
+ /** hold_components() in the constructor and release_components() in the
+  * destructor, so that an exception does not leave them held. */
+
+ class ComponentHold {
+  public:
+  explicit ComponentHold( LagrangianDualSolver & lds ) : f_lds( lds ) {
+   f_lds.hold_components();
+   }
+  ~ComponentHold() { f_lds.release_components(); }
+  ComponentHold( const ComponentHold & ) = delete;
+  ComponentHold & operator=( const ComponentHold & ) = delete;
+  private:
+  LagrangianDualSolver & f_lds;
+  };
+
+ /// the components of the decomposition, and the Block that are decomposed
+ /** Fills \p component with the Block that become the components of the
+  * decomposition, and v_relaxed with those whose linking Constraint are
+  * relaxed, \p b included. Returns false, having touched nothing, if \p b
+  * cannot be decomposed, i.e., if it has no sub-Block, or, unless it is the
+  * root, if it has Variable or a nonempty Objective of its own; the caller
+  * then makes \p b a component. With Recursive off the children of \p b are
+  * components whatever their shape. */
+
+ bool decompose( Block * b , std::vector< Block * > & component );
 
  std::vector< con_int_int > scon_to_idx; ///< from static constraint to index
  std::vector< int_const > idx_to_scon;   ///< from index to static constraint

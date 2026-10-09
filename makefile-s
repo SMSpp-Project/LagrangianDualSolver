@@ -1,8 +1,8 @@
 ##############################################################################
-################################ makefile-c ##################################
+################################ makefile-s ##################################
 ##############################################################################
 #                                                                            #
-#   complete makefile of LagrangianDualSolver                                #
+#   makefile of LagrangianDualSolver and its dependencies, excluding SMS++   #
 #                                                                            #
 #   The makefile defines internally all external libraries required by       #
 #   LagrangianDualSolver, excluding the SMS++ core ones whose symbols are    #
@@ -39,6 +39,21 @@
 # *H   is the list of all include files
 # *INC is the -I< include directories >
 
+# define input macros for MILPSolver makefile + dependencies, then include
+# it; use the makefile-s version since the SMS++ stuff is supposed to be
+# there already
+MILPSSDR = $(LgDSLVSDR)/../MILPSolver
+include $(MILPSSDR)/makefile-s
+
+# define input macros for Torch library makefile, then include it;
+# LagrangianDualRelaxationSolverML is only compiled in if Torch is actually
+# installed at $(Torch_ROOT)
+LgDSLVTORCHH = $(subst $\",,$(Torch_ROOT))/include/torch/csrc/api/include
+ifneq ($(wildcard $(LgDSLVTORCHH)/torch/torch.h),)
+    include $(LgDSLVSDR)/../extlib/makefile-libTorch
+    LgDSLVML = 1
+endif
+
 # include the makefile requiring all external modules in input
 include $(LgDSLVSDR)/makefile
 
@@ -46,11 +61,12 @@ include $(LgDSLVSDR)/makefile
 
 # append external stuff defined in the other makefiles to LgDSLVOBJ,
 # LgDSLVINC and LgDSLVH, thus the := assignment has to be used (use GNU make)
-LgDSLVOBJ := $(LgDSLVOBJ) $(SMS++OBJ)
-LgDSLVINC := $(LgDSLVINC) $(SMS++INC)  
-LgDSLVH := $(LgDSLVH) $(SMS++H) 
+LgDSLVOBJ := $(LgDSLVOBJ) $(MILPSOBJ)
+LgDSLVINC := $(LgDSLVINC) $(MILPSINC) $(libTorchINC)
+LgDSLVH := $(LgDSLVH) $(MILPSH)
 
-# external libraries for LagrangianDualSolver (those of SMS++)
-LgDSLVLIB  =  $(SMS++LIB) 
+# external libraries for LagrangianDualSolver (those of MILPSolver, and
+# Torch for LagrangianDualRelaxationSolverML)
+LgDSLVLIB = $(MILPSLIB) $(libTorchLIB)
 
 ############################ End of makefile #################################
