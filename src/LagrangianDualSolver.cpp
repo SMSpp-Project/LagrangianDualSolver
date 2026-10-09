@@ -1130,7 +1130,7 @@ int LagrangianDualSolver::compute( bool changedvars )
 
  ComponentUnlock unlocked( *this );  // for the LagBFunction to lock them
 
- set_cutoff_bound( true );
+ set_conditional_bound( true );
  auto res = InnerSolver->compute( changedvars );
 
  // if iBCopy == false, bring back the inner Block to its original objective

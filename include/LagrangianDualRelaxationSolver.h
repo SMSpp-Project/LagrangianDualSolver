@@ -390,7 +390,9 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /** As PrimalProximalHeur::compute(), but a status between kOK and kError
   * (or kLowPrecision) is kOK when the Lagrangian solution is there, as
   * branch() only needs that; when it is not there, the status is that of
-  * the Lagrangian Dual, or kError if that is kOK. */
+  * the Lagrangian Dual, or kError if that is kOK. kCutOff, i.e., the
+  * Lagrangian Dual beyond the cutoff [see dblUpCutOff], is returned as it
+  * is, the node being then fenced. */
 
  int compute( bool changedvars = true ) override;
 

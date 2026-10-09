@@ -527,6 +527,11 @@ int PrimalProximalHeur::compute( bool changedvars )
    }
   }
 
+ // the cutoffs of the inner Solver, which only bound the unpenalized
+ // iteration and are given back to it at the end
+ const double up_cutoff = InnerSolver->get_dbl_par( dblUpCutOff );
+ const double lw_cutoff = InnerSolver->get_dbl_par( dblLwCutOff );
+
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -652,9 +657,13 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( auto tl = time_left() ; tl < Inf< double >() )
    InnerSolver->set_par( dblMaxTime , std::max( double( 0 ) , tl ) );
 
-  // the cutoff bounds the Lagrangian Dual of the original objective only,
-  // not that of the penalized one
-  set_cutoff_bound( ! penalized );
+  // the conditional bound and the cutoff bound the Lagrangian Dual of the
+  // original objective only, not that of the penalized one
+  set_conditional_bound( ! penalized );
+  InnerSolver->set_par( dblUpCutOff , penalized ? Inf< double >()
+		                                : up_cutoff );
+  InnerSolver->set_par( dblLwCutOff , penalized ? - Inf< double >()
+		                                : lw_cutoff );
   res = InnerSolver->compute( changedvars );
 
   LOG_VERB( 2 )
@@ -669,9 +678,9 @@ int PrimalProximalHeur::compute( bool changedvars )
    f_LagrInitStatus = res;
 
    // the Lagrangian Dual of the original objective is unbounded (the
-   // problem is infeasible, or beyond the cutoff) or infeasible: there is
+   // problem is infeasible) or infeasible, or beyond the cutoff: there is
    // nothing to recover, and no proximal term to strip yet
-   if( ( res == kUnbounded ) || ( res == kInfeasible ) )
+   if( ( res == kUnbounded ) || ( res == kInfeasible ) || ( res == kCutOff ) )
     break;
    }
 
@@ -824,6 +833,9 @@ int PrimalProximalHeur::compute( bool changedvars )
   }  // end( main loop )- - - - - - - - - - - - - - - - - - - - - - - - - - -
      //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ InnerSolver->set_par( dblUpCutOff , up_cutoff );
+ InnerSolver->set_par( dblLwCutOff , lw_cutoff );
+
  // if the inner Block is not an R3B-copy, restore the original inner
  // objectives "as if nothing had happened"
  if( ! iBCopy )
@@ -844,6 +856,16 @@ int PrimalProximalHeur::compute( bool changedvars )
   res = kUnbounded;
   LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: UNBOUNDED, iters = "
+          << ( iters - 1 ) << std::endl;
+  unlock();
+  return( res );
+  }
+
+ // the Lagrangian Dual of the original objective is beyond the cutoff: so
+ // is (B), and there is nothing to recover
+ if( res == kCutOff ) {
+  LOG_VERB( 2 )
+   *f_log << "PrimalProximalHeur::compute: CUTOFF, iters = "
           << ( iters - 1 ) << std::endl;
   unlock();
   return( res );

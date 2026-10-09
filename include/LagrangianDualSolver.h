@@ -675,23 +675,15 @@ public:
   * directly set those of the inner Solver used to solve the Lagrangian Dual;
   * see the comments to set_ComputeConfig() for details.
   *
-  * The cutoffs dblUpCutOff and dblLwCutOff are not passed to the inner
-  * Solver, whose problem has the opposite sense: the one that, for the sense
-  * of (B), says that (B) is "as good as infeasible" (dblUpCutOff for a
-  * minimization problem, dblLwCutOff for a maximization one) becomes the
-  * conditional bound of the Lagrangian Dual Block [see
-  * AbstractBlock::set_valid_upper_bound()], so that the inner Solver stops
-  * as soon as the Lagrangian Dual is proven beyond it, and compute() then
-  * returns kInfeasible; the other one is just kept. */
+  * The cutoffs dblUpCutOff and dblLwCutOff are passed to the inner Solver
+  * as they are: the value of the Lagrangian Dual is a bound on that of (B),
+  * from below for a minimization problem and from above for a maximization
+  * one, so that a value of the Lagrangian Dual at least dblUpCutOff (at most
+  * dblLwCutOff) certifies the same of (B); the inner Solver that stops there
+  * returns kCutOff, which compute() returns as it is. */
 
  void set_par( idx_type par , double value ) override {
-  if( par == dblUpCutOff )
-   UpCutOff = value;
-  else
-   if( par == dblLwCutOff )
-    LwCutOff = value;
-   else
-    InnerSolver->set_par( dbl_par_lds( par ) , value );
+  InnerSolver->set_par( dbl_par_lds( par ) , value );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -1718,8 +1710,6 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  if( ( par == dblUpCutOff ) || ( par == dblLwCutOff ) )
-   return( Solver::get_dflt_dbl_par( par ) );
   return( InnerSolver->get_dflt_dbl_par( dbl_par_lds( par ) ) );
   }
 
@@ -1792,10 +1782,6 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  [[nodiscard]] double get_dbl_par( idx_type par ) const override {
-  if( par == dblUpCutOff )
-   return( UpCutOff );
-  if( par == dblLwCutOff )
-   return( LwCutOff );
   return( InnerSolver->get_dbl_par( dbl_par_lds( par ) ) );
   }
 
@@ -2084,24 +2070,22 @@ public:
 /*--------------------------------------------------------------------------*/
 
  /// the conditional bound of the Lagrangian Dual Block
- /** If \p on, sets the conditional bound of LagrDual to the best between the
-  * cutoff that, for the sense of (B), makes it "as good as infeasible" [see
-  * set_par( double )] and box_bound(); otherwise (say, for a dual whose
-  * objective is not that of (B), as in the penalized iterations of
-  * PrimalProximalHeur) removes it. The Lagrangian Dual of a minimization
-  * problem is a maximization one, whose value these bound from above, and
-  * conversely; the inner Solver that proves the Lagrangian Dual beyond them
-  * then proves (B) infeasible, or beyond the cutoff. */
+ /** If \p on, sets the conditional bound of LagrDual to box_bound();
+  * otherwise (say, for a dual whose objective is not that of (B), as in the
+  * penalized iterations of PrimalProximalHeur) removes it. The Lagrangian
+  * Dual of a minimization problem is a maximization one, whose value this
+  * bounds from above if (B) is not empty, and conversely; the inner Solver
+  * that proves the Lagrangian Dual beyond it then proves (B) empty. */
 
- void set_cutoff_bound( bool on ) {
+ void set_conditional_bound( bool on ) {
   if( ! LagrDual )
    return;
   if( f_max )
-   LagrDual->set_valid_lower_bound( on ? std::max( LwCutOff , box_bound() )
-				       : - Inf< double >() , true );
+   LagrDual->set_valid_lower_bound( on ? box_bound() : - Inf< double >() ,
+				    true );
   else
-   LagrDual->set_valid_upper_bound( on ? std::min( UpCutOff , box_bound() )
-				       : Inf< double >() , true );
+   LagrDual->set_valid_upper_bound( on ? box_bound() : Inf< double >() ,
+				    true );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -2378,9 +2362,6 @@ FRowConstraint * constraint_with_index( Index i ) {
  int f_status;      ///< the value returned by the last compute()
 
  bool f_max;        ///< true if (B) was a max problem, false otherwise
-
- double UpCutOff = Inf< double >();    ///< dblUpCutOff
- double LwCutOff = - Inf< double >();  ///< dblLwCutOff
 
  BoxSolver * f_box = nullptr;  ///< the BoxSolver of box_bound()
 

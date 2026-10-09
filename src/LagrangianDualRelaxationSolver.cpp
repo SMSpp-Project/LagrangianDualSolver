@@ -279,6 +279,11 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
 {
  const int status = PrimalProximalHeur::compute( changedvars );
 
+ // beyond the cutoff [see dblUpCutOff]: the node is fenced, which is what
+ // whoever set the cutoff needs to know
+ if( status == kCutOff )
+  return( status );
+
  // the restart that restore_center() asked for is over
  if( f_rst_alg >= 0 ) {
   InnerSolver->set_par( InnerSolver->int_par_str2idx( "intRstAlg" ) ,

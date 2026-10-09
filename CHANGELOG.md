@@ -88,18 +88,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovery spawns besides the calling one, 0 (the default) solving the
   components one at a time
 
-- the cutoff that makes the problem "as good as infeasible" (`dblUpCutOff`
-  for a minimization problem, `dblLwCutOff` for a maximization one) is not
-  passed to the inner Solver but becomes the conditional bound of the
-  Lagrangian Dual Block, so that the inner Solver stops as soon as the
-  Lagrangian Dual is proven beyond it and `compute()` returns `kInfeasible`;
-  the conditional bound is the best between it and the value of the
-  sub-Blocks with the opposite sense on the box of their variables, by a
-  `BoxSolver` (`box_bound()`), beyond which the Lagrangian Dual proves the
-  problem empty with no incumbent at all, when that is finite (say, binary
-  knapsacks, not thermal units whose power is bounded by the commitment);
-  `PrimalProximalHeur` sets it on the unpenalized iteration only, and stops
-  there if the Lagrangian Dual is unbounded or infeasible
+- the cutoffs `dblUpCutOff` and `dblLwCutOff` are passed to the inner
+  Solver as they are, a value of the Lagrangian Dual beyond one of them
+  certifying the same of the problem, and the `kCutOff` of the inner Solver
+  is returned as it is, by `PrimalProximalHeur` (which then stops, on the
+  unpenalized iteration, the only one the cutoffs are set on) and by
+  `LagrangianDualRelaxationSolver` too. The conditional bound of the
+  Lagrangian Dual Block is the value of the sub-Blocks with the opposite
+  sense on the box of their variables, by a `BoxSolver` (`box_bound()`),
+  beyond which the Lagrangian Dual proves the problem empty, when that is
+  finite (say, binary knapsacks, or thermal units with the box of their
+  power); `PrimalProximalHeur` also stops if the unpenalized Lagrangian Dual
+  is unbounded or infeasible
 
 - the BlockSolverConfig of each sub-Block is given to its LagBFunction,
   which applies it at its first `compute()`: a sub-Block that the inner
