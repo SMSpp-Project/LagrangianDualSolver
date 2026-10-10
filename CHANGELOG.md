@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- LagrangianDualRelaxationSolverML links on macOS: the index of the branching
+  variable is read as int64_t, the type libtorch instantiates there.
+
 ## [0.5.0] - 2026-10-09
 
 ### Added
