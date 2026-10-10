@@ -263,7 +263,8 @@ LagrangianDualRelaxationSolverML::choose( std::vector< Cand > & cands )
   for( Index c = 0 ; c < x.size() ; ++c )
    for( Index i = 0 ; i < NFeatures ; ++i )
     acc[ c ][ i ] = float( x[ c ][ i ] );
-  return( Index( net->forward( in ).squeeze( 1 ).argmax().item< long >() ) );
+  return( Index( net->forward( in ).squeeze( 1 ).argmax()
+		 .item< int64_t >() ) );
   }
 
  // strong branching, whose choice and data are kept: the targets are the
