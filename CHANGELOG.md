@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-10
+
 ### Fixed
 
 - LagrangianDualRelaxationSolverML links on macOS: the index of the branching
@@ -470,7 +472,8 @@ Initial release
 
 - Initial release.
 
-[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.5.0...develop
+[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.5.1...develop
+[0.5.1]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.5.0...0.5.1
 [0.5.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.4.0...0.5.0
 [0.4.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.3.0...0.4.0
 [0.3.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.2.0...0.3.0
