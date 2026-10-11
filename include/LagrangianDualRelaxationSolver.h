@@ -41,6 +41,8 @@
 
 #include "AbstractChange.h"
 
+#include "BranchingRule.h"
+
 #include "ChangeSolver.h"
 
 #include "GlobalInformation.h"
@@ -495,16 +497,16 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  /// the number of the features of a candidate [see strBranchModel]
 
- static constexpr Index NFeatures = 8;
+ static constexpr Index NFeatures = BranchingFeatures::NFeatures;
 
  /// the features of a candidate [see strBranchModel]
 
- using Features = std::array< double , NFeatures >;
+ using Features = BranchingFeatures::Features;
 
  /// what strong branching finds of a candidate: the bound of the "down"
  /// child, that of the "up" one and the score [see intBranchStrategy]
 
- using StrongEval = std::array< double , 3 >;
+ using StrongEval = StrongBranching::Eval;
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
@@ -597,16 +599,24 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  double child_bound( Change * change );
 
 /*--------------------------------------------------------------------------*/
+ /// the candidates as BranchCandidate, in the same order
+ /** The second point is the Lagrangian solution, the blocks are the
+  * sub-Blocks, and the id of a candidate is its index in \p cands. */
+
+ std::vector< BranchCandidate > describe( const std::vector< Cand > & cands )
+  const;
+
+/*--------------------------------------------------------------------------*/
+ /// the fraction of the binary static variables that are fixed
+
+ double fixed_fraction( void ) const;
+
+/*--------------------------------------------------------------------------*/
  /// the binary static variables that may be branched upon
  /** One flag per variable, in the order of the Lagrangian solution [see
   * vstrBranchGroups]. */
 
  std::vector< bool > branchable( void ) const;
-
-/*--------------------------------------------------------------------------*/
- /// read the model of eLearned from strBranchModel
-
- void load_branch_model( void );
 
 /*--------------------------------------------------------------------------*/
  /// the Lagrangian multipliers, i.e., the active Variable of the LagBFunction
@@ -632,12 +642,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  std::string f_branch_model;               ///< strBranchModel
  std::vector< std::string > f_branch_groups; ///< vstrBranchGroups
 
- /// the model of eLearned, read from strBranchModel at its first use: the
- /// weights and the biases of the hidden layer, those of the output
- std::vector< std::vector< double > > f_w1;
- std::vector< double > f_b1;
- std::vector< double > f_w2;
- double f_b2 = 0;
+ /// the model of eLearned, read from strBranchModel at its first use
+ LearnedBranching f_model;
 
  /// the multipliers taken by the last branch(), if no node has been solved
  /// since then, so that they are still those of the inner Solver [see

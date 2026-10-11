@@ -59,6 +59,10 @@ if (NOT hasParent)
     # heuristic by solving the LP relaxation of f_Block; see the
     # GRBMILPSolver include of src/PrimalProximalHeur.cpp.
     find_package(MILPSolver REQUIRED)
+    # BranchAndXSolver holds the components with which
+    # LagrangianDualRelaxationSolver chooses the variable to branch upon
+    # (BranchingRule.h)
+    find_package(BranchAndXSolver REQUIRED)
 endif ()
 
 # Torch needed for LagrangianDualSolverML
@@ -158,7 +162,8 @@ target_include_directories(
 # on this library.
 target_link_libraries(${modName} PUBLIC
         ${modNamespace}::SMS++
-        ${modNamespace}::MILPSolver)
+        ${modNamespace}::MILPSolver
+        ${modNamespace}::BranchAndXSolver)
 
 # LagrangianDualSolverML, which holds LagrangianDualRelaxationSolverML, is a
 # library of its own, as BundleSolverML is: Torch is some hundreds of

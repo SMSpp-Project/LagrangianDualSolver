@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `LagrangianDualRelaxationSolver` chooses the variable to branch upon by the
+  components of BranchAndXSolver (`BranchingRule.h`): its candidates are
+  described as `BranchCandidate` (the convexified solution as the point, the
+  Lagrangian solution as the second point, the sub-Blocks as the blocks),
+  strong branching is `StrongBranching` on the children it solves, eLearned
+  is `LearnedBranching`; the choices are the same as before. The module
+  therefore depends on BranchAndXSolver
+
 ## [0.5.1] - 2026-10-10
 
 ### Fixed
