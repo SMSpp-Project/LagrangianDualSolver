@@ -335,6 +335,10 @@ int PrimalProximalHeur::compute( bool changedvars )
  // from, if the relaxed Constraint tie copies of a decision
  if( NumStatVar == 0 ) {
   const auto res = LagrangianDualSolver::compute( changedvars );
+  // the only solve is the unpenalized one, whose status is the one of the
+  // Lagrangian Dual of the original objective [see
+  // get_Lagrangian_initial_status()]
+  f_LagrInitStatus = res;
   if( res >= kError )
    return( res );
 

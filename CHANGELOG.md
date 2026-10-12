@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `PrimalProximalHeur::get_Lagrangian_initial_status()` is the status of
+  the Lagrangian Dual also when there is no binary static Variable, whose
+  only solve was not recorded: it stayed kUnEval, which
+  `LagrangianDualRelaxationSolver::compute()` then returned (e.g., on the
+  unit commitments with no binary variable, such as the EC ones)
+
 - `PrimalProximalHeur` counts the constant term of the `Objective` of the
   Block it is attached to in the value of its solutions: it added up those
   of the sub-Blocks alone, while the bounds of the Lagrangian Dual include
