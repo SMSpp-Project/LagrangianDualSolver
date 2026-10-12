@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is `LearnedBranching`; the choices are the same as before. The module
   therefore depends on BranchAndXSolver
 
+### Fixed
+
+- `PrimalProximalHeur` counts the constant term of the `Objective` of the
+  Block it is attached to in the value of its solutions: it added up those
+  of the sub-Blocks alone, while the bounds of the Lagrangian Dual include
+  it, so that with a constant (e.g., the network constant terms a bus
+  `UCBlock` keeps in its own `Objective`) a solution was either reported at
+  a value that is not its own or, being then below the Lagrangian bound,
+  thrown away by the primal recovery
+
 ## [0.5.1] - 2026-10-10
 
 ### Fixed

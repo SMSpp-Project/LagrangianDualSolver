@@ -1170,10 +1170,7 @@ bool PrimalProximalHeur::recover_primal( double & cost )
    // evaluate the recovered solution on the pristine copies of the inner
    // objectives: the live ones only had the true costs restored on the
    // binary Variables, so their value is not the true cost of the solution
-   double value = 0;
-   for( Index idx = 0 ; idx < is_linear.size() ; ++idx )
-    value += subtree_value( idx );
-   cost = value;
+   cost = solution_value();
    }
 
   LOG_VERB( 2 ) {
@@ -1359,7 +1356,9 @@ bool PrimalProximalHeur::consensus_recovery( double & cost )
  if( error )
   std::rethrow_exception( error );
 
- cost = 0;
+ // the value of each component is that of its subtree, to which the
+ // constant term of the Objective of f_Block is added once
+ cost = block_constant();
  for( Index k = 0 ; k < K ; ++k ) {
   if( ! solved[ k ] )
    return( false );

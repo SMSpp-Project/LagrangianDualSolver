@@ -421,10 +421,30 @@ class PrimalProximalHeur : public LagrangianDualSolver
   if( ! InnerSolver->has_var_solution() )
    return( f_max ? - Inf< double >() : Inf< double >() );
 
-  double value = 0;
+  return( solution_value() );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the original objective of f_Block at the current values of the Variable
+ /** The sum of subtree_value() over the sub-Blocks of f_Block plus the
+  * constant term of the Objective of f_Block itself, which has no Variable
+  * [see LagrangianDualSolver::set_Block()] but may have a constant (say,
+  * a fixed cost) that is part of the value of every solution. */
+
+ double solution_value( void ) {
+  double value = block_constant();
   for( Index idx = 0 ; idx < is_linear.size() ; ++idx )
    value += subtree_value( idx );
   return( value );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the constant term of the Objective of f_Block, 0 if it has none
+
+ double block_constant( void ) const {
+  const auto obj = dynamic_cast< const RealObjective * >(
+					     f_Block->get_objective() );
+  return( obj ? double( obj->get_constant_term() ) : 0.0 );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
