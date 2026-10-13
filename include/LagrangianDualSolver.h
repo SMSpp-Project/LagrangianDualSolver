@@ -2496,6 +2496,11 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  std::vector< LagBFunction * > v_LBF;  /// the LagBFunction
 
+ /// true for the component whose Solver had no dual solution even after
+ /// the component was solved again at the multipliers [see
+ /// get_dual_solution()], which then is not solved again for it
+ std::vector< bool > v_no_dual;
+
  // dictionaries- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  /// the type of each relaxed constraint when its multiplier was created

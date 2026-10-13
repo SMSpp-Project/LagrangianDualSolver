@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `LagrangianDualSolver::get_dual_solution()` solves a component again at
+  the multipliers only if `compute()` has not stopped on a time or
+  iteration limit, within the time it has left, and never again for a
+  component whose Solver had no dual solution even after that (e.g., an
+  integer MILP): a tool writing the solution with `-O` re-solved every
+  integer component with its old time limit, which doubled the time of a
+  run stopped on `dblMaxTime`
 - `PrimalProximalHeur::get_Lagrangian_initial_status()` is the status of
   the Lagrangian Dual also when there is no binary static Variable, whose
   only solve was not recorded: it stayed kUnEval, which

@@ -237,6 +237,7 @@ void LagrangianDualSolver::set_Block( Block * block )
  // resize the sub-Block dictionary and the pointers to the LagBFunction
  blck_to_idx.resize( f_nsb );
  v_LBF.resize( f_nsb );
+ v_no_dual.assign( f_nsb , false );
 
  // first loop: create the sub-Block and their LagBFunction - - - - - - - - -
  // here comes the crucial decision: copy the sub-Block or "evict" them
@@ -1346,7 +1347,18 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  // object (namely, the one associated with the initialization of "lcfg"),
  // making this code wrong if other instances of LagrangianDualSolver call
  // this function.
- auto lcfg = [ this ]( Index b , Configuration * cfg ) {
+ // a component is solved again only if the last compute() has not stopped
+ // on a time or iteration limit, since then the budget is spent, and within
+ // the time it has left [see the lambda below]
+ const bool may_resolve = ( f_status != kStopTime ) &&
+                          ( f_status != kStopIter );
+ const double max_time = InnerSolver->get_dbl_par( dblMaxTime );
+ const double left = max_time < Inf< double >() ?
+  std::max( max_time - InnerSolver->get_elapsed_time() , 0.0 ) :
+  Inf< double >();
+
+ auto lcfg = [ this , may_resolve , left ]( Index b ,
+                                            Configuration * cfg ) {
   auto LSBb = v_LBF[ b ]->get_nested_Block( 0 );
 
   // a component that has never been compute()-d, say because the inner
@@ -1363,17 +1375,22 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   // has no dual solution now, typically because the Objective of the
   // component has been put back after compute(), the component is solved
   // again at the multipliers of the solution, which is where its duals
-  // belong; a Solver that has no dual solution to offer anyway (say, it
-  // solved the sub-Block as an integer MILP) is skipped, leaving the
-  // Constraint of the component with the dual value they had
+  // belong; a component whose Solver has had no dual solution even after
+  // being solved again (say, it solves the sub-Block as an integer MILP)
+  // is not solved again any more, leaving the Constraint of the component
+  // with the dual value they had
   auto SBSb = component_solver( b );
   if( ! SBSb )
    return;
 
   bool again = false;
-  if( ! SBSb->has_dual_solution() ) {
+  if( ( ! SBSb->has_dual_solution() ) && may_resolve &&
+      ( ! v_no_dual[ b ] ) ) {
+   if( left < Inf< double >() )
+    v_LBF[ b ]->set_par( Function::dblMaxTime , left );
    v_LBF[ b ]->compute( true );
    again = true;
+   v_no_dual[ b ] = ! SBSb->has_dual_solution();
    }
 
   if( SBSb->has_dual_solution() ) {
@@ -2025,6 +2042,7 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  LagrDual = nullptr;
 
  v_LBF.clear();
+ v_no_dual.clear();
  v_component.clear();
  v_father.clear();
  v_row_kind.clear();
