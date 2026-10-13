@@ -1386,9 +1386,15 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
   bool again = false;
   if( ( ! SBSb->has_dual_solution() ) && may_resolve &&
       ( ! v_no_dual[ b ] ) ) {
+   // the time limit is only for this solve, and the one the Solver had is
+   // given back after it: the BundleSolver sets it again at each evaluation
+   // only when it has a time limit of its own
+   const double was = SBSb->get_dbl_par( dblMaxTime );
    if( left < Inf< double >() )
     v_LBF[ b ]->set_par( Function::dblMaxTime , left );
    v_LBF[ b ]->compute( true );
+   if( left < Inf< double >() )
+    v_LBF[ b ]->set_par( Function::dblMaxTime , was );
    again = true;
    v_no_dual[ b ] = ! SBSb->has_dual_solution();
    }
