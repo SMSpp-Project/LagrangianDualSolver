@@ -199,7 +199,7 @@ void PrimalProximalHeur::initialize( void )
   pos_id = 0;
 
   // helper: register a single binary ColVariable into the sub-Block's
-  // dictionaries — read the coefficients off the inner objective Function,
+  // dictionaries: read the coefficients off the inner objective Function,
   // zero-clamp tiny linear coefficients to keep the proximal term clean.
   // Variables not currently present in the inner objective, i.e., binaries
   // that only appear in the Constraint of the sub-Block (say, the routing
@@ -330,7 +330,6 @@ bool PrimalProximalHeur::gap_closed( void ) const
 
  }  // end( PrimalProximalHeur::gap_closed )
 
-
 /*--------------------------------------------------------------------------*/
 // the current solution of the Block as a Solution; a Block that has no
 // Solution of its own (get_Solution() returns nullptr, as the base class does)
@@ -352,30 +351,32 @@ static Solution * current_solution( Block * block )
 // are written in the Variable of the Block just long enough to be read out
 // of them, and the values the Variable had are then put back, since whoever
 // called relies on them (the binaries fixed by the primal recovery, say).
-// A solver that does not take MIP starts is left alone.
+// Only the static Variable are read, the MIP start being a partial one for
+// a Block that also has dynamic Variable. It returns the reason why the
+// solver took no MIP start (say, one that does not support them), empty if
+// it took it.
 
-static void give_mip_start( MILPSolver * milp , Block * block ,
-                            Solution * best )
+static std::string give_mip_start( MILPSolver * milp , Block * block ,
+                                   Solution * best )
 {
  std::unique_ptr< Solution > cur( current_solution( block ) );
 
  // a Variable fixed (by the primal recovery) cannot take another value, so
  // those are freed for the time of the reading and fixed again after
  std::vector< ColVariable * > fixed;
- std::function< void( Block * , bool ) > scan_fixed =
-  [ & ]( Block * b , bool unfix ) {
-   for( const auto & group : b->get_static_variable_groups() )
-    if( group )
-     group->for_each_as< ColVariable >( [ & ]( ColVariable & var ) {
-       if( unfix && var.is_fixed() ) {
-        fixed.push_back( & var );
-        var.is_fixed( false , eNoMod );
-        }
-       } );
-   for( auto nb : b->get_nested_Blocks() )
-    scan_fixed( nb , unfix );
-   };
- scan_fixed( block , true );
+ std::function< void( Block * ) > unfix = [ & ]( Block * b ) {
+  for( const auto & group : b->get_static_variable_groups() )
+   if( group )
+    group->for_each_as< ColVariable >( [ & ]( ColVariable & var ) {
+      if( var.is_fixed() ) {
+       fixed.push_back( & var );
+       var.is_fixed( false , eNoMod );
+       }
+      } );
+  for( auto nb : b->get_nested_Blocks() )
+   unfix( nb );
+  };
+ unfix( block );
 
  best->write( block );
 
@@ -401,12 +402,16 @@ static void give_mip_start( MILPSolver * milp , Block * block ,
   var->is_fixed( true , eNoMod );
 
  if( idx.empty() )
-  return;
+  return( "no Variable of the Block is in its model" );
 
  try {
   milp->add_mip_starts( { idx } , { val } );
   }
- catch( std::exception & ) { }   // this solver takes no MIP start
+ catch( std::exception & e ) {
+  return( e.what() );
+  }
+
+ return( std::string() );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -469,10 +474,9 @@ int PrimalProximalHeur::compute( bool changedvars )
  // handler (which discovers feasible-integer solutions at a Bundle SS) and
  // by the main loop (which checks at the end of each PPH iteration).
 
- // comparator making the heap top the best Solution: a is "worse" than b
- // in the sense of the optimization direction
+ // comparator making the heap top the best Solution [see worse_sol()]
  auto sol_cmp = [ this ]( const sol_value & a , const sol_value & b ) {
-  return( f_max ? ( a.second < b.second ) : ( a.second > b.second ) );
+  return( worse_sol( a , b ) );
   };
 
  auto record_feasible = [ this , & sol_cmp ]( double value ) {
@@ -1070,8 +1074,7 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
   v_best_sol = std::move( v_best_sol_new );
   std::make_heap( v_best_sol.begin() , v_best_sol.end() ,
                   [ this ]( const sol_value & a , const sol_value & b ) {
-                   return( f_max ? ( a.second < b.second )
-                                 : ( a.second > b.second ) );
+                   return( worse_sol( a , b ) );
                    } );
   }
 
@@ -1143,7 +1146,7 @@ bool PrimalProximalHeur::is_recovered_feasible( double value ,
   * would be handed over as a solution and its cost taken as a bound. Two
   * things say that it is not: the value, which for a feasible point cannot
   * be better than the bound the dual gives, and the Block itself, whose
-  * Constraint include the ones the Lagrangian relaxation dualises. */
+  * Constraint include the ones the Lagrangian relaxation dualizes. */
 
   // the bound the Lagrangian Dual gives is the lower one when minimizing and
  // the upper one when maximizing, the other one being the best feasible
@@ -1163,7 +1166,7 @@ bool PrimalProximalHeur::is_recovered_feasible( double value ,
   }
 
   /* is_feasible() is not the question here: the Constraint the Lagrangian
-  * Dual dualises are relaxed, and it passes over them, which is exactly
+  * Dual dualizes are relaxed, and it passes over them, which is exactly
   * where a recovered point can be wrong. The rows of the Block are
   * therefore measured one by one, as whoever checks a reconstruction does,
   * and the largest relative violation decides. */
@@ -1266,8 +1269,13 @@ bool PrimalProximalHeur::recover_primal( double & cost )
   // that fixes the binaries elsewhere, which the solver then ignores, but
   // it is for the last attempt, which fixes none)
   if( ! v_best_sol.empty() )
-   if( auto milp = dynamic_cast< MILPSolver * >( recovery ) )
-    give_mip_start( milp , f_Block , v_best_sol.front().first );
+   if( auto milp = dynamic_cast< MILPSolver * >( recovery ) ) {
+    const auto why = give_mip_start( milp , f_Block ,
+                                     v_best_sol.front().first );
+    if( ! why.empty() )
+     LOG_VERB( 1 )
+      *f_log << "  no MIP start for the recovery: " << why << std::endl;
+    }
 
   const auto rc = recovery->compute( true );
   const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
@@ -1497,7 +1505,7 @@ bool PrimalProximalHeur::add_solution( void )
   return( false );
 
  auto sol_cmp = [ this ]( const sol_value & a , const sol_value & b ) {
-  return( f_max ? ( a.second < b.second ) : ( a.second > b.second ) );
+  return( worse_sol( a , b ) );
   };
 
  if( v_best_sol.size() >= f_MaxSol ) {
