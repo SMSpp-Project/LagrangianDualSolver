@@ -391,6 +391,21 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
+ /// records the current value of the Variable of the Block as a solution
+ /** Seeds the pool of solutions of PrimalProximalHeur with the point the
+  * Variable of the Block currently hold, which the caller knows to be
+  * feasible (say, the allocation in force before the Block is re-optimized).
+  * The point is checked before being recorded: it must not be better than
+  * the bound of the Lagrangian Dual (up to its accuracy) and it must satisfy
+  * the rows of the Block, the ones the Lagrangian relaxation dualises
+  * included. It returns true if it was recorded. Whatever the later
+  * iterations find replaces it as soon as it is better, so that
+  * get_var_solution() hands back at least this one. */
+
+ bool add_solution( void );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
  void get_var_solution( Configuration * solc = nullptr ) override {
   if( v_best_sol.empty() )
    throw( std::logic_error(
@@ -918,7 +933,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * rather than handed over, since whoever asks the solver for a solution
   * takes it as feasible and its value as a bound. */
 
- bool is_recovered_feasible( double value );
+ bool is_recovered_feasible( double value , bool check_bound = true );
 
 /*--------------------------------------------------------------------------*/
 
