@@ -51,6 +51,8 @@
 
 #include "ColVariable.h"
 
+#include "ColVariableSolution.h"
+
 #include "FRealObjective.h"
 
 #include "FRowConstraint.h"
@@ -197,28 +199,33 @@ void PrimalProximalHeur::initialize( void )
   // helper: register a single binary ColVariable into the sub-Block's
   // dictionaries — read the coefficients off the inner objective Function,
   // zero-clamp tiny linear coefficients to keep the proximal term clean.
-  // Variables not currently present in the inner objective are skipped:
-  // injecting them in add_penalty_terms() via add_variable() would issue
-  // a FunctionModVarsAddd that some leaf Blocks (e.g. ThermalUnitBlock)
-  // cannot handle (their obj has a fixed physical layout). The proximal
-  // penalty is therefore not applied to those Variables.
+  // Variables not currently present in the inner objective, i.e., binaries
+  // that only appear in the Constraint of the sub-Block (say, the routing
+  // Variable of a Block whose cost is a function of continuous Variable
+  // only), are registered as well, with zero coefficients: the proximal
+  // penalty is applied to them too, add_penalty_terms() putting them in the
+  // inner objective with add_variable() when the penalty is switched on.
+  // (A leaf Block whose objective has a fixed physical layout and cannot
+  // take new Variable in it will not get the penalty on those Variable
+  // accepted: such a Block should not be used with PPH.)
   auto register_binvar = [ & ]( ColVariable * pv ) {
    const auto i_in_obj = fobj->is_active( pv );
-   if( i_in_obj >= fobj->get_num_active_var() )
-    return;  // not in inner obj: skip to avoid unsupported add_variable
+   const bool in_obj = i_in_obj < fobj->get_num_active_var();
    double c1 = 0;
    double c2 = 0;
    // which of the two it is was settled above by the type of the Function:
    // Function::is_linear() answers about the function and not about the type,
    // so a DQuadFunction whose quadratic coefficients all happen to be 0 says
    // yes to it while its coefficients still sit in triples
-   if( ! is_linear[ index ] ) {
-    auto qf = static_cast< p_DQF >( fobj );
-    c1 = qf->get_linear_coefficient( i_in_obj );
-    c2 = qf->get_quadratic_coefficient( i_in_obj );
+   if( in_obj ) {
+    if( ! is_linear[ index ] ) {
+     auto qf = static_cast< p_DQF >( fobj );
+     c1 = qf->get_linear_coefficient( i_in_obj );
+     c2 = qf->get_quadratic_coefficient( i_in_obj );
+     }
+    else
+     c1 = static_cast< p_LF >( fobj )->get_coefficient( i_in_obj );
     }
-   else
-    c1 = static_cast< p_LF >( fobj )->get_coefficient( i_in_obj );
    if( std::abs( c1 ) < 1e-6 )
     c1 = 0;
    idx_to_var_sbi1[ index ].emplace_back( c1 , pv );
@@ -321,6 +328,23 @@ bool PrimalProximalHeur::gap_closed( void ) const
 
  }  // end( PrimalProximalHeur::gap_closed )
 
+
+/*--------------------------------------------------------------------------*/
+// the current solution of the Block as a Solution; a Block that has no
+// Solution of its own (get_Solution() returns nullptr, as the base class does)
+// is given a ColVariableSolution, which stores the value of its Variable,
+// those of the nested Block included, so that it can be written back
+
+static Solution * current_solution( Block * block )
+{
+ if( auto sol = block->get_Solution( nullptr , false ) )
+  return( sol );
+
+ auto sol = new ColVariableSolution;
+ sol->read( block );
+ return( sol );
+ }
+
 /*--------------------------------------------------------------------------*/
 
 int PrimalProximalHeur::compute( bool changedvars )
@@ -350,7 +374,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    for( auto & s : v_best_sol )
     delete s.first;
    v_best_sol.clear();
-   v_best_sol.emplace_back( f_Block->get_Solution( nullptr , false ) , cost );
+   v_best_sol.emplace_back( current_solution( f_Block ) , cost );
    best_bound = worst_bound = cost;
    }
 
@@ -398,7 +422,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   if( v_best_sol.size() < f_MaxSol ) {
    // there is free space, just throw the new Solution in and re-heap
-   v_best_sol.emplace_back( f_Block->get_Solution( nullptr , false ) ,
+   v_best_sol.emplace_back( current_solution( f_Block ) ,
                             value );
    std::push_heap( v_best_sol.begin() , v_best_sol.end() , sol_cmp );
    if( worse )
@@ -427,7 +451,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    return;                       // play it safe and discard the new value
 
   delete bad->first;
-  *bad = { f_Block->get_Solution( nullptr , false ) , value };
+  *bad = { current_solution( f_Block ) , value };
   // re-heap from scratch (the replacement may have broken the order)
   std::make_heap( v_best_sol.begin() , v_best_sol.end() , sol_cmp );
 
@@ -1057,7 +1081,10 @@ bool PrimalProximalHeur::is_recovered_feasible( double value )
  // value found so far [see get_lb() and get_ub()]
  const auto bound = f_max ? get_ub() : get_lb();
  if( std::isfinite( bound ) ) {
-  const auto slack = std::abs( bound ) * 1e-9;
+  // the bound of the Lagrangian Dual is not known to more than the relative
+  // accuracy the dual was solved with, so a feasible point cannot be told
+  // to be past it by less than that
+  const auto slack = std::abs( bound ) * std::max( 1e-9 , double( RelAcc ) );
   if( f_max ? ( value > bound + slack ) : ( value < bound - slack ) ) {
    LOG_VERB( 2 )
     *f_log << "  the recovered point is worth " << value
