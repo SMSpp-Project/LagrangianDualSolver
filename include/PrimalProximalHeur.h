@@ -124,6 +124,15 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * others ignore a start that is not compatible with their fixings). Off by
    * default. */
 
+  intPenConstrBins ,
+  ///< apply the penalty also to the binaries that are only in Constraint
+  /**< If nonzero, the proximal penalty is also applied to the binary
+   * Variable of a sub-Block that are in its Constraint but not in its
+   * Objective, which are added to its Objective Function to this end; the
+   * sub-Block must accept it (a Block with a fixed physical layout of its
+   * Objective, say ThermalUnitBlock, does not, and throws). If zero (the
+   * default), only the binary Variable in the Objective are penalized. */
+
   intLastPPHPar   ///< first allowed new int parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of int algorithmic parameters. */
@@ -191,6 +200,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   f_MaxSol  = get_dflt_int_par( intMaxSol );
   UseWSPSol = get_dflt_int_par( intUseWarmStartPSol );
   RecMIPStart  = get_dflt_int_par( intRecoveryMIPStart );
+  PenConstrBins = get_dflt_int_par( intPenConstrBins );
   MaxThread = Solver::get_dflt_int_par( intMaxThread );
   R         = get_dflt_dbl_par( dbl_penaltyFactor );
   RelAcc    = Solver::get_dflt_dbl_par( dblRelAcc );
@@ -255,15 +265,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
   *                 recovery are given the best solution found so far as a MIP
   *                 start (to the MILPSolver that take one).
   *
-  * Besides the Variable in the Objective of a sub-Block, the proximal
-  * penalty is applied to the binary Variable that are in its Constraint but
-  * not in its Objective (say, the routing Variable of a Block whose cost only
-  * depends on continuous Variable). They are found by scanning the
-  * Constraint of the sub-Block, and each is added to the Objective Function
-  * of the sub-Block, which is how the Block is asked whether it accepts it:
-  * a Block with a fixed physical layout of its Objective (say,
-  * ThermalUnitBlock) refuses, and the Variable is then left out of the
-  * penalty.
+  * - intPenConstrBins [0]: whether the proximal penalty is also applied to
+  *                 the binary Variable of a sub-Block that are in its
+  *                 Constraint but not in its Objective (say, the routing
+  *                 Variable of a Block whose cost only depends on continuous
+  *                 Variable), which are then added to its Objective
+  *                 Function; a sub-Block that does not accept them (say,
+  *                 ThermalUnitBlock, whose Objective has a fixed physical
+  *                 layout) throws.
   *
   * - intMaxThread [0]: maximum number of threads that compute() spawns,
   *                 besides the one calling it, to solve the components in
@@ -384,13 +393,10 @@ class PrimalProximalHeur : public LagrangianDualSolver
   if( v_best_sol.empty() )  // no current solution
    return( false );         // no next solution either
 
-  // v_best_sol is a heap with the best Solution at the top, i.e., the one
-  // with largest value if f_max and smallest otherwise; use a custom
-  // comparator (returns true if a is worse than b in the chosen sense)
+  // v_best_sol is a heap with the best Solution at the top [see worse_sol()]
   std::pop_heap( v_best_sol.begin() , v_best_sol.end() ,
                  [ this ]( const sol_value & a , const sol_value & b ) {
-                  return( f_max ? ( a.second < b.second )
-                                : ( a.second > b.second ) );
+                  return( worse_sol( a , b ) );
                   } );
   delete v_best_sol.back().first;  // delete current best solution
   v_best_sol.pop_back();           // remove current best solution
@@ -420,7 +426,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * feasible (say, the allocation in force before the Block is re-optimized).
   * The point is checked before being recorded: it must not be better than
   * the bound of the Lagrangian Dual (up to its accuracy) and it must satisfy
-  * the rows of the Block, the ones the Lagrangian relaxation dualises
+  * the rows of the Block, the ones the Lagrangian relaxation dualizes
   * included. It returns true if it was recorded. Whatever the later
   * iterations find replaces it as soon as it is better, so that
   * get_var_solution() hands back at least this one. */
@@ -604,6 +610,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   switch( par ) {
    case( intUseWarmStartPSol ): return( 0 );
    case( intRecoveryMIPStart ):  return( 0 );
+   case( intPenConstrBins ):     return( 0 );
    case( intLogVerb ):          return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_int_par( par ) );
@@ -642,6 +649,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
    case( intMaxIter ):  return( maxIter );
    case( intUseWarmStartPSol ): return( UseWSPSol );
    case( intRecoveryMIPStart ):  return( RecMIPStart ? 1 : 0 );
+   case( intPenConstrBins ):     return( PenConstrBins ? 1 : 0 );
    case( intMaxThread ):        return( MaxThread );
    }
   return( LagrangianDualSolver::get_int_par( par ) );
@@ -666,6 +674,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( intUseWarmStartPSol );
   if( name == "intRecoveryMIPStart" )
    return( intRecoveryMIPStart );
+  if( name == "intPenConstrBins" )
+   return( intPenConstrBins );
   return( LagrangianDualSolver::int_par_str2idx( name ) );
   }
 
@@ -684,10 +694,13 @@ class PrimalProximalHeur : public LagrangianDualSolver
   const override {
   static const std::string _ws = "intUseWarmStartPSol";
   static const std::string _rms = "intRecoveryMIPStart";
+  static const std::string _pcb = "intPenConstrBins";
   if( idx == intUseWarmStartPSol )
    return( _ws );
   if( idx == intRecoveryMIPStart )
    return( _rms );
+  if( idx == intPenConstrBins )
+   return( _pcb );
   return( LagrangianDualSolver::int_par_idx2str( idx ) );
   }
 
@@ -755,6 +768,16 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PROTECTED METHODS ----------------------------*/
 /*--------------------------------------------------------------------------*/
+ /// true if the Solution a is worse than b in the optimization sense
+ /** The comparator of the heap v_best_sol, whose top is therefore the best
+  * Solution: the one with the largest value if f_max, the smallest
+  * otherwise. */
+
+ bool worse_sol( const sol_value & a , const sol_value & b ) const {
+  return( f_max ? ( a.second < b.second ) : ( a.second > b.second ) );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// the bound of the Lagrangian Dual opposite to that of get_lb() / get_ub()
  /** An upper bound on the value of the Lagrangian Dual of the original
   * objective for a minimization problem (a lower one for a maximization
@@ -784,8 +807,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  int UseWSPSol;   ///< whether the warm-start primal is the first center
  bool RecMIPStart = false;  ///< give the primal recovery a MIP start
- bool f_PenConstr = false;  ///< a Variable that only is in Constraint is in the penalty
- bool f_Seeded = false;      ///< add_solution() has seeded the pool since the last compute()
+ bool PenConstrBins = false;  ///< penalize the binaries only in Constraint
+ bool f_PenConstr = false;    ///< some binary only in Constraint is penalized
+ bool f_Seeded = false;  ///< add_solution() seeded the pool since compute()
 
  int MaxThread;   ///< threads spawned by the consensus recovery
 
@@ -964,7 +988,10 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * value is not better than the bound the Lagrangian Dual gives, no
   * feasible point being able to beat it. A point that is not is discarded
   * rather than handed over, since whoever asks the solver for a solution
-  * takes it as feasible and its value as a bound. */
+  * takes it as feasible and its value as a bound. With \p check_bound false
+  * the value is not compared with the bound, which is what one wants before
+  * compute() has run and no bound is known (say, in add_solution()): only
+  * the rows of f_Block are then checked. */
 
  bool is_recovered_feasible( double value , bool check_bound = true );
 

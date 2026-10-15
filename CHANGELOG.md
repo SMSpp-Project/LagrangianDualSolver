@@ -11,9 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `PrimalProximalHeur::add_solution()`, which records the point the
   Variable of the Block currently hold as a solution, after checking that it
-  satisfies the rows of the Block; the best solution so far is given as a
-  MIP start to the `MILPSolver` of the primal recovery, and the reason why a
-  solver takes none is logged
+  satisfies the rows of the Block; with `intRecoveryMIPStart` the best
+  solution so far is given as a MIP start to the `MILPSolver` of the primal
+  recovery, and the reason why a solver takes none is logged
+- `PrimalProximalHeur` parameter `intPenConstrBins`, which applies the
+  proximal penalty also to the binary Variable that only appear in the
+  Constraint of a sub-Block (say, routing Variable whose cost is not in the
+  objective), adding them to its Objective Function; a sub-Block that does
+  not accept them (say, `ThermalUnitBlock`) throws, hence the default (0)
+  keeps the penalty on the binary Variable of the Objective only
 - `LagrangianDualRelaxationSolver` chooses the variable to branch upon by the
   components of BranchAndXSolver (`BranchingRule.h`): its candidates are
   described as `BranchCandidate` (the convexified solution as the point, the
@@ -24,12 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `PrimalProximalHeur` applies the proximal penalty also to the binary
-  Variable that only appear in the Constraint of a sub-Block (say, routing
-  Variable whose cost is not in the objective), which it skipped; a Block
-  with no Solution of its own is saved as a `ColVariableSolution`, and a
-  recovered point is compared with the bound of the Lagrangian Dual up to
-  the accuracy that dual was solved with
+- `PrimalProximalHeur` saves a Block with no Solution of its own as a
+  `ColVariableSolution`, and compares a recovered point with the bound of
+  the Lagrangian Dual up to the accuracy that dual was solved with
 - `LagrangianDualSolver::get_dual_solution()` solves a component again at
   the multipliers only if `compute()` has not stopped on a time or
   iteration limit, within the time it has left, and never again for a
