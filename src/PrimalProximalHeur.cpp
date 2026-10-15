@@ -70,6 +70,7 @@
 #include <exception>
 
 #include <functional>
+#include <set>
 
 #include <mutex>
 
@@ -136,6 +137,7 @@ void PrimalProximalHeur::initialize( void )
          << ", R = " << R << ", logVerb = " << logVerb << std::endl;
 
  NumStatVar = 0;
+ f_PenConstr = false;
 
  const auto n_sub = f_Block->get_number_nested_Blocks();
  pos_id_sbi.resize( n_sub );
@@ -198,21 +200,82 @@ void PrimalProximalHeur::initialize( void )
 
   pos_id = 0;
 
+  // the Variable that are in some Constraint of the sub-Block: the
+  // Constraint are scanned, and whatever Variable their Function depend on
+  // is collected
+  std::set< const ColVariable * > constr_vars;
+  sbi->for_each_constraint_group( [ & ]( const BaseGroup & group ) {
+     group.for_each_as< FRowConstraint >( [ & ]( FRowConstraint & con ) {
+       if( auto fn = con.get_function() )
+        for( Index i = 0 ; i < fn->get_num_active_var() ; ++i )
+         if( auto cv = dynamic_cast< const ColVariable * >(
+                                                  fn->get_active_var( i ) ) )
+          constr_vars.insert( cv );
+       } );
+     } );
+
+  // helper: add a Variable, with zero coefficients, to the Objective
+  // Function of the sub-Block, and tell the Block; returns false, leaving
+  // the Function as it was, if the Block refuses (by throwing). Function
+  // append the Variable to themselves before telling the Block, which
+  // therefore has changed nothing when it refuses, so it is enough to take
+  // the Variable out again without telling anyone.
+  auto add_to_objective = [ & ]( ColVariable * pv ) -> bool {
+   const auto chnl = sbi->open_channel();
+   const auto mp = Observer::make_par( eModBlck , chnl );
+   bool ok = true;
+   try {
+    if( is_linear[ index ] )
+     static_cast< p_LF >( fobj )->add_variable( pv , 0.0 , mp );
+    else
+     static_cast< p_DQF >( fobj )->add_variable( pv , 0.0 , 0.0 , mp );
+    }
+   catch( std::exception & ) {
+    ok = false;
+    const auto last = fobj->get_num_active_var() - 1;
+    if( is_linear[ index ] )
+     static_cast< p_LF >( fobj )->remove_variable( last , eNoMod );
+    else
+     static_cast< p_DQF >( fobj )->remove_variable( last , eNoMod );
+    }
+   sbi->close_channel( chnl );
+   return( ok );
+   };
+
   // helper: register a single binary ColVariable into the sub-Block's
   // dictionaries — read the coefficients off the inner objective Function,
   // zero-clamp tiny linear coefficients to keep the proximal term clean.
   // Variables not currently present in the inner objective, i.e., binaries
   // that only appear in the Constraint of the sub-Block (say, the routing
   // Variable of a Block whose cost is a function of continuous Variable
-  // only), are registered as well, with zero coefficients: the proximal
-  // penalty is applied to them too, add_penalty_terms() putting them in the
-  // inner objective with add_variable() when the penalty is switched on.
-  // (A leaf Block whose objective has a fixed physical layout and cannot
-  // take new Variable in it will not get the penalty on those Variable
-  // accepted: such a Block should not be used with PPH.)
+  // only), are registered as well, with zero coefficients, provided that
+  // the Block takes them in its Objective Function: this is asked to it by
+  // actually adding them there (see add_to_objective()), and a Block that
+  // refuses, say one with a fixed physical layout of its Objective, has
+  // them left out of the penalty, as they have always been.
   auto register_binvar = [ & ]( ColVariable * pv ) {
    const auto i_in_obj = fobj->is_active( pv );
    const bool in_obj = i_in_obj < fobj->get_num_active_var();
+   // not in the Objective: left out of the penalty (as it has always been,
+   // since adding it to the Objective Function is not supported by every
+   // Block), unless the Variable is in some Constraint of the sub-Block, so
+   // that it matters, and the Block accepts it in its Objective, which is asked to it by actually adding
+   // the Variable there (with a zero coefficient, that the penalty will
+   // then change): a Block that does not take it, say one with a fixed
+   // physical layout of its Objective, says so by throwing, and the
+   // Variable is then left out of the penalty
+   if( ! in_obj ) {
+    if( ! constr_vars.count( pv ) )
+     return;
+    if( ! add_to_objective( pv ) ) {
+     LOG_VERB( 2 )
+      *f_log << "PrimalProximalHeur::initialize: a Variable of sub-Block "
+             << index << " is left out of the penalty, the Block does not "
+                         "take it in its Objective" << std::endl;
+     return;
+     }
+    f_PenConstr = true;   // some Variable only in Constraint is penalized
+    }
    double c1 = 0;
    double c2 = 0;
    // which of the two it is was settled above by the type of the Function:
@@ -271,6 +334,7 @@ void PrimalProximalHeur::set_par( idx_type par , int value )
   case( intMaxIter ):    maxIter = value; break;
   case( intMaxSol ):     f_MaxSol = value; break;
   case( intUseWarmStartPSol ): UseWSPSol = value; break;
+  case( intRecoveryMIPStart ):  RecMIPStart = ( value != 0 ); break;
   case( intMaxThread ):  MaxThread = value; break;
   case( intLogVerb ):
    logVerb = value & 3;
@@ -546,11 +610,13 @@ int PrimalProximalHeur::compute( bool changedvars )
   *f_log << "PrimalProximalHeur::compute: NumStatVar = " << NumStatVar
          << std::endl;
 
- // the best value so far is that of the best solution in the pool, if any
- // (say, one seeded with add_solution()), and none otherwise
- best_bound = v_best_sol.empty() ? ( f_max ? - Inf< double >() :
-                                             Inf< double >() )
-                                 : v_best_sol.front().second;
+ // the best value so far is none, unless add_solution() has seeded the pool
+ // since the last compute(), in which case it is that of the best solution
+ // in it
+ best_bound = ( f_Seeded && ( ! v_best_sol.empty() ) )
+              ? v_best_sol.front().second
+              : ( f_max ? - Inf< double >() : Inf< double >() );
+ f_Seeded = false;
  valid_bound = f_max ? Inf< double >() : - Inf< double >();
  other_bound = - valid_bound;
 
@@ -1153,7 +1219,8 @@ bool PrimalProximalHeur::is_recovered_feasible( double value ,
   // the bound of the Lagrangian Dual is not known to more than the relative
   // accuracy the dual was solved with, so a feasible point cannot be told
   // to be past it by less than that
-  const auto slack = std::abs( bound ) * std::max( 1e-9 , double( RelAcc ) );
+  const auto slack = std::abs( bound ) *
+                     ( f_PenConstr ? std::max( 1e-9 , double( RelAcc ) ) : 1e-9 );
   if( f_max ? ( value > bound + slack ) : ( value < bound - slack ) ) {
    LOG_VERB( 2 )
     *f_log << "  the recovered point is worth " << value
@@ -1265,7 +1332,7 @@ bool PrimalProximalHeur::recover_primal( double & cost )
   // problem: it is the MIP start of the recovery (of no use to a restriction
   // that fixes the binaries elsewhere, which the solver then ignores, but
   // it is for the last attempt, which fixes none)
-  if( ! v_best_sol.empty() )
+  if( RecMIPStart && ( ! v_best_sol.empty() ) )
    if( auto milp = dynamic_cast< MILPSolver * >( recovery ) )
     give_mip_start( milp , f_Block , v_best_sol.front().first );
 
@@ -1517,6 +1584,7 @@ bool PrimalProximalHeur::add_solution( void )
  std::make_heap( v_best_sol.begin() , v_best_sol.end() , sol_cmp );
 
  best_bound = v_best_sol.front().second;
+ f_Seeded = true;
  worst_bound = best_bound;
  for( const auto & s : v_best_sol )
   worst_bound = f_max ? std::min( worst_bound , s.second )

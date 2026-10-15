@@ -116,6 +116,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * the original problem, and stronger than the one of the continuous
    * relaxation. */
 
+  intRecoveryMIPStart ,
+  ///< give the primal recovery the best solution found as a MIP start
+  /**< If nonzero, each restricted problem the primal recovery solves with a
+   * MILPSolver gets the best solution in the pool of PrimalProximalHeur as a
+   * MIP start (it helps the last attempt, which fixes no binary Variable; the
+   * others ignore a start that is not compatible with their fixings). Off by
+   * default. */
+
   intLastPPHPar   ///< first allowed new int parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of int algorithmic parameters. */
@@ -182,6 +190,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   maxIter   = Solver::get_dflt_int_par( intMaxIter );
   f_MaxSol  = get_dflt_int_par( intMaxSol );
   UseWSPSol = get_dflt_int_par( intUseWarmStartPSol );
+  RecMIPStart  = get_dflt_int_par( intRecoveryMIPStart );
   MaxThread = Solver::get_dflt_int_par( intMaxThread );
   R         = get_dflt_dbl_par( dbl_penaltyFactor );
   RelAcc    = Solver::get_dflt_dbl_par( dblRelAcc );
@@ -241,6 +250,20 @@ class PrimalProximalHeur : public LagrangianDualSolver
   *
   * - intUseWarmStartPSol [0]: whether the primal solution of the warm
   *                 start is the proximal center of the first iteration.
+  *
+  * - intRecoveryMIPStart [0]: whether the restricted problems of the primal
+  *                 recovery are given the best solution found so far as a MIP
+  *                 start (to the MILPSolver that take one).
+  *
+  * Besides the Variable in the Objective of a sub-Block, the proximal
+  * penalty is applied to the binary Variable that are in its Constraint but
+  * not in its Objective (say, the routing Variable of a Block whose cost only
+  * depends on continuous Variable). They are found by scanning the
+  * Constraint of the sub-Block, and each is added to the Objective Function
+  * of the sub-Block, which is how the Block is asked whether it accepts it:
+  * a Block with a fixed physical layout of its Objective (say,
+  * ThermalUnitBlock) refuses, and the Variable is then left out of the
+  * penalty.
   *
   * - intMaxThread [0]: maximum number of threads that compute() spawns,
   *                 besides the one calling it, to solve the components in
@@ -580,6 +603,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
   switch( par ) {
    case( intUseWarmStartPSol ): return( 0 );
+   case( intRecoveryMIPStart ):  return( 0 );
    case( intLogVerb ):          return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_int_par( par ) );
@@ -617,6 +641,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
                                   << 4 ) );
    case( intMaxIter ):  return( maxIter );
    case( intUseWarmStartPSol ): return( UseWSPSol );
+   case( intRecoveryMIPStart ):  return( RecMIPStart ? 1 : 0 );
    case( intMaxThread ):        return( MaxThread );
    }
   return( LagrangianDualSolver::get_int_par( par ) );
@@ -639,6 +664,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
   const override {
   if( name == "intUseWarmStartPSol" )
    return( intUseWarmStartPSol );
+  if( name == "intRecoveryMIPStart" )
+   return( intRecoveryMIPStart );
   return( LagrangianDualSolver::int_par_str2idx( name ) );
   }
 
@@ -656,8 +683,11 @@ class PrimalProximalHeur : public LagrangianDualSolver
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
   static const std::string _ws = "intUseWarmStartPSol";
+  static const std::string _rms = "intRecoveryMIPStart";
   if( idx == intUseWarmStartPSol )
    return( _ws );
+  if( idx == intRecoveryMIPStart )
+   return( _rms );
   return( LagrangianDualSolver::int_par_idx2str( idx ) );
   }
 
@@ -753,6 +783,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
  Index f_MaxSol;  ///< maximum number of Solution to keep
 
  int UseWSPSol;   ///< whether the warm-start primal is the first center
+ bool RecMIPStart = false;  ///< give the primal recovery a MIP start
+ bool f_PenConstr = false;  ///< a Variable that only is in Constraint is in the penalty
+ bool f_Seeded = false;      ///< add_solution() has seeded the pool since the last compute()
 
  int MaxThread;   ///< threads spawned by the consensus recovery
 
