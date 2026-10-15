@@ -2271,14 +2271,24 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
   return;                 // all done
 
  // the Lagrangian variable of the pos-th relaxed constraint, the static ones
- // first and then the dynamic ones
- const auto multiplier = [ this ]( Index pos ) -> ColVariable * {
+ // first and then the dynamic ones. These sit in a std::list, hence their
+ // addresses are taken once, at the first use, so that each call is O( 1 )
+ // rather than a walk along the list; this is correct because all the calls
+ // come before the list is changed, which happens only when the multipliers
+ // of the removed constraints are removed, further below
+ std::vector< ColVariable * > dyn_mult;
+ const auto multiplier = [ this , & dyn_mult ]( Index pos ) -> ColVariable * {
   if( pos < static_cons )
    return( & ( *LagrDual->get_static_variable_v< ColVariable >(
 					      "Lambda_s" ) )[ pos ] );
-  return( & *std::next( LagrDual->get_dynamic_variable< ColVariable >(
-					      "Lambda_d" )->begin() ,
-			pos - static_cons ) );
+  if( dyn_mult.empty() ) {
+   auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
+   dyn_mult.reserve( Ld->size() );
+   for( auto & lambda : *Ld )
+    dyn_mult.push_back( & lambda );
+   }
+  assert( pos - static_cons < dyn_mult.size() );
+  return( dyn_mult[ pos - static_cons ] );
   };
 
  // the Lagrangian term of the pos-th relaxed constraint in the h-th

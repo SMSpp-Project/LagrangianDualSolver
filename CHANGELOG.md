@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is `LearnedBranching`; the choices are the same as before. The module
   therefore depends on BranchAndXSolver
 
+### Changed
+
+- the Modification of the relaxed constraints reach the multiplier of a
+  dynamic constraint in constant time, rather than by walking the list of
+  the dynamic multipliers at each access, which made a batch of changes
+  quadratic in the number of dynamic constraints
+
 ### Fixed
 
 - `PrimalProximalHeur` saves a Block with no Solution of its own as a
