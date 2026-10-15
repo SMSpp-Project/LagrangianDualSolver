@@ -55,9 +55,8 @@ include(BuildType)
 # look for the system-installed libraries.
 if (NOT hasParent)
     find_package(SMS++ REQUIRED)
-    # MILPSolver is needed by PrimalProximalHeur to warm-start the
-    # heuristic by solving the LP relaxation of f_Block; see the
-    # GRBMILPSolver include of src/PrimalProximalHeur.cpp.
+    # MILPSolver is needed by PrimalProximalHeur, which gives the MILPSolver
+    # of its primal recovery the best solution found so far as a MIP start.
     find_package(MILPSolver REQUIRED)
     # BranchAndXSolver holds the components with which
     # LagrangianDualRelaxationSolver chooses the variable to branch upon
