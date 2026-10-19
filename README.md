@@ -75,7 +75,10 @@ and the `LagrangianDualRelaxationSolver`, that derives from
 the nodes of a Branch-and-Bound (such as the `BranchAndXSolver`), branching on
 a variable that is fractional in the convexified solution: the most
 fractional one, the best one by strong branching, or the one that a model
-learned from the data of strong branching ranks first. Its variant
+learned from the data of strong branching ranks first. It may also give
+the estimates of the two children of each branching by the pseudocosts of
+the variables, for a best-estimate search, a variable never branched upon
+taking the pseudocosts that a model read from a file gives. Its variant
 `LagrangianDualRelaxationSolverML` learns that model while the
 Branch-and-Bound goes on, from the strong branching of its first nodes, by
 the Torch C++ API; it is in a library of its own,

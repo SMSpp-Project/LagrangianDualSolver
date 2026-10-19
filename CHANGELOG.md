@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   strong branching is `StrongBranching` on the children it solves, eLearned
   is `LearnedBranching`; the choices are the same as before. The module
   therefore depends on BranchAndXSolver
+- `LagrangianDualRelaxationSolver` gives the estimates of the children of
+  each branching (it is a `BranchEstimator` of BranchAndXSolver), for the
+  best-estimate search of the BranchAndXSolver: with `intBranchEstimate` 1
+  they are those of the pseudocosts of the variables (`PseudoCosts`),
+  learned from the bound of each child solved right after its parent and
+  from the children of strong branching, a variable with no observation
+  taking the prior of `strEstimateModel` (`LearnedPseudoCosts`) or the mean
+  of the others; with the default 0 it gives none, and nothing changes
 
 ### Changed
 
