@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is `LearnedBranching`; the choices are the same as before. The module
   therefore depends on BranchAndXSolver
 
+- the C++20 module `smspp.lagrangiandualsolver`
+  (`src/LagrangianDualSolver.cppm`), which exports every name that the
+  headers declare at namespace scope and re-exports `smspp.branchandxsolver`
+  and `smspp.milpsolver`, so that a source file can write `import
+  smspp.lagrangiandualsolver;` in place of the `#include` of the headers; it
+  is built with the CMake option `SMSpp_BUILD_MODULE`, as the target
+  `SMS++::LagrangianDualSolver_module`. `LagrangianDualRelaxationSolverML`,
+  which needs Torch, is not in it
+
 ### Changed
 
 - the Modification of the relaxed constraints reach the multiplier of a
