@@ -303,6 +303,7 @@ void PrimalProximalHeur::set_par( idx_type par , int value )
   case( intUseWarmStartPSol ): UseWSPSol = value; break;
   case( intRecoveryMIPStart ):  RecMIPStart = ( value != 0 ); break;
   case( intPenConstrBins ):     PenConstrBins = ( value != 0 ); break;
+  case( intNoRecoveryIfFeasible ): NoRecIfFeas = ( value != 0 ); break;
   case( intMaxThread ):  MaxThread = value; break;
   case( intLogVerb ):
    logVerb = value & 3;
@@ -772,7 +773,8 @@ int PrimalProximalHeur::compute( bool changedvars )
        *f_log << "  (event) IS_FEASIBLE_SOL: " << value_FUNCTION
               << std::endl;
       double rec_cost;
-      if( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) )
+      if( direct_feasible( rec_cost ) ||
+          ( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) ) )
        record_feasible( rec_cost );
       }
      else LOG_VERB( 2 )
@@ -901,7 +903,8 @@ int PrimalProximalHeur::compute( bool changedvars )
    LOG_VERB( 2 )
     *f_log << "  IS_FEASIBLE_SOL" << std::endl;
    double rec_cost;
-   if( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) )
+   if( direct_feasible( rec_cost ) ||
+          ( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) ) )
     record_feasible( rec_cost );
    }
   else LOG_VERB( 2 )
@@ -1015,7 +1018,8 @@ int PrimalProximalHeur::compute( bool changedvars )
  // bound. If the restricted problem is infeasible the point is discarded.
  {
   double rec_cost;
-  if( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) )
+  if( direct_feasible( rec_cost ) ||
+          ( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) ) )
    record_feasible( rec_cost );
   }
 
@@ -1226,6 +1230,26 @@ bool PrimalProximalHeur::is_recovered_feasible( double value ,
   return( false );
   }
 
+ return( true );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::direct_feasible( double & cost )
+{
+ if( ! NoRecIfFeas )
+  return( false );
+
+ // the true cost of the point as it is [see solution_value()], accepted if
+ // it passes the test the recovered points pass
+ const double value = solution_value();
+ if( ! is_recovered_feasible( value ) )
+  return( false );
+
+ LOG_VERB( 2 )
+  *f_log << "  the point is feasible, no recovery: cost = " << value
+         << std::endl;
+ cost = value;
  return( true );
  }
 

@@ -133,6 +133,18 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * Objective, say ThermalUnitBlock, does not, and throws). If zero (the
    * default), only the binary Variable in the Objective are penalized. */
 
+  intNoRecoveryIfFeasible ,
+  ///< skip the primal recovery when the point already is a feasible one
+  /**< If nonzero, before each primal recovery (at an iteration, and the final
+   * one) the point the Variable hold is measured the way the recovered ones
+   * are [see is_recovered_feasible()]: if it passes (every row of the Block,
+   * including those the Lagrangian Dual dualizes, is satisfied, and its cost
+   * is not below the bound of the dual), its true cost is recorded and the
+   * recovery is not run; only when it does not pass is the recovery run, as
+   * usual. The recovery would in general leave the point feasible with a cost
+   * no larger, since it fixes the binaries and optimizes the rest, so this
+   * trades some quality of the bound for time. Off by default. */
+
   intLastPPHPar   ///< first allowed new int parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of int algorithmic parameters. */
@@ -201,6 +213,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   UseWSPSol = get_dflt_int_par( intUseWarmStartPSol );
   RecMIPStart  = get_dflt_int_par( intRecoveryMIPStart );
   PenConstrBins = get_dflt_int_par( intPenConstrBins );
+  NoRecIfFeas = get_dflt_int_par( intNoRecoveryIfFeasible );
   MaxThread = Solver::get_dflt_int_par( intMaxThread );
   R         = get_dflt_dbl_par( dbl_penaltyFactor );
   RelAcc    = Solver::get_dflt_dbl_par( dblRelAcc );
@@ -611,6 +624,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
    case( intUseWarmStartPSol ): return( 0 );
    case( intRecoveryMIPStart ):  return( 0 );
    case( intPenConstrBins ):     return( 0 );
+   case( intNoRecoveryIfFeasible ): return( 0 );
    case( intLogVerb ):          return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_int_par( par ) );
@@ -650,6 +664,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
    case( intUseWarmStartPSol ): return( UseWSPSol );
    case( intRecoveryMIPStart ):  return( RecMIPStart ? 1 : 0 );
    case( intPenConstrBins ):     return( PenConstrBins ? 1 : 0 );
+   case( intNoRecoveryIfFeasible ): return( NoRecIfFeas ? 1 : 0 );
    case( intMaxThread ):        return( MaxThread );
    }
   return( LagrangianDualSolver::get_int_par( par ) );
@@ -676,6 +691,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( intRecoveryMIPStart );
   if( name == "intPenConstrBins" )
    return( intPenConstrBins );
+  if( name == "intNoRecoveryIfFeasible" )
+   return( intNoRecoveryIfFeasible );
   return( LagrangianDualSolver::int_par_str2idx( name ) );
   }
 
@@ -695,12 +712,15 @@ class PrimalProximalHeur : public LagrangianDualSolver
   static const std::string _ws = "intUseWarmStartPSol";
   static const std::string _rms = "intRecoveryMIPStart";
   static const std::string _pcb = "intPenConstrBins";
+  static const std::string _nrf = "intNoRecoveryIfFeasible";
   if( idx == intUseWarmStartPSol )
    return( _ws );
   if( idx == intRecoveryMIPStart )
    return( _rms );
   if( idx == intPenConstrBins )
    return( _pcb );
+  if( idx == intNoRecoveryIfFeasible )
+   return( _nrf );
   return( LagrangianDualSolver::int_par_idx2str( idx ) );
   }
 
@@ -808,6 +828,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
  int UseWSPSol;   ///< whether the warm-start primal is the first center
  bool RecMIPStart = false;  ///< give the primal recovery a MIP start
  bool PenConstrBins = false;  ///< penalize the binaries only in Constraint
+ bool NoRecIfFeas = false;    ///< skip the recovery if the point is feasible
  bool f_PenConstr = false;    ///< some binary only in Constraint is penalized
  bool f_Seeded = false;  ///< add_solution() seeded the pool since compute()
 
@@ -980,6 +1001,17 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * undone before returning, so it is invisible to any other Solver. */
 
  bool recover_primal( double & cost );
+
+/*--------------------------------------------------------------------------*/
+ /// the current point as a feasible solution, without recovery
+ /** If intNoRecoveryIfFeasible is set and the point the Variable of f_Block
+  * hold is feasible (every row of f_Block, the dualized ones included, and
+  * a value that is not below the bound of the dual: see
+  * is_recovered_feasible()), writes its true cost in \p cost and returns
+  * true; the point is left as it is. Otherwise returns false and the caller
+  * runs recover_primal(). */
+
+ bool direct_feasible( double & cost );
 
 /*--------------------------------------------------------------------------*/
  /// whether what recover_primal() has left in f_Block can be recorded
