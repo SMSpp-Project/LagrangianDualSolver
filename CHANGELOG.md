@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the makefiles build the C++20 module `smspp.lagrangiandualsolver` when
+  `SMSppMOD` is not empty (e.g., `make SMSppMOD=1`), with clang++ 16 or
+  later [see `lib/makefile-mod` of SMS++]
+
 - `PrimalProximalHeur::add_solution()`, which records the point the
   Variable of the Block currently hold as a solution, after checking that it
   satisfies the rows of the Block; with `intRecoveryMIPStart` the best
@@ -39,12 +43,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `SMSpp_BUILD_MODULE` no longer stops the configuration when the C++20
+  module cannot be built, i.e., with a CMake older than 3.28, a generator
+  other than Ninja or Visual Studio, a compiler other than Clang 16 (with
+  `clang-scan-deps`) or MSVC 19.34, or a module it imports that is not
+  there: the option is turned off with a warning that says why, and the
+  build goes on with the headers [see `cmake/CheckModule.cmake` of SMS++]
+
 - the Modification of the relaxed constraints reach the multiplier of a
   dynamic constraint in constant time, rather than by walking the list of
   the dynamic multipliers at each access, which made a batch of changes
   quadratic in the number of dynamic constraints
 
 ### Fixed
+
+- `makefile-c` adds the objects, the headers, the -I and the libraries of
+  BranchAndXSolver to those of the module, as `makefile-s` does, so that
+  whatever is compiled with `$(LgDSLVINC)` finds the headers that
+  `LagrangianDualRelaxationSolver.h` includes
 
 - `PrimalProximalHeur` saves a Block with no Solution of its own as a
   `ColVariableSolution`, and compares a recovered point with the bound of

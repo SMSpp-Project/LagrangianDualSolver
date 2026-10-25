@@ -52,6 +52,12 @@ ifdef LgDSLVML
     LgDSLVH += $(LgDSLVSDR)/include/LagrangianDualRelaxationSolverML.h
 endif
 
+# the C++20 module smspp.lagrangiandualsolver - - - - - - - - - - - - - - - -
+# [see makefile-mod of SMS++]
+
+$(eval $(call SMSppMODrule,LgDSLV,$(LgDSLVSDR),LagrangianDualSolver,\
+	smspp.lagrangiandualsolver,$(BAXSLVMOD) $(MILPSMOD)))
+
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::

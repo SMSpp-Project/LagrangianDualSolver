@@ -64,12 +64,12 @@ include $(LgDSLVSDR)/makefile
 
 # append external stuff defined in the other makefiles to LgDSLVOBJ,
 # LgDSLVINC and LgDSLVH, thus the := assignment has to be used (use GNU make)
-LgDSLVOBJ := $(LgDSLVOBJ) $(MILPSOBJ)
-LgDSLVINC := $(LgDSLVINC) $(MILPSINC) $(libTorchINC)
-LgDSLVH := $(LgDSLVH) $(MILPSH)
+LgDSLVOBJ := $(LgDSLVOBJ) $(MILPSOBJ) $(BAXSLVOBJ)
+LgDSLVINC := $(LgDSLVINC) $(MILPSINC) $(BAXSLVINC) $(libTorchINC)
+LgDSLVH := $(LgDSLVH) $(MILPSH) $(BAXSLVH)
 
 # external libraries for LagrangianDualSolver (those of MILPSolver, and
 # Torch for LagrangianDualRelaxationSolverML)
-LgDSLVLIB = $(MILPSLIB) $(libTorchLIB)
+LgDSLVLIB = $(MILPSLIB) $(BAXSLVLIB) $(libTorchLIB)
 
 ############################ End of makefile #################################
