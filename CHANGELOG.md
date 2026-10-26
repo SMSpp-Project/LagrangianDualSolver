@@ -25,30 +25,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not accept them (say, `ThermalUnitBlock`) throws, hence the default (0)
   keeps the penalty on the binary Variable of the Objective only
 - `LagrangianDualRelaxationSolver` chooses the variable to branch upon by the
-  components of BranchAndXSolver (`BranchingRule.h`): its candidates are
+  components of the core (`BranchingRule.h` of SMS++): its candidates are
   described as `BranchCandidate` (the convexified solution as the point, the
   Lagrangian solution as the second point, the sub-Blocks as the blocks),
   strong branching is `StrongBranching` on the children it solves, eLearned
-  is `LearnedBranching`; the choices are the same as before. The module
-  therefore depends on BranchAndXSolver
+  is `LearnedBranching`; the choices are the same as before
+- `LagrangianDualRelaxationSolver` gives the estimates of the children of
+  each branching (it is a `BranchEstimator`, see `BranchingRule.h` of
+  SMS++), for a best-estimate search such as that of BranchAndXSolver: with
+  `intBranchEstimate` 1 they are those of the pseudocosts of the variables
+  (`PseudoCosts`), learned from the bound of each child solved right after
+  its parent and from the children of strong branching, a variable with no
+  observation taking the prior of `strEstimateModel` (`LearnedPseudoCosts`)
+  or the mean of the others; with the default 0 it gives none, and nothing
+  changes
 
 - the C++20 module `smspp.lagrangiandualsolver`
   (`src/LagrangianDualSolver.cppm`), which exports every name that the
-  headers declare at namespace scope and re-exports `smspp.branchandxsolver`
-  and `smspp.milpsolver`, so that a source file can write `import
-  smspp.lagrangiandualsolver;` in place of the `#include` of the headers; it
-  is built with the CMake option `SMSpp_BUILD_MODULE`, as the target
-  `SMS++::LagrangianDualSolver_module`. `LagrangianDualRelaxationSolverML`,
-  which needs Torch, is not in it
+  headers declare at namespace scope and re-exports `smspp.milpsolver`, so
+  that a source file can write `import smspp.lagrangiandualsolver;` in place
+  of the `#include` of the headers; it is built with the CMake option
+  `SMSpp_BUILD_MODULE`, as the target `SMS++::LagrangianDualSolver_module`.
+  `LagrangianDualRelaxationSolverML`, which needs Torch, is not in it
 
 ### Changed
-
-- `BranchingRule.h` (`BranchingFeatures`, `StrongBranching`,
-  `LearnedBranching`), the components with which
-  `LagrangianDualRelaxationSolver` chooses the variable to branch upon, are
-  here and no longer in BranchAndXSolver, on which LagrangianDualSolver then
-  no longer depends (CMake, the package configuration file, the makefiles,
-  the C++20 module and the pipeline)
 
 - the pipeline builds the module also with its makefiles, after CMake, and
   runs on a change of the makefiles too [see `ci/makefile` of the umbrella]
@@ -66,11 +66,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quadratic in the number of dynamic constraints
 
 ### Fixed
-
-- `makefile-c` adds the objects, the headers, the -I and the libraries of
-  BranchAndXSolver to those of the module, as `makefile-s` does, so that
-  whatever is compiled with `$(LgDSLVINC)` finds the headers that
-  `LagrangianDualRelaxationSolver.h` includes
 
 - `PrimalProximalHeur` saves a Block with no Solution of its own as a
   `ColVariableSolution`, and compares a recovered point with the bound of

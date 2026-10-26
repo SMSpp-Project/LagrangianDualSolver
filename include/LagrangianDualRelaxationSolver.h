@@ -37,6 +37,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 #include "AbstractChange.h"
@@ -119,6 +120,27 @@ class LagrangianChange : public AbstractChange {
   }
 
 /*--------------------------------------------------------------------------*/
+ /// the branching that produced the LagrangianChange, as the pseudocosts
+ /// need it [see LagrangianDualRelaxationSolver::intBranchEstimate]
+
+ struct Branching {
+  Block::Index k;     ///< the index of the variable among the binary ones
+  int dir;            ///< 0 for the "down" child, 1 for the "up" one
+  double moved;       ///< how much the value of the variable moves
+  double node;        ///< the bound of the node that branched
+  };
+
+ /// set the branching that produced this LagrangianChange
+
+ void set_branching( const Branching & b ) { f_branching = b; }
+
+ /// the branching that produced this LagrangianChange, if it was recorded;
+ /// the LagrangianChange that undo another one carry none
+
+ [[nodiscard]] const std::optional< Branching > & get_branching( void )
+  const { return( f_branching ); }
+
+/*--------------------------------------------------------------------------*/
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -140,6 +162,7 @@ class LagrangianChange : public AbstractChange {
  private:
 
  std::shared_ptr< const Center > f_center;  ///< see get_center()
+ std::optional< Branching > f_branching;   ///< see get_branching()
 
  SMSpp_insert_in_factory_h;  // insert LagrangianChange in the factory
 
@@ -178,10 +201,20 @@ class LagrangianChange : public AbstractChange {
  *   ceil( v ); the columns of the global pool of the LagBFunction that the
  *   fixing makes infeasible are kept in the GlobalInformation [see
  *   set_global_information()], and given back to the LagBFunction when the
- *   variable is unfixed. */
+ *   variable is unfixed.
+ *
+ * As a BranchEstimator [see BranchingRule.h], it may also give the
+ * estimates of the best value under the two children of each branch()
+ * [see intBranchEstimate], by the pseudocosts of the variables: these are
+ * learned from the bound of each child that is solved after its parent
+ * branched, and from the bounds of the children that strong branching
+ * computes, while a variable never branched upon takes the prior that a
+ * model read from a file gives [see strEstimateModel], or the mean of the
+ * others. */
 
 class LagrangianDualRelaxationSolver : public RelaxationSolver ,
-				       public PrimalProximalHeur {
+				       public PrimalProximalHeur ,
+				       public BranchEstimator {
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
@@ -244,12 +277,18 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   of eLearned, which picks the one a model learned from the data of
   *   strong branching ranks first [see strBranchModel]; eOnline learns that
   *   model while the search goes on, and is only handled by
-  *   LagrangianDualRelaxationSolverML, which needs Torch. */
+  *   LagrangianDualRelaxationSolverML, which needs Torch;
+  *
+  * - intBranchEstimate [0]: whether branch_estimates() gives the estimates
+  *   of the children of each branch() [see PseudoCosts]: 0 gives none, so
+  *   that a best-estimate search orders the nodes by their bounds, and 1
+  *   gives those of the pseudocosts, which are then learned. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
   intBranchStrategy ,                 ///< how the branching variable is chosen
   intStrongCands ,                    ///< candidates of strong branching
+  intBranchEstimate ,                 ///< the estimates of the children
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
   };
 
@@ -278,11 +317,20 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   are fixed, its rank by fractionality over the number of candidates
   *   less one), written as the line "LBRModel <nin> <nhid>", the nhid rows
   *   of nin weights of the hidden layer, its nhid biases, the nhid weights
-  *   of the output and its bias. */
+  *   of the output and its bias;
+  *
+  * - strEstimateModel [""]: the file of the priors of the pseudocosts with
+  *   intBranchEstimate == 1, i.e., the pseudocosts that a variable never
+  *   branched upon takes, "down" and "up": two models in the format of
+  *   strBranchModel, one after the other, on the same features, giving
+  *   them over max{ |L| , 1 } for the bound L of the node [see
+  *   LearnedPseudoCosts]; with the empty string such a variable takes the
+  *   mean of the pseudocosts of the others. */
 
  enum str_par_type_LDRS {
   strStrongLog = strLastPPHPar ,  ///< the file of the strong branching data
   strBranchModel ,                ///< the file of the model of eLearned
+  strEstimateModel ,              ///< the priors of the pseudocosts
   strLastLDRSPar      ///< first allowed new str parameter for derived classes
   };
 
@@ -468,6 +516,13 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  std::vector< Change * > branch( void ) override;
 
+ /// the estimates of the two children of the last branch() [see
+ /// intBranchEstimate], none if intBranchEstimate == 0
+
+ std::vector< double > branch_estimates( void ) override {
+  return( f_estimates );
+  }
+
  /// apply a LagrangianChange [see intApplyStrategy]
 
  Change * apply( Change * change , bool doUndo = false ) override;
@@ -526,6 +581,14 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   * order of candidates(). */
 
  std::vector< Features > features( const std::vector< Cand > & cands ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// the estimates of the "down" and of the "up" child of the candidate of
+ /// index k among the binary variables, by the pseudocosts of the
+ /// candidates [see intBranchEstimate]
+
+ std::vector< double > estimates( const std::vector< Cand > & cands ,
+				  Index k );
 
 /*--------------------------------------------------------------------------*/
  /// strong branching on the candidates [see intBranchStrategy]
@@ -641,9 +704,26 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  int f_apply_strategy = eMaster;           ///< intApplyStrategy
  std::string f_branch_model;               ///< strBranchModel
  std::vector< std::string > f_branch_groups; ///< vstrBranchGroups
+ int f_branch_estimate = 0;                ///< intBranchEstimate
+ std::string f_estimate_model;             ///< strEstimateModel
 
  /// the model of eLearned, read from strBranchModel at its first use
  LearnedBranching f_model;
+
+ /// the pseudocosts of the binary variables, by their index k
+ PseudoCosts f_pc;
+
+ /// the priors of the pseudocosts, read from strEstimateModel at its first
+ /// use
+ LearnedPseudoCosts f_pc_model;
+
+ /// the branching of the LagrangianChange applied last, if it recorded one
+ /// [see LagrangianChange::get_branching()], whose child the next compute()
+ /// solves, so that its bound is an observation of the pseudocosts
+ std::optional< LagrangianChange::Branching > f_pending;
+
+ /// the estimates of the children of the last branch()
+ std::vector< double > f_estimates;
 
  /// the multipliers taken by the last branch(), if no node has been solved
  /// since then, so that they are still those of the inner Solver [see

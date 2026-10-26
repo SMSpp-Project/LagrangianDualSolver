@@ -36,15 +36,13 @@
 
 LgDSLVOBJ = $(LgDSLVSDR)/obj/LagrangianDualSolver.o \
 	$(LgDSLVSDR)/obj/PrimalProximalHeur.o \
-	$(LgDSLVSDR)/obj/LagrangianDualRelaxationSolver.o \
-	$(LgDSLVSDR)/obj/BranchingRule.o
+	$(LgDSLVSDR)/obj/LagrangianDualRelaxationSolver.o
 
 LgDSLVINC = -I$(LgDSLVSDR)/include
 
 LgDSLVH   = $(LgDSLVSDR)/include/LagrangianDualSolver.h \
 	$(LgDSLVSDR)/include/PrimalProximalHeur.h \
-	$(LgDSLVSDR)/include/LagrangianDualRelaxationSolver.h \
-	$(LgDSLVSDR)/include/BranchingRule.h
+	$(LgDSLVSDR)/include/LagrangianDualRelaxationSolver.h
 
 # LagrangianDualRelaxationSolverML requires Torch: it is only compiled if
 # $(LgDSLVML) is set (see makefile-c / makefile-s), in which case
@@ -91,10 +89,5 @@ $(LgDSLVSDR)/obj/LagrangianDualRelaxationSolverML.o: \
 	$(CC) -c $(LgDSLVSDR)/src/LagrangianDualRelaxationSolverML.cpp -o $@ \
 	$(LgDSLVINC) $(SMS++INC) $(MILPSINC) $(libTorchINC) $(SW)
 endif
-
-$(LgDSLVSDR)/obj/BranchingRule.o: \
-	$(LgDSLVSDR)/src/BranchingRule.cpp $(LgDSLVSDR)/include/BranchingRule.h
-	$(CC) -c $(LgDSLVSDR)/src/BranchingRule.cpp -o $@ \
-	$(LgDSLVINC) $(SW)
 
 ########################## End of makefile ###################################

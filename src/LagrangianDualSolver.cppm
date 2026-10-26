@@ -47,12 +47,6 @@ export import smspp.milpsolver;
 
 export namespace SMSpp_di_unipi_it {
 
- // BranchingRule.h
- using SMSpp_di_unipi_it::BranchCandidate;
- using SMSpp_di_unipi_it::BranchingFeatures;
- using SMSpp_di_unipi_it::LearnedBranching;
- using SMSpp_di_unipi_it::StrongBranching;
-
  // LagrangianDualRelaxationSolver.h
  using SMSpp_di_unipi_it::LagrangianChange;
  using SMSpp_di_unipi_it::LagrangianDualRelaxationSolver;

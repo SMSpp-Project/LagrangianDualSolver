@@ -71,6 +71,12 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par , int value )
   case( intApplyStrategy ):  f_apply_strategy = value;  break;
   case( intBranchStrategy ): f_branch_strategy = value; break;
   case( intStrongCands ):    f_strong_cands = value;    break;
+  case( intBranchEstimate ):
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::set_par: "
+				  "intBranchEstimate is neither 0 nor 1" ) );
+   f_branch_estimate = value;
+   break;
   default: PrimalProximalHeur::set_par( par , value );
   }
  }
@@ -83,6 +89,7 @@ int LagrangianDualRelaxationSolver::get_dflt_int_par( idx_type par ) const
   case( intApplyStrategy ):  return( eMaster );
   case( intBranchStrategy ): return( eMostFractional );
   case( intStrongCands ):    return( 10 );
+  case( intBranchEstimate ): return( 0 );
   default: return( PrimalProximalHeur::get_dflt_int_par( par ) );
   }
  }
@@ -95,6 +102,7 @@ int LagrangianDualRelaxationSolver::get_int_par( idx_type par ) const
   case( intApplyStrategy ):  return( f_apply_strategy );
   case( intBranchStrategy ): return( f_branch_strategy );
   case( intStrongCands ):    return( f_strong_cands );
+  case( intBranchEstimate ): return( f_branch_estimate );
   default: return( PrimalProximalHeur::get_int_par( par ) );
   }
  }
@@ -110,6 +118,8 @@ Solver::idx_type LagrangianDualRelaxationSolver::int_par_str2idx(
   return( intBranchStrategy );
  if( name == "intStrongCands" )
   return( intStrongCands );
+ if( name == "intBranchEstimate" )
+  return( intBranchEstimate );
  return( PrimalProximalHeur::int_par_str2idx( name ) );
  }
 
@@ -121,10 +131,12 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
  static const std::string apply = "intApplyStrategy";
  static const std::string branch = "intBranchStrategy";
  static const std::string cands = "intStrongCands";
+ static const std::string estimate = "intBranchEstimate";
  switch( par ) {
   case( intApplyStrategy ):  return( apply );
   case( intBranchStrategy ): return( branch );
   case( intStrongCands ):    return( cands );
+  case( intBranchEstimate ): return( estimate );
   default: return( PrimalProximalHeur::int_par_idx2str( par ) );
   }
  }
@@ -142,6 +154,11 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par ,
    f_model = LearnedBranching();  // read again at the next use
    }
  else
+  if( par == strEstimateModel ) {
+   f_estimate_model = std::move( value );
+   f_pc_model = LearnedPseudoCosts();  // read again at the next use
+   }
+ else
   PrimalProximalHeur::set_par( par , std::move( value ) );
  }
 
@@ -151,7 +168,8 @@ const std::string & LagrangianDualRelaxationSolver::get_dflt_str_par(
 						     idx_type par ) const
 {
  static const std::string empty;
- if( ( par == strStrongLog ) || ( par == strBranchModel ) )
+ if( ( par == strStrongLog ) || ( par == strBranchModel ) ||
+     ( par == strEstimateModel ) )
   return( empty );
  return( PrimalProximalHeur::get_dflt_str_par( par ) );
  }
@@ -165,6 +183,8 @@ const std::string & LagrangianDualRelaxationSolver::get_str_par(
   return( f_strong_log );
  if( par == strBranchModel )
   return( f_branch_model );
+ if( par == strEstimateModel )
+  return( f_estimate_model );
  return( PrimalProximalHeur::get_str_par( par ) );
  }
 
@@ -177,6 +197,8 @@ Solver::idx_type LagrangianDualRelaxationSolver::str_par_str2idx(
   return( strStrongLog );
  if( name == "strBranchModel" )
   return( strBranchModel );
+ if( name == "strEstimateModel" )
+  return( strEstimateModel );
  return( PrimalProximalHeur::str_par_str2idx( name ) );
  }
 
@@ -187,10 +209,13 @@ const std::string & LagrangianDualRelaxationSolver::str_par_idx2str(
 {
  static const std::string log = "strStrongLog";
  static const std::string model = "strBranchModel";
+ static const std::string emodel = "strEstimateModel";
  if( par == strStrongLog )
   return( log );
  if( par == strBranchModel )
   return( model );
+ if( par == strEstimateModel )
+  return( emodel );
  return( PrimalProximalHeur::str_par_idx2str( par ) );
  }
 
@@ -272,6 +297,16 @@ void LagrangianDualRelaxationSolver::set_global_information(
 int LagrangianDualRelaxationSolver::compute( bool changedvars )
 {
  const int status = PrimalProximalHeur::compute( changedvars );
+
+ // the bound of a child just after its parent branched is an observation
+ // of the pseudocost of the variable branched upon [see intBranchEstimate];
+ // an infeasible child (an infinite bound) is none
+ if( f_pending ) {
+  const auto & b = *f_pending;
+  f_pc.record( b.k , b.dir , b.moved , f_max ? b.node - valid_bound
+		                             : valid_bound - b.node );
+  f_pending.reset();
+  }
 
  // beyond the cutoff [see dblUpCutOff]: the node is fenced, which is what
  // whoever set the cutoff needs to know
@@ -360,10 +395,54 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
 {
  auto cands = candidates();
  ++f_n_branch;
- const Index c = choose( cands );
- return( branchings( cands[ c ].var , cands[ c ].value ) );
+ f_estimates.clear();
+ const auto all = f_branch_estimate ? cands : std::vector< Cand >();
+ const Index c = choose( cands );   // it may shorten cands
+ auto changes = branchings( cands[ c ].var , cands[ c ].value );
+ if( f_branch_estimate ) {
+  // the children record what their bound will tell of the pseudocosts,
+  // the "down" one first [see branchings()]
+  const Cand & cb = cands[ c ];
+  static_cast< LagrangianChange * >( changes[ 0 ] )->set_branching(
+		 { cb.k , 0 , cb.value - std::floor( cb.value ) , valid_bound } );
+  static_cast< LagrangianChange * >( changes[ 1 ] )->set_branching(
+		 { cb.k , 1 , std::ceil( cb.value ) - cb.value , valid_bound } );
+  f_estimates = estimates( all , cb.k );
+  }
+ return( changes );
 
  }  // end( LagrangianDualRelaxationSolver::branch )
+
+/*--------------------------------------------------------------------------*/
+
+std::vector< double > LagrangianDualRelaxationSolver::estimates(
+				    const std::vector< Cand > & cands , Index k )
+{
+ auto bc = describe( cands );
+ std::size_t b = bc.size();
+ for( std::size_t i = 0 ; i < bc.size() ; ++i ) {
+  bc[ i ].id = cands[ i ].k;    // the same variable at all the nodes
+  if( cands[ i ].k == k )
+   b = i;
+  }
+ if( b == bc.size() )
+  throw( std::logic_error( "LagrangianDualRelaxationSolver::estimates: the "
+			   "variable branched upon is not a candidate" ) );
+
+ PseudoCosts::Prior prior;
+ std::vector< Features > x;
+ if( ! f_estimate_model.empty() ) {
+  if( f_pc_model.empty() )
+   f_pc_model.load( f_estimate_model );
+  x = features( cands );
+  prior = [ & ]( std::size_t i ) {
+   return( f_pc_model.prior( x[ i ] , valid_bound ) );
+   };
+  }
+ const auto e = f_pc.estimates( bc , b , valid_bound , f_max , prior );
+ return( std::vector< double >{ e[ 0 ] , e[ 1 ] } );
+
+ }  // end( LagrangianDualRelaxationSolver::estimates )
 
 /*--------------------------------------------------------------------------*/
 
@@ -486,10 +565,22 @@ LagrangianDualRelaxationSolver::strong_branching(
   return( bounds );
   };
 
- return( StrongBranching::evaluate( describe( cands ) , children ,
-				    valid_bound , f_max ,
-				    ( f_log && ( logVerb >= 1 ) ) ?
-				    f_log : nullptr ) );
+ auto evals = StrongBranching::evaluate( describe( cands ) , children ,
+					 valid_bound , f_max ,
+					 ( f_log && ( logVerb >= 1 ) ) ?
+					 f_log : nullptr );
+
+ // the bounds of the children are observations of the pseudocosts too
+ if( f_branch_estimate )
+  for( std::size_t i = 0 ; i < cands.size() ; ++i ) {
+   const double v = cands[ i ].value;
+   for( int d = 0 ; d < 2 ; ++d )
+    f_pc.record( cands[ i ].k , d , d ? std::ceil( v ) - v
+		                       : v - std::floor( v ) ,
+		 f_max ? valid_bound - evals[ i ][ d ]
+		       : evals[ i ][ d ] - valid_bound );
+   }
+ return( evals );
 
  }  // end( LagrangianDualRelaxationSolver::strong_branching )
 
@@ -688,6 +779,12 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
  if( ! c )
   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::apply: "
 				"the Change is not a LagrangianChange" ) );
+
+ // the next compute() solves the child of this branching, if any, as the
+ // Changes of the path to a node are applied from the root down
+ f_pending.reset();
+ if( f_branch_estimate )
+  f_pending = c->get_branching();
 
  // a child starts from the multipliers its father had, not from those of
  // whatever node was solved last, which may be anywhere in the tree and may
