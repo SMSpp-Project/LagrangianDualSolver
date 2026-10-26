@@ -58,10 +58,6 @@ if (NOT hasParent)
     # MILPSolver is needed by PrimalProximalHeur, which gives the MILPSolver
     # of its primal recovery the best solution found so far as a MIP start.
     find_package(MILPSolver REQUIRED)
-    # BranchAndXSolver holds the components with which
-    # LagrangianDualRelaxationSolver chooses the variable to branch upon
-    # (BranchingRule.h)
-    find_package(BranchAndXSolver REQUIRED)
 endif ()
 
 # Torch needed for LagrangianDualSolverML
@@ -136,7 +132,8 @@ endif ()
 target_sources(${modName} PRIVATE
         src/LagrangianDualSolver.cpp
         src/PrimalProximalHeur.cpp
-        src/LagrangianDualRelaxationSolver.cpp)
+        src/LagrangianDualRelaxationSolver.cpp
+        src/BranchingRule.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -161,8 +158,7 @@ target_include_directories(
 # on this library.
 target_link_libraries(${modName} PUBLIC
         ${modNamespace}::SMS++
-        ${modNamespace}::MILPSolver
-        ${modNamespace}::BranchAndXSolver)
+        ${modNamespace}::MILPSolver)
 
 # LagrangianDualSolverML, which holds LagrangianDualRelaxationSolverML, is a
 # library of its own, as BundleSolverML is: Torch is some hundreds of
@@ -202,16 +198,14 @@ endif ()
 add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- C++20 module -------------------------------------------------------- #
-# The module smspp.lagrangiandualsolver (src/LagrangianDualSolver.cppm) exports
-# the names of the headers and re-exports smspp.branchandxsolver,
-# smspp.milpsolver; like the module smspp of the core, it is built when
-# SMSpp_BUILD_MODULE is ON, which needs CMake 3.28 or later, the Ninja or
-# Visual Studio generator and a compiler that scans the dependencies of the
-# modules.
+# The module smspp.lagrangiandualsolver (src/LagrangianDualSolver.cppm)
+# exports the names of the headers and re-exports smspp.milpsolver; like the
+# module smspp of the core, it is built when SMSpp_BUILD_MODULE is ON, which
+# needs CMake 3.28 or later, the Ninja or Visual Studio generator and a
+# compiler that scans the dependencies of the modules.
 # Where these are missing, or a module it imports is not there, the option
 # is turned off with a warning [see CheckModule.cmake of SMS++].
-smspp_check_module(${modNamespace}::BranchAndXSolver_module
-                   ${modNamespace}::MILPSolver_module)
+smspp_check_module(${modNamespace}::MILPSolver_module)
 if (SMSpp_BUILD_MODULE)
     # the scan of the module dependencies, and $<LINK_ONLY> honoured also for
     # the target itself, which cmake_policy(VERSION 3.15) above leaves off
@@ -232,7 +226,6 @@ if (SMSpp_BUILD_MODULE)
     target_compile_definitions(${modName}_module PRIVATE
             $<TARGET_PROPERTY:${modName},INTERFACE_COMPILE_DEFINITIONS>)
     target_link_libraries(${modName}_module PUBLIC $<LINK_ONLY:${modName}>
-            ${modNamespace}::BranchAndXSolver_module
             ${modNamespace}::MILPSolver_module)
     add_library(${modNamespace}::${modName}_module ALIAS ${modName}_module)
 endif ()

@@ -36,8 +36,6 @@
 module;
 
 #include "LagrangianDualRelaxationSolver.h"
-#include "LagrangianDualSolver.h"
-#include "PrimalProximalHeur.h"
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- MODULE PURVIEW -----------------------------*/
@@ -45,10 +43,15 @@ module;
 
 export module smspp.lagrangiandualsolver;
 
-export import smspp.branchandxsolver;
 export import smspp.milpsolver;
 
 export namespace SMSpp_di_unipi_it {
+
+ // BranchingRule.h
+ using SMSpp_di_unipi_it::BranchCandidate;
+ using SMSpp_di_unipi_it::BranchingFeatures;
+ using SMSpp_di_unipi_it::LearnedBranching;
+ using SMSpp_di_unipi_it::StrongBranching;
 
  // LagrangianDualRelaxationSolver.h
  using SMSpp_di_unipi_it::LagrangianChange;

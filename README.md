@@ -112,10 +112,6 @@ the whole framework. What follows is about building it yourself.
 - [SMS++ MILPSolver](https://gitlab.com/smspp/milpsolver), which
   `PrimalProximalHeur` uses to warm-start the heuristic
 
-- [SMS++ BranchAndXSolver](https://gitlab.com/smspp/branchandxsolver), whose
-  components `LagrangianDualRelaxationSolver` uses to choose the variable to
-  branch upon
-
 It's not a build requirement but you will need a SMS++ `Solver`
 capable of solving the Lagrangian Dual, such as
 [BundleSolver](https://gitlab.com/smspp/bundlesolver).

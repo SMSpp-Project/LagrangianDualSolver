@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `BranchingRule.h` (`BranchingFeatures`, `StrongBranching`,
+  `LearnedBranching`), the components with which
+  `LagrangianDualRelaxationSolver` chooses the variable to branch upon, are
+  here and no longer in BranchAndXSolver, on which LagrangianDualSolver then
+  no longer depends (CMake, the package configuration file, the makefiles,
+  the C++20 module and the pipeline)
+
 - the pipeline builds the module also with its makefiles, after CMake, and
   runs on a change of the makefiles too [see `ci/makefile` of the umbrella]
 

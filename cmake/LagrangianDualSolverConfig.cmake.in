@@ -19,7 +19,6 @@ include(CMakeFindDependencyMacro)
 # ----- Requirements -------------------------------------------------------- #
 find_dependency(SMS++)
 find_dependency(MILPSolver)
-find_dependency(BranchAndXSolver)
 
 if (@Torch_FOUND@)
     find_dependency(Torch HINTS @Torch_DIR@)
