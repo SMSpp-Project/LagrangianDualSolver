@@ -56,7 +56,7 @@ endif
 # [see makefile-mod of SMS++]
 
 $(eval $(call SMSppMODrule,LgDSLV,$(LgDSLVSDR),LagrangianDualSolver,\
-	smspp.lagrangiandualsolver,$(BAXSLVMOD) $(MILPSMOD)))
+	smspp.lagrangiandualsolver,BAXSLV MILPS))
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -77,7 +77,8 @@ $(LgDSLVSDR)/obj/PrimalProximalHeur.o: \
 	$(LgDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
 
 $(LgDSLVSDR)/obj/LagrangianDualRelaxationSolver.o: \
-	$(LgDSLVSDR)/src/LagrangianDualRelaxationSolver.cpp $(LgDSLVH) $(SMS++OBJ)
+	$(LgDSLVSDR)/src/LagrangianDualRelaxationSolver.cpp $(LgDSLVH) \
+	$(SMS++OBJ)
 	$(CC) -c $(LgDSLVSDR)/src/LagrangianDualRelaxationSolver.cpp -o $@ \
 	$(LgDSLVINC) $(SMS++INC) $(MILPSINC) $(BAXSLVINC) $(SW)
 
