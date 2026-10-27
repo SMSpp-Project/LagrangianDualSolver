@@ -62,10 +62,21 @@
 #include "BlockSolverConfig.h"
 
 #include <chrono>
+#include <cstdlib>
+#include <iostream>
 
 #include <atomic>
 
 #include <cmath>
+
+// optional statistics (environment variable SFDCR_STATS): one line per
+// iteration with the time of the Lagrangian Dual and the cumulative time of
+// the primal recovery, printed on std::cout
+namespace {
+ const bool pph_stats = ( std::getenv( "SFDCR_STATS" ) != nullptr );
+ double pph_rec_time = 0;   ///< cumulative time in the recovery MIPs
+ int    pph_rec_calls = 0;  ///< and number of MIPs solved
+ }
 
 #include <exception>
 
@@ -670,6 +681,8 @@ int PrimalProximalHeur::compute( bool changedvars )
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ pph_rec_time = 0;
+ pph_rec_calls = 0;
  Index iters = 0;
  bool is_the_same = false;
  bool is_integer  = false;
@@ -800,7 +813,9 @@ int PrimalProximalHeur::compute( bool changedvars )
 		                                : up_cutoff );
   InnerSolver->set_par( dblLwCutOff , penalized ? - Inf< double >()
 		                                : lw_cutoff );
+  const auto stat_t0 = std::chrono::steady_clock::now();
   res = InnerSolver->compute( changedvars );
+  const double stat_dual_time = std::chrono::duration< double >( std::chrono::steady_clock::now() - stat_t0 ).count();
 
   LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: Lagrangian Dual solved ( t = "
@@ -863,6 +878,21 @@ int PrimalProximalHeur::compute( bool changedvars )
                                  : ( InnerSolver->get_lb() - addterm );
 
   value_FUNCTION = get_funct_value();
+
+  if( pph_stats ) {
+   Index nchg = 0;
+   double l1 = 0;
+   for( Index ivar = 0 ; ivar < NumStatVar ; ++ivar ) {
+    const double dd = std::abs( sol[ ivar ] - previous_sol[ ivar ] );
+    if( dd > 1e-6 ) ++nchg;
+    l1 += dd;
+    }
+   std::cout << "PPHSTAT dist iter " << iters << " penalized " << penalized
+             << " nvars " << NumStatVar << " changed " << nchg << " l1 "
+             << l1 << " penalty " << penalty << " addterm " << addterm
+             << " value_bound " << value_bound << " funct " << value_FUNCTION
+             << std::endl;
+   }
 
   LOG_VERB( 2 ) {
    if( std::abs( value_bound - value_FUNCTION ) /
@@ -951,6 +981,15 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   ++iters;
 
+  if( pph_stats )
+   std::cout << "PPHSTAT iter " << ( iters - 1 ) << " penalized " << penalized
+             << " dual_time " << stat_dual_time << " inner_iters "
+             << InnerSolver->get_elapsed_iterations() << " status " << res
+             << " inner_lb " << InnerSolver->get_lb() << " inner_ub "
+             << InnerSolver->get_ub() << " rec_time_cum " << pph_rec_time
+             << " rec_calls_cum " << pph_rec_calls << " elapsed " << elapsed()
+             << " best " << ( f_max ? get_lb() : get_ub() ) << std::endl;
+
   // the accuracy required of the heuristic has been reached: the best
   // feasible solution found is within RelAcc of the optimum, since the
   // latter lies between valid_bound and it, so there is nothing left to
@@ -1008,6 +1047,9 @@ int PrimalProximalHeur::compute( bool changedvars )
   return( res );
   }
 
+ if( pph_stats )
+  std::cout << "PPHSTAT loop_end iters " << iters << " rec_time_cum " << pph_rec_time << " rec_calls_cum " << pph_rec_calls << " elapsed " << elapsed() << std::endl;
+
  // final primal recovery: a Lagrangian point in general violates the coupling
  // constraints of f_Block. Now that the inner objectives have been restored to
  // the original ones, fix the (rounded) proximal binaries and solve the
@@ -1022,6 +1064,9 @@ int PrimalProximalHeur::compute( bool changedvars )
           ( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) ) )
    record_feasible( rec_cost );
   }
+
+ if( pph_stats )
+  std::cout << "PPHSTAT end converged " << is_the_same << " rec_time_cum " << pph_rec_time << " rec_calls_cum " << pph_rec_calls << " elapsed " << elapsed() << std::endl;
 
  LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: "
@@ -1336,7 +1381,10 @@ bool PrimalProximalHeur::recover_primal( double & cost )
       *f_log << "  no MIP start for the recovery: " << why << std::endl;
     }
 
+  const auto rec_t0 = std::chrono::steady_clock::now();
   const auto rc = recovery->compute( true );
+  pph_rec_time += std::chrono::duration< double >( std::chrono::steady_clock::now() - rec_t0 ).count();
+  ++pph_rec_calls;
   const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
                   recovery->has_var_solution();
   if( ok ) {
