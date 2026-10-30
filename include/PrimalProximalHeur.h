@@ -512,29 +512,31 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * the objective of a sub-Block is in general not all of its cost, part of
   * which may be in its own nested Block. An objective of a nested Block
   * that is neither a LinearFunction nor a DQuadFunction has no copy, and it
-  * is evaluated as it is. */
+  * is evaluated as it is. Each objective is multiplied by its weight [see
+  * W_sbi and W_nested]. */
 
  double subtree_value( Index idx ) {
   double value = 0;
   if( is_linear[ idx ] ) {
    Funct_sbi[ idx ].compute( true );
-   value += Funct_sbi[ idx ].get_value();
+   value += W_sbi[ idx ] * Funct_sbi[ idx ].get_value();
    }
   else {
    Funct_sbi_quad[ idx ].compute( true );
-   value += Funct_sbi_quad[ idx ].get_value();
+   value += W_sbi[ idx ] * Funct_sbi_quad[ idx ].get_value();
    }
-  for( auto & lf : Funct_nested[ idx ] ) {
-   lf.compute( true );
-   value += lf.get_value();
+  for( Index i = 0 ; i < Funct_nested[ idx ].size() ; ++i ) {
+   Funct_nested[ idx ][ i ].compute( true );
+   value += W_nested[ idx ][ i ] * Funct_nested[ idx ][ i ].get_value();
    }
-  for( auto & qf : Funct_nested_quad[ idx ] ) {
-   qf.compute( true );
-   value += qf.get_value();
+  for( Index i = 0 ; i < Funct_nested_quad[ idx ].size() ; ++i ) {
+   Funct_nested_quad[ idx ][ i ].compute( true );
+   value += W_nested_quad[ idx ][ i ] *
+            Funct_nested_quad[ idx ][ i ].get_value();
    }
-  for( auto obj : Obj_nested[ idx ] ) {
-   obj->compute( true );
-   value += obj->value();
+  for( Index i = 0 ; i < Obj_nested[ idx ].size() ; ++i ) {
+   Obj_nested[ idx ][ i ]->compute( true );
+   value += W_Obj_nested[ idx ][ i ] * Obj_nested[ idx ][ i ]->value();
    }
   return( value );
   }
@@ -933,6 +935,15 @@ class PrimalProximalHeur : public LagrangianDualSolver
  std::vector< std::vector< RealObjective * > > Obj_nested;
  ///< the objectives of the Block nested into each sub-Block that have no
  ///< copy, being neither linear nor quadratic, and are evaluated as they are
+
+ std::vector< double > W_sbi;
+ ///< the weight of the Objective of each sub-Block [see
+ ///< Block::set_objective_weight()], by which its value is multiplied
+
+ std::vector< std::vector< double > > W_nested , W_nested_quad , W_Obj_nested;
+ ///< the weights of the Objective in Funct_nested, Funct_nested_quad and
+ ///< Obj_nested, i.e., the products of the weights along the path from the
+ ///< sub-Block down to their Block, the latter comprised
 
  std::vector< bool > is_linear;
  ///< flags telling whether each sub-Block's inner objective is linear

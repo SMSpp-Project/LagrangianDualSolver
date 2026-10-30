@@ -157,6 +157,10 @@ void PrimalProximalHeur::initialize( void )
  Funct_sbi.resize( n_sub );
  Funct_sbi_quad.resize( n_sub );
  Funct_nested.resize( n_sub );
+ W_sbi.resize( n_sub );
+ W_nested.resize( n_sub );
+ W_nested_quad.resize( n_sub );
+ W_Obj_nested.resize( n_sub );
  Funct_nested_quad.resize( n_sub );
  Obj_nested.resize( n_sub );
  is_linear.resize( n_sub );
@@ -181,25 +185,39 @@ void PrimalProximalHeur::initialize( void )
   // and of the objectives of the Block nested into it, at any depth, which
   // are part of its cost as well; a Function cannot be copy-constructed, so
   // the copies are default-constructed first and then assigned
+  // each with the weight of its Objective, the product of the weights
+  // [see Block::set_objective_weight()] from the sub-Block down to its Block
+  W_sbi[ index ] = sbi->get_objective_weight();
   std::vector< p_LF > nested_lf;
   std::vector< p_DQF > nested_qf;
   Obj_nested[ index ].clear();
-  std::function< void( Block * ) > find_nested = [ & ]( Block * b ) {
+  W_nested[ index ].clear();
+  W_nested_quad[ index ].clear();
+  W_Obj_nested[ index ].clear();
+  std::function< void( Block * , double ) > find_nested =
+   [ & ]( Block * b , double w ) {
    for( auto nb : b->get_nested_Blocks() ) {
+    const double wb = w * nb->get_objective_weight();
     if( auto obj = dynamic_cast< RealObjective * >( nb->get_objective() ) ) {
      auto fro = dynamic_cast< p_FRO >( obj );
      auto fn = fro ? fro->get_function() : nullptr;
-     if( auto qf = dynamic_cast< p_DQF >( fn ) )
+     if( auto qf = dynamic_cast< p_DQF >( fn ) ) {
       nested_qf.push_back( qf );
-     else if( auto lf = dynamic_cast< p_LF >( fn ) )
+      W_nested_quad[ index ].push_back( wb );
+      }
+     else if( auto lf = dynamic_cast< p_LF >( fn ) ) {
       nested_lf.push_back( lf );
-     else
+      W_nested[ index ].push_back( wb );
+      }
+     else {
       Obj_nested[ index ].push_back( obj );
+      W_Obj_nested[ index ].push_back( wb );
+      }
      }
-    find_nested( nb );
+    find_nested( nb , wb );
     }
    };
-  find_nested( sbi );
+  find_nested( sbi , W_sbi[ index ] );
   Funct_nested[ index ].clear();
   Funct_nested[ index ].resize( nested_lf.size() );
   for( Index i = 0 ; i < nested_lf.size() ; ++i )
@@ -1579,13 +1597,15 @@ bool PrimalProximalHeur::consensus_recovery( double & cost )
  if( error )
   std::rethrow_exception( error );
 
- // the value of each component is that of its subtree, to which the
- // constant term of the Objective of f_Block is added once
+ // the value of each component is that of its subtree, times the weight of
+ // its Objective [see Block::set_objective_weight()], which the Solver of
+ // the component does not see, and to which the constant term of the
+ // Objective of f_Block is added once
  cost = block_constant();
  for( Index k = 0 ; k < K ; ++k ) {
   if( ! solved[ k ] )
    return( false );
-  cost += value[ k ];
+  cost += sbs[ k ]->get_objective_weight() * value[ k ];
   }
 
  LOG_VERB( 2 )
@@ -1787,6 +1807,10 @@ void PrimalProximalHeur::guts_of_destructor( void )
  Funct_nested.clear();
  Funct_nested_quad.clear();
  Obj_nested.clear();
+ W_sbi.clear();
+ W_nested.clear();
+ W_nested_quad.clear();
+ W_Obj_nested.clear();
  is_linear.clear();
  previous_sol.clear();
  v_LagrInitSol.clear();

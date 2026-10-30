@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the weight of the Objective of a `Block` [see
+  `Block::set_objective_weight()`]: with `Recursive` the `LagBFunction` of a
+  component has the product of the weights of the Block relaxed above it, as an
+  ancestor of the component multiplying its Objective and not the Lagrangian
+  term, the constant of each relaxed Block enters with its weight, the copy of
+  a component (`iBCopy`) has its weight, the dual values `get_dual_solution()`
+  writes in a component are multiplied by its weight, which its `Solver` does
+  not see, and `PrimalProximalHeur` evaluates the objective of each sub-Block
+  and of its nested Block with their weights, the value of each component
+  solved alone in the consensus recovery included
+
+- the weight of the Variable of a `Block` [see
+  `Block::set_variable_weight()`]: the coefficient of a `Variable` of a
+  component in a relaxed Constraint enters its Lagrangian term multiplied by
+  the product of the weights from its `Block` up to the closest one that
+  also contains the Constraint, in the tree as it is before the decomposition
+  (`LagrangianDualSolver::variable_weight()`), when the Lagrangian terms are
+  built and when the relaxed Constraint change; the copy of a component
+  (`iBCopy`) has the weight of the original
+
 - the makefiles build the C++20 module `smspp.lagrangiandualsolver` when
   `SMSppMOD` is not empty (e.g., `make SMSppMOD=1`), with clang++ 16 or
   later [see `lib/makefile-mod` of SMS++]

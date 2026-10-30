@@ -36,7 +36,11 @@
 
 #include "RBlockConfig.h"
 
+#include "RowConstraintSolution.h"
+
 #include <algorithm>
+
+#include <memory>
 
 #include <string>
 
@@ -206,6 +210,8 @@ void LagrangianDualSolver::set_Block( Block * block )
  // is what it has always been, the root relaxed and its children the
  // components; with it on the descent goes as deep as the shape holds
  v_relaxed.clear();
+ v_relaxed_w.clear();
+ v_component_w.clear();
  std::vector< Block * > sb;
  if( ! decompose( f_Block , sb ) )
   throw( std::invalid_argument( "LagrangianDualSolver: no sub-Block" ) );
@@ -250,8 +256,13 @@ void LagrangianDualSolver::set_Block( Block * block )
   blck_to_idx[ i ].second = i;
 
   Block * csbi;
-  if( iBCopy )  // copying the sub-Block
+  if( iBCopy ) {  // copying the sub-Block
    csbi = sb[ i ]->get_R3_Block( nullptr );  // the copy R3B
+   // which is the same problem, the weights of its Objective and of its
+   // Variable comprised
+   csbi->set_objective_weight( sb[ i ]->get_objective_weight() , eNoMod );
+   csbi->set_variable_weight( sb[ i ]->get_variable_weight() , eNoMod );
+   }
   else         // evicting the sub-Block
    csbi = sb[ i ];  // use the original sub-Block; note that its father
                     // will be changed when used in LagBFunction constructor
@@ -290,6 +301,12 @@ void LagrangianDualSolver::set_Block( Block * block )
   // after the BlockConfig-uration, in particular for the case where the
   // sub-Block is R3B-copied
   auto lbfi = new LagBFunction( csbi );
+
+  // the weight of the Block above the component [see v_component_w] is that
+  // of the LagBFunction, which as an ancestor of the component multiplies its
+  // Objective and not the Lagrangian term
+  if( v_component_w[ i ] != 1 )
+   lbfi->set_objective_weight( v_component_w[ i ] , eNoMod );
 
   // if the sub-Block are "stealthily stolen" from f_Block rather than
   // copied, reconstruct the link between them and f_Block by setting the
@@ -841,7 +858,8 @@ void LagrangianDualSolver::set_Block( Block * block )
 /*--------------------------------------------------------------------------*/
 
 bool LagrangianDualSolver::decompose( Block * b ,
-                                      std::vector< Block * > & component )
+                                      std::vector< Block * > & component ,
+                                      double w )
 {
  const auto & sb = b->get_nested_Blocks();
  if( sb.empty() )  // a leaf is not decomposable
@@ -867,10 +885,14 @@ bool LagrangianDualSolver::decompose( Block * b ,
   }
 
  v_relaxed.push_back( b );
+ v_relaxed_w.push_back( w );
 
  for( auto sbi : sb )
-  if( ( ! Recursive ) || ( ! decompose( sbi , component ) ) )
+  if( ( ! Recursive ) ||
+      ( ! decompose( sbi , component , w * sbi->get_objective_weight() ) ) ) {
    component.push_back( sbi );
+   v_component_w.push_back( w );
+   }
 
  return( true );
 
@@ -1281,7 +1303,8 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
 			  v_LBF[ i ]->get_nested_Block( 0 ) , nullptr , mcfg );
   };
 
- auto SCvi = dynamic_cast< SimpleConfiguration< std::vector< int > > * >( solc );
+ auto SCvi =
+  dynamic_cast< SimpleConfiguration< std::vector< int > > * >( solc );
  if( SCvi ) {
   assert( std::is_sorted( SCvi->value().begin() , SCvi->value().end() ) );
   if( ( ! SCvi->value().empty() ) && ( ( SCvi->value().front() < 0 ) ||
@@ -1401,6 +1424,15 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
 
   if( SBSb->has_dual_solution() ) {
    SBSb->get_dual_solution( cfg );
+   // the Solver of the component solves the sub-Block divided by the weight
+   // of the LagBFunction and of the sub-Block itself, and so are its duals
+   if( const double w = v_LBF[ b ]->get_objective_weight() *
+                        LSBb->get_objective_weight() ; w != 1 ) {
+    RowConstraintSolution sol;
+    sol.read( LSBb );
+    std::unique_ptr< RowConstraintSolution > scaled( sol.scale( w ) );
+    scaled->write( LSBb );
+    }
    if( iBCopy )  // the sub-Block is a copy
     v_component[ b ]->map_back_solution( LSBb , nullptr , cfg );
    }
@@ -1582,9 +1614,9 @@ BlockSolverConfig * LagrangianDualSolver::default_BSCfg_for( Block * inner )
  if( f_DBSCfg_map ) {
   // exact classname() match wins; otherwise fall back to the reserved "*"
   // catch-all entry (the BlockSolverConfig for "every other" inner Block), if
-  // any. This lets a single (meta) str_LagBF_BSCfg express "this Solver for the
-  // ThermalUnitBlock, that Solver for all the others", and compose the same way
-  // across nesting levels.
+  // any. This lets a single (meta) str_LagBF_BSCfg express "this Solver for
+  // the ThermalUnitBlock, that Solver for all the others", and compose the
+  // same way across nesting levels.
   auto it = f_DBSCfg_map->f_value.find( inner->classname() );
   if( it == f_DBSCfg_map->f_value.end() )
    it = f_DBSCfg_map->f_value.find( "*" );
@@ -1766,10 +1798,10 @@ double LagrangianDualSolver::dual2mult( const FRowConstraint & con )
 double LagrangianDualSolver::relaxed_constant( void ) const
 {
  double ct = 0;
- for( auto rb : v_relaxed )
-  if( auto obj = rb->get_objective() )
+ for( Index i = 0 ; i < v_relaxed.size() ; ++i )
+  if( auto obj = v_relaxed[ i ]->get_objective() )
    if( auto robj = dynamic_cast< const RealObjective * >( obj ) )
-    ct += robj->get_constant_term();
+    ct += v_relaxed_w[ i ] * robj->get_constant_term();
  return( ct );
  }
 
@@ -1900,8 +1932,16 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
 
  split.resize( f_nsb );
 
+ // the coefficients enter with the weights of the Variable
+ const auto weighted = [ this , & con ]( LinearFunction::coeff_pair el ) {
+  el.second *= variable_weight( el.first , con.get_Block() );
+  return( el );
+  };
+
  if( f_nsb == 1 ) {    // easy case: only one sub-Block, nothing to split
-  split.front() = vc;
+  split.front().clear();
+  for( const auto & el : vc )
+   split.front().push_back( weighted( el ) );
   if( NNMult && to_be_reversed( con ) )
    for( auto & el : split.front() )
     el.second = - el.second;
@@ -1936,7 +1976,7 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
  
  // second pass: construct all split[ h ]
  for( Index i = 0 ; i < vc.size() ; ++i )
-  split[ blckidx[ i ] ][ cntr[ blckidx[ i ] ]++ ] = vc[ i ];
+  split[ blckidx[ i ] ][ cntr[ blckidx[ i ] ]++ ] = weighted( vc[ i ] );
 
  // if necessary change the sign
  if( NNMult && to_be_reversed( con ) )
@@ -1945,6 +1985,31 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
     lel.second = - lel.second;
 
  }  // end( LagrangianDualSolver::split_constraint )
+
+/*--------------------------------------------------------------------------*/
+
+double LagrangianDualSolver::variable_weight( const Variable * var ,
+                                              const Block * cblock ) const
+{
+ // the Block whose Constraint are relaxed are not moved, hence their
+ // ancestors are those of before
+ std::vector< const Block * > up;
+ for( auto c = cblock ; c ; c = c->get_f_Block() )
+  up.push_back( c );
+
+ double s = 1;
+ for( const Block * b = var->get_Block() ; b ; ) {
+  if( std::find( up.begin() , up.end() , b ) != up.end() )
+   return( s );
+  s *= b->get_variable_weight();
+  const auto it = f_comp_index.find( b );
+  b = ( it != f_comp_index.end() ) ? v_father[ it->second ]
+                                   : b->get_f_Block();
+  }
+
+ return( s );
+
+ }  // end( LagrangianDualSolver::variable_weight )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1957,7 +2022,8 @@ void LagrangianDualSolver::set_PushCostToOwner( void )
 
  if( WhichPushCost.empty() )
   for( Index h = 0 ; h < f_nsb ; ++h ) {
-   auto Oi = static_cast< FRealObjective * >( ( *( sbit++ ) )->get_objective() );
+   auto Oi =
+    static_cast< FRealObjective * >( ( *( sbit++ ) )->get_objective() );
    auto LBFi = static_cast< LagBFunction * >( Oi->get_function() );
    LBFi->set_par( LagBFunction::intPushCostToOwner ,
 		  PushCostToOwner ? int( 1 ) : int( 0 ) );
@@ -1971,7 +2037,8 @@ void LagrangianDualSolver::set_PushCostToOwner( void )
 
   auto WPCit = WhichPushCost.begin();
   for( Index h = 0 ; h < f_nsb ; ++h , ++sbit ) {
-   auto Oi = static_cast< FRealObjective * >( ( *( sbit++ ) )->get_objective() );
+   auto Oi =
+    static_cast< FRealObjective * >( ( *( sbit++ ) )->get_objective() );
    auto LBFi = static_cast< LagBFunction * >( Oi->get_function() );
    if( *WPCit == int( h ) ) {
     LBFi->set_par( LagBFunction::intPushCostToOwner ,
@@ -2050,6 +2117,7 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  v_LBF.clear();
  v_no_dual.clear();
  v_component.clear();
+ v_component_w.clear();
  v_father.clear();
  v_row_kind.clear();
 
@@ -2607,8 +2675,8 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    for( Index i = 0 ; i < tmod->vars().size() ; ++i )
     split[ blckidx[ i ] ][ cntr[ blckidx[ i ] ]++ ] =
      coeff_pair( static_cast< ColVariable * >( tmod->vars()[ i ] ) ,
-		 lf->get_coefficient( lf->is_active( tmod->vars()[ i ] ) )
-		 );
+		 lf->get_coefficient( lf->is_active( tmod->vars()[ i ] ) ) *
+		 variable_weight( tmod->vars()[ i ] , cnst->get_Block() ) );
 
    // if necessary change the sign
    if( NNMult && to_be_reversed( *cnst ) )
@@ -2739,7 +2807,8 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     auto tc = cntr[ bidx ]++;
     split[ bidx ][ tc ] =
      existing_term( bidx , pos )->is_active( tmod->vars()[ i ] );
-    delta[ bidx ][ tc ] = tmod->delta()[ i ];
+    delta[ bidx ][ tc ] = tmod->delta()[ i ] *
+     variable_weight( tmod->vars()[ i ] , cnst->get_Block() );
     }
 
    // if necessary change the sign

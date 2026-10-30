@@ -1315,6 +1315,14 @@ public:
  void set_ComputeConfig( const ComputeConfig * scfg = nullptr ) override;
 
 /*--------------------------------------------------------------------------*/
+ /// LagrangianDualSolver applies the weights of the Variable to the
+ /// coefficients of the relaxed Constraint [see variable_weight()]
+
+ [[nodiscard]] bool handles_variable_weight( void ) const override {
+  return( true );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// set the ostream for the LagrangianDualSolver log
 
  void set_log( std::ostream * log_stream = nullptr ) override {
@@ -2387,6 +2395,18 @@ FRowConstraint * constraint_with_index( Index i ) {
 			std::vector< LinearFunction::v_coeff_pair > & split );
 
 /*--------------------------------------------------------------------------*/
+ /// the weight of the coefficients of \p var in a Constraint of \p cblock
+ /** Returns the product of the weights of the Variable [see
+  * Block::get_variable_weight( const Block * )] from the Block of \p var up
+  * to the closest Block that also contains \p cblock, the latter excluded,
+  * in the tree as it is before the decomposition: a component goes up to
+  * its father of then [see v_father], and not to the LagBFunction that
+  * holds it. It multiplies the coefficients that the relaxed Constraint
+  * give to the Lagrangian terms of the components. */
+
+ double variable_weight( const Variable * var , const Block * cblock ) const;
+
+/*--------------------------------------------------------------------------*/
 
  void set_PushCostToOwner( void );
 
@@ -2558,6 +2578,14 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  std::vector< Block * > v_relaxed;
 
+ /// the weight of the Objective of each Block in v_relaxed
+ /** The product of the weights of the Objective [see
+  * Block::set_objective_weight()] from f_Block down to v_relaxed[ i ], f_Block
+  * excluded (hence 1 for it), by which its constant term enters the value
+  * [see relaxed_constant()]. */
+
+ std::vector< double > v_relaxed_w;
+
  /// the components of the decomposition, and the father of each of them
  /** v_component[ i ] is the Block of the LagBFunction v_LBF[ i ] (the
   * original one, if it is copied), and v_father[ i ] its father before the
@@ -2566,6 +2594,17 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  std::vector< Block * > v_component;
  std::vector< Block * > v_father;
+
+ /// the weight of the Block above each component
+ /** The product of the weights of the Objective [see
+  * Block::set_objective_weight()] of the Block in v_relaxed from f_Block,
+  * excluded, down to the father of v_component[ i ]: that of the component
+  * itself is applied by its LagBFunction, this one is the weight of the
+  * LagBFunction itself, which multiplies the Objective of the component and
+  * not the Lagrangian term [see LagBFunction::obj_w()]. It is 1 with
+  * Recursive off, the father being f_Block. */
+
+ std::vector< double > v_component_w;
 
  /// the father each component has while this Solver holds it
  /** Unless the sub-Block are copied, v_component[ i ] is the son of
@@ -2666,9 +2705,12 @@ FRowConstraint * constraint_with_index( Index i ) {
   * cannot be decomposed, i.e., if it has no sub-Block, or, unless it is the
   * root, if it has Variable or a nonempty Objective of its own; the caller
   * then makes \p b a component. With Recursive off the children of \p b are
-  * components whatever their shape. */
+  * components whatever their shape. \p w is the weight of the Objective of
+  * \p b in f_Block [see v_relaxed_w], which fills v_relaxed_w and
+  * v_component_w along with v_relaxed and \p component. */
 
- bool decompose( Block * b , std::vector< Block * > & component );
+ bool decompose( Block * b , std::vector< Block * > & component ,
+                 double w = 1 );
 
  std::vector< con_int_int > scon_to_idx; ///< from static constraint to index
  std::vector< int_const > idx_to_scon;   ///< from index to static constraint
