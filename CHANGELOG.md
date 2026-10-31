@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- a change of the weights of a component [see `Block::set_weight()`] after
+  the Lagrangian Dual is formed (`handles_weight_change()`, false with
+  `iBCopy`, whose copies do not follow the original): that of the Objective
+  reaches the `LagBFunction` of the component, and that of the Variable has
+  the Lagrangian terms of the component written again from the relaxed
+  Constraint with the new weight (`reweight_components()`), e.g., when a
+  `UCBlock` replicates one of its units while the Solver is attached
+
 - the weight of the Objective of a `Block` [see
   `Block::set_objective_weight()`]: with `Recursive` the `LagBFunction` of a
   component has the product of the weights of the Block relaxed above it, as an

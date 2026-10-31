@@ -847,6 +847,7 @@ void LagrangianDualSolver::set_Block( Block * block )
    f_comp_index[ v_component[ i ] ] = i;
   v_held.assign( f_nsb , nullptr );
   v_missed.assign( f_nsb , Lst_sp_Mod() );
+  v_reweight.assign( f_nsb , false );
   f_held = 1;
   release_components();
   }
@@ -2068,6 +2069,7 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
   hold_components();
   v_held.clear();
   v_missed.clear();
+  v_reweight.clear();
   f_comp_index.clear();
   f_held = 0;
   }
@@ -2129,6 +2131,23 @@ void LagrangianDualSolver::add_Modification( sp_Mod & mod )
 {
  if( f_no_Mod )
   return;
+
+ // a change of the weight of the Variable of a component changes the
+ // coefficients of its Lagrangian terms, which are those of the relaxed
+ // rows times that weight [see split_constraint()]: they are written again
+ // when the Modification are processed [see reweight_components()]
+ if( const auto wmod = std::dynamic_pointer_cast< const BlockWeightMod >(
+                                                                     mod ) )
+  if( ( wmod->which() & BlockWeightMod::eVariable ) &&
+      ( mod->get_Block() != f_Block ) ) {
+   const auto i = component_of( mod->get_Block() );
+   if( i < v_reweight.size() ) {
+    while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
+     ;  // try to acquire lock, spin on failure
+    v_reweight[ i ] = true;
+    f_mod_lock.clear( std::memory_order_release );  // release lock
+    }
+   }
 
  // a Modification of a component that is with its father has not been seen
  // by the LagBFunction, which is what translates it for the Lagrangian Dual:
@@ -2335,8 +2354,10 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 
  f_mod_lock.clear( std::memory_order_release );  // release lock
 
- if( v_mod_tmp.empty() )  // no Modification coming directly from f_Block
-  return;                 // all done
+ if( v_mod_tmp.empty() ) {  // no Modification coming directly from f_Block
+  reweight_components();
+  return;                  // all done
+  }
 
  // the Lagrangian variable of the pos-th relaxed constraint, the static ones
  // first and then the dynamic ones. These sit in a std::list, hence their
@@ -3160,9 +3181,90 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
   LagrDual->close_channel( chnl );  // close the channel
   }
 
+ // the Lagrangian terms of the components whose Variable changed weight,
+ // once the relaxed rows are as the Modification left them
+ reweight_components();
+
  // and now, finally, all is done- - - - - - - - - - - - - - - - - - - - - - -
   
  }  // end( LagrangianDualSolver::process_outstanding_Modification )
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::reweight_components( void )
+{
+ std::vector< bool > which;
+ while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
+  ;  // try to acquire lock, spin on failure
+ if( std::find( v_reweight.begin() , v_reweight.end() , true ) !=
+     v_reweight.end() ) {
+  which = v_reweight;
+  std::fill( v_reweight.begin() , v_reweight.end() , false );
+  }
+ f_mod_lock.clear( std::memory_order_release );  // release lock
+
+ if( which.empty() || ( ! LagrDual ) )
+  return;
+
+ // the Lagrangian variable of each relaxed constraint, the static ones first
+ // and then the dynamic ones [see process_outstanding_Modification()]
+ std::vector< ColVariable * > mult;
+ mult.reserve( NumVar );
+ if( static_cons ) {
+  auto & Ls = *LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );
+  for( Index i = 0 ; i < static_cons ; ++i )
+   mult.push_back( & Ls[ i ] );
+  }
+ if( auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" ) )
+  for( auto & lambda : *Ld )
+   mult.push_back( & lambda );
+
+ /* Each coefficient of the Lagrangian term of a component is the one of its
+  * Variable in the relaxed row times the weight of the Variable, with the
+  * sign of the row [see split_constraint()]: it is read again from the row,
+  * with the current weight, for each Variable of the term, all the terms of
+  * a component in one channel. */
+
+ for( Index h = 0 ; h < f_nsb ; ++h ) {
+  if( ( h >= which.size() ) || ( ! which[ h ] ) || ( ! v_LBF[ h ] ) )
+   continue;
+
+  const auto chnl = LagrDual->get_nested_Block( h )->open_channel();
+  const auto mp = Observer::make_par( eModBlck , chnl );
+
+  for( Index pos = 0 ; pos < mult.size() ; ++pos ) {
+   const auto i = SparseLagPairs ? v_LBF[ h ]->is_active( mult[ pos ] )
+                                 : pos;
+   if( i == Inf< Index >() )
+    continue;
+   auto lfh = static_cast< p_LF >( v_LBF[ h ]->get_Lagrangian_term( i ) );
+   if( ( ! lfh ) || ( ! lfh->get_num_active_var() ) )
+    continue;
+
+   const auto cnst = constraint_with_index( pos );
+   const auto lf = static_cast< const p_LF >( cnst->get_function() );
+   const double sign = ( NNMult && to_be_reversed( *cnst ) ) ? -1 : 1;
+
+   LinearFunction::Vec_FunctionValue coeff( lfh->get_num_active_var() );
+   bool changed = false;
+   for( Index k = 0 ; k < coeff.size() ; ++k ) {
+    const auto var = lfh->get_active_var( k );
+    const auto j = lf->is_active( var );
+    coeff[ k ] = ( j < lf->get_num_active_var() ) ?
+                 sign * lf->get_coefficient( j ) *
+                 variable_weight( var , cnst->get_Block() ) :
+                 lfh->get_coefficient( k );
+    changed |= ( coeff[ k ] != lfh->get_coefficient( k ) );
+    }
+
+   if( changed )
+    lfh->modify_coefficients( std::move( coeff ) ,
+                              Range( 0 , lfh->get_num_active_var() ) , mp );
+   }
+
+  LagrDual->get_nested_Block( h )->close_channel( chnl );
+  }
+ }  // end( LagrangianDualSolver::reweight_components )
 
 /*--------------------------------------------------------------------------*/
 

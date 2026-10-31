@@ -1323,6 +1323,19 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
+ /// LagrangianDualSolver handles a change of the weights of a sub-Block,
+ /// unless the sub-Block are copied
+ /** The weight of the Objective of a component reaches its LagBFunction,
+  * which computes its weights again [see LagBFunction]; that of its
+  * Variable has the Lagrangian terms of the component written again [see
+  * reweight_components()]. The copies of the sub-Block made with iBCopy do
+  * not follow the original, hence a change is then refused. */
+
+ [[nodiscard]] bool handles_weight_change( void ) const override {
+  return( ! iBCopy );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// set the ostream for the LagrangianDualSolver log
 
  void set_log( std::ostream * log_stream = nullptr ) override {
@@ -2622,6 +2635,13 @@ FRowConstraint * constraint_with_index( Index i ) {
  /// the Modification each component issued while it was given back
  std::vector< Lst_sp_Mod > v_missed;
 
+ /// whether the weight of the Variable of each component has changed
+ /** Set by add_Modification(), under f_mod_lock, and cleared by
+  * reweight_components() when it writes the Lagrangian terms of the
+  * component again. */
+
+ std::vector< bool > v_reweight;
+
  /// the index of each component in v_component
  std::unordered_map< const Block * , Index > f_comp_index;
 
@@ -2646,6 +2666,13 @@ FRowConstraint * constraint_with_index( Index i ) {
   * component. */
 
  Index component_of( const Block * b ) const;
+
+ /// writes again the Lagrangian terms of the components in v_reweight
+ /** Each coefficient of the Lagrangian term of a component whose Variable
+  * changed weight [see v_reweight] is read again from the relaxed row,
+  * times the current weight of the Variable [see variable_weight()]. */
+
+ void reweight_components( void );
 
  /// the Solver that the LagBFunction of the b-th component uses, if any
  /** nullptr if it is not a CDASolver, or if there is none. */
