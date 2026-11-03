@@ -91,6 +91,16 @@ namespace {
 
 #include <filesystem>
 
+#ifdef LgDSLV_DATA_DIR
+#ifdef _WIN32
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+#endif
+
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -833,7 +843,9 @@ int PrimalProximalHeur::compute( bool changedvars )
 		                                : lw_cutoff );
   const auto stat_t0 = std::chrono::steady_clock::now();
   res = InnerSolver->compute( changedvars );
-  const double stat_dual_time = std::chrono::duration< double >( std::chrono::steady_clock::now() - stat_t0 ).count();
+  const double stat_dual_time = std::chrono::duration< double >(
+				  std::chrono::steady_clock::now() - stat_t0 )
+				  .count();
 
   LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: Lagrangian Dual solved ( t = "
@@ -943,7 +955,8 @@ int PrimalProximalHeur::compute( bool changedvars )
   // try to record the current solution if it is feasible (and integer in
   // BIN_VARS mode) and we are past the first iteration
   #ifdef BIN_VARS
-   const bool can_record = f_Block->is_feasible() && is_integer && ( iters >= 1 );
+  const bool can_record =
+    f_Block->is_feasible() && is_integer && ( iters >= 1 );
   #else
    const bool can_record = f_Block->is_feasible() && ( iters >= 1 );
   #endif
@@ -1066,16 +1079,19 @@ int PrimalProximalHeur::compute( bool changedvars )
   }
 
  if( pph_stats )
-  std::cout << "PPHSTAT loop_end iters " << iters << " rec_time_cum " << pph_rec_time << " rec_calls_cum " << pph_rec_calls << " elapsed " << elapsed() << std::endl;
+  std::cout << "PPHSTAT loop_end iters " << iters << " rec_time_cum "
+	    << pph_rec_time << " rec_calls_cum " << pph_rec_calls
+	    << " elapsed " << elapsed() << std::endl;
 
- // final primal recovery: a Lagrangian point in general violates the coupling
- // constraints of f_Block. Now that the inner objectives have been restored to
- // the original ones, fix the (rounded) proximal binaries and solve the
- // restricted problem on f_Block, whose optimum enforces the coupling
- // constraints and is therefore a genuinely feasible completion with its true
- // primal cost, hence a valid bound. This is done unconditionally: value_FUNCTION
- // is the Lagrangian value of the point (a lower bound), never a valid upper
- // bound. If the restricted problem is infeasible the point is discarded.
+ // final primal recovery: a Lagrangian point in general violates the
+ // coupling constraints of f_Block. Now that the inner objectives have been
+ // restored to the original ones, fix the (rounded) proximal binaries and
+ // solve the restricted problem on f_Block, whose optimum enforces the
+ // coupling constraints and is therefore a genuinely feasible completion
+ // with its true primal cost, hence a valid bound. This is done
+ // unconditionally: value_FUNCTION is the Lagrangian value of the point (a
+ // lower bound), never a valid upper bound. If the restricted problem is
+ // infeasible the point is discarded.
  {
   double rec_cost;
   if( direct_feasible( rec_cost ) ||
@@ -1084,7 +1100,9 @@ int PrimalProximalHeur::compute( bool changedvars )
   }
 
  if( pph_stats )
-  std::cout << "PPHSTAT end converged " << is_the_same << " rec_time_cum " << pph_rec_time << " rec_calls_cum " << pph_rec_calls << " elapsed " << elapsed() << std::endl;
+  std::cout << "PPHSTAT end converged " << is_the_same << " rec_time_cum "
+	    << pph_rec_time << " rec_calls_cum " << pph_rec_calls
+	    << " elapsed " << elapsed() << std::endl;
 
  LOG_VERB( 2 )
   *f_log << "PrimalProximalHeur::compute: "
@@ -1187,21 +1205,81 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
 
 /*--------------------------------------------------------------------------*/
 
+#ifdef LgDSLV_DATA_DIR
+
+// the directory of the data the module installs, i.e., LgDSLV_DATA_DIR
+// relative to the directory of the shared library (or of the executable,
+// when the module is linked statically) that holds this function; empty if
+// the dynamic loader cannot tell where that is
+
+static std::filesystem::path installed_data_dir( void )
+{
+ std::filesystem::path lib;
+#ifdef _WIN32
+ HMODULE h = nullptr;
+ if( GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+			   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT ,
+			 reinterpret_cast< LPCWSTR >( &installed_data_dir ) ,
+			 &h ) ) {
+  std::vector< wchar_t > buf( 32768 );
+  auto n = GetModuleFileNameW( h , buf.data() , DWORD( buf.size() ) );
+  if( n && ( n < buf.size() ) )
+   lib = std::wstring( buf.data() , n );
+  }
+#else
+ Dl_info info;
+ if( dladdr( reinterpret_cast< void * >( &installed_data_dir ) , &info ) &&
+     info.dli_fname && *info.dli_fname )
+  lib = info.dli_fname;
+#endif
+ if( lib.empty() )
+  return( std::filesystem::path() );
+ return( std::filesystem::absolute( lib ).parent_path() / LgDSLV_DATA_DIR );
+ }
+
+#endif
+
+/*--------------------------------------------------------------------------*/
+
 CDASolver * PrimalProximalHeur::new_aux_solver( const std::string & cfgname )
 {
  // the file is looked for where it is given, i.e., after the filename
  // prefix of all Configuration if it is relative, which is where
- // Configuration::deserialize() opens it, and failing that next to this
+ // Configuration::deserialize() opens it; failing that, a relative name is
+ // looked for among the data the module installs, and then next to this
  // source file: __FILE__ is baked in at compile time and points to
- // LagrangianDualSolver/src/<this>.cpp, so the sibling
+ // LagrangianDualSolver/src/<this>.cpp, so that in a build tree the sibling
  // LagrangianDualSolver/<cfgname> is reachable regardless of the process
  // working directory
- std::string cfgfile = cfgname;
- if( ! std::filesystem::exists(
-        std::filesystem::path( cfgname ).is_absolute() ? cfgname
-        : Configuration::get_filename_prefix() + cfgname ) )
-  cfgfile = ( std::filesystem::path( __FILE__ ).parent_path().parent_path()
-              / cfgname ).string();
+ const bool absolute = std::filesystem::path( cfgname ).is_absolute();
+ std::vector< std::string > tried(
+   1 , absolute ? cfgname : Configuration::get_filename_prefix() + cfgname );
+ if( ! absolute ) {
+  #ifdef LgDSLV_DATA_DIR
+  if( auto dir = installed_data_dir(); ! dir.empty() )
+   tried.push_back( ( dir / cfgname ).lexically_normal().string() );
+  #endif
+  tried.push_back(
+    ( std::filesystem::path( __FILE__ ).parent_path().parent_path() / cfgname )
+      .string() );
+  }
+
+ // the first one is given to Configuration::deserialize() as it is, since
+ // it is that which puts the prefix in front of a relative name
+ std::string cfgfile;
+ for( std::size_t i = 0 ; i < tried.size() ; ++i )
+  if( std::filesystem::exists( tried[ i ] ) ) {
+   cfgfile = i ? tried[ i ] : cfgname;
+   break;
+   }
+
+ if( cfgfile.empty() ) {
+  std::string where;
+  for( const auto & f : tried )
+   where += ( where.empty() ? "" : ", " ) + f;
+  throw( std::runtime_error( "PrimalProximalHeur::new_aux_solver: " + cfgname +
+			     " not found (looked for " + where + ")" ) );
+  }
 
  auto cfg = Configuration::deserialize( cfgfile );
  auto bsc = dynamic_cast< BlockSolverConfig * >( cfg );
@@ -1401,7 +1479,9 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 
   const auto rec_t0 = std::chrono::steady_clock::now();
   const auto rc = recovery->compute( true );
-  pph_rec_time += std::chrono::duration< double >( std::chrono::steady_clock::now() - rec_t0 ).count();
+  pph_rec_time += std::chrono::duration< double >(
+		    std::chrono::steady_clock::now() - rec_t0 )
+		    .count();
   ++pph_rec_calls;
   const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
                   recovery->has_var_solution();

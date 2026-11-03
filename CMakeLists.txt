@@ -164,6 +164,22 @@ target_link_libraries(${modName} PUBLIC
         ${modNamespace}::SMS++
         ${modNamespace}::MILPSolver)
 
+# PrimalProximalHeur reads RecoveryCfg.txt, when the configuration does not
+# say otherwise, from where the module installs its data: the path of that
+# directory relative to the one of the library is given at compile time, so
+# that an installed tree keeps finding it wherever it is moved, and the
+# library asks the dynamic loader where it is (dladdr() of libdl)
+if (WIN32)
+    set(libDest ${CMAKE_INSTALL_FULL_BINDIR})
+else ()
+    set(libDest ${CMAKE_INSTALL_FULL_LIBDIR})
+endif ()
+file(RELATIVE_PATH dataRel ${libDest}
+        ${CMAKE_INSTALL_FULL_DATADIR}/${modName})
+target_compile_definitions(${modName} PRIVATE
+        LgDSLV_DATA_DIR="${dataRel}")
+target_link_libraries(${modName} PRIVATE ${CMAKE_DL_LIBS})
+
 # LagrangianDualSolverML, which holds LagrangianDualRelaxationSolverML, is a
 # library of its own, as BundleSolverML is: Torch is some hundreds of
 # megabytes of shared objects, whose loading a program linking the one here
@@ -334,6 +350,12 @@ install(FILES
 install(FILES
         ${CMAKE_CURRENT_LIST_DIR}/README.md
         ${CMAKE_CURRENT_LIST_DIR}/LICENSE
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/${modName})
+
+# Install the default RecoveryCfg.txt of PrimalProximalHeur, where the
+# library looks for it (see LgDSLV_DATA_DIR above).
+install(FILES
+        ${CMAKE_CURRENT_LIST_DIR}/RecoveryCfg.txt
         DESTINATION ${CMAKE_INSTALL_DATADIR}/${modName})
 
 # ----- Add the build tree to RPATH------------------------------------------ #

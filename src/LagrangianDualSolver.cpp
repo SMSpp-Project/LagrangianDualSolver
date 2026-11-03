@@ -2033,21 +2033,23 @@ void LagrangianDualSolver::set_PushCostToOwner( void )
   // note that WhichPushCost has been ordered into set_par()
   if( ( WhichPushCost.front() < 0 ) ||
       ( WhichPushCost.back() >= int( f_nsb ) ) )
-   throw( std::invalid_argument(
-			  "Invalid component index in wintWhichPushCost" ) );
+   throw( std::invalid_argument( "LagrangianDualSolver::set_PushCostToOwner:"
+				 " invalid component index in"
+				 " vintWhichPushCost" ) );
 
   auto WPCit = WhichPushCost.begin();
-  for( Index h = 0 ; h < f_nsb ; ++h , ++sbit ) {
+  for( Index h = 0 ; h < f_nsb ; ++h ) {
    auto Oi =
     static_cast< FRealObjective * >( ( *( sbit++ ) )->get_objective() );
    auto LBFi = static_cast< LagBFunction * >( Oi->get_function() );
-   if( *WPCit == int( h ) ) {
+   if( ( WPCit != WhichPushCost.end() ) && ( *WPCit == int( h ) ) ) {
     LBFi->set_par( LagBFunction::intPushCostToOwner ,
 		   PushCostToOwner ? int( 1 ) : int( 0 ) );
-    ++WPCit;
+    while( ( WPCit != WhichPushCost.end() ) && ( *WPCit == int( h ) ) )
+     ++WPCit;  // an index given more than once
     }
    else
-   LBFi->set_par( LagBFunction::intPushCostToOwner ,
+    LBFi->set_par( LagBFunction::intPushCostToOwner ,
 		   PushCostToOwner ? int( 0 ) : int( 1 ) );
    }
   }

@@ -45,7 +45,11 @@
  *   the components on their box with the opposite sense, which has to
  *   count the constant term of the Objective of the root (once, as that of
  *   a component), of either sign, also after it changes, and be infinite
- *   if a component is unbounded on its box.
+ *   if a component is unbounded on its box;
+ *
+ * - intPushCostToOwner together with vintWhichPushCost, unsorted and with
+ *   an index given twice, which has to give intPushCostToOwner 0 to the
+ *   LagBFunction of the components listed and 1 to all the others.
  *
  * The test needs nothing but the core SMS++ and this module; the
  * Configuration files are read from the working directory.
@@ -111,6 +115,10 @@ static std::vector< double > Constants;
 /// lower one otherwise, the last one at the end
 static std::vector< double > Bounds;
 
+/// intPushCostToOwner of the LagBFunction of each component at each
+/// compute() of ProbeCDASolver, the last one at the end
+static std::vector< std::vector< int > > PushCosts;
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- CLASS ProbeCDASolver --------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -143,6 +151,14 @@ class ProbeCDASolver : public CDASolver {
       m.term = t->get_v_var().front().second;
    rec.push_back( m );
    }
+
+  std::vector< int > push;
+  for( auto sb : f_Block->get_nested_Blocks() )
+   push.push_back(
+     static_cast< LagBFunction * >(
+       static_cast< FRealObjective * >( sb->get_objective() )->get_function() )
+       ->get_int_par( LagBFunction::intPushCostToOwner ) );
+  PushCosts.push_back( std::move( push ) );
 
   Records.push_back( std::move( rec ) );
   Constants.push_back( lf->get_constant_term() );
@@ -709,6 +725,33 @@ static void test_recursive( void )
  }
 
 /*--------------------------------------------------------------------------*/
+/// with intPushCostToOwner 0 and vintWhichPushCost { 3 , 1 , 3 } (those of
+/// BSPar-push.txt), the LagBFunction of the components 1 and 3 of 5 have
+/// intPushCostToOwner 0 and the others 1
+
+static void test_push_cost( void )
+{
+ auto b = new AbstractBlock();
+ for( Index h = 0 ; h < 5 ; ++h )
+  b->add_nested_Block( component( 1 + h , false ) );
+
+ auto rl = new std::vector< FRowConstraint >( 1 );
+ set_row( ( *rl )[ 0 ] , { -INF , 8 , 1 , 1 } , b->get_nested_Block( 0 ) ,
+	  b->get_nested_Block( 1 ) );
+ b->add_static_constraint( *rl , "link" );
+ empty_objective( b , false );
+
+ auto bsc = attach( b , "BSPar-push.txt" );
+ PushCosts.clear();
+ b->get_registered_solvers().front()->compute();
+ const std::vector< int > expect = { 1 , 0 , 1 , 0 , 1 };
+ check( ( PushCosts.size() == 1 ) && ( PushCosts.back() == expect ) ,
+	"intPushCostToOwner with vintWhichPushCost" );
+
+ detach( b , bsc );
+ }
+
+/*--------------------------------------------------------------------------*/
 /// a component whose Variable is in [ 0 , ub ] by a BoxConstraint (none if
 /// ub is infinite), with cost c and constant term ct
 
@@ -807,6 +850,7 @@ int main( void )
   test_recursive();
   test_box_bound_constant( false );
   test_box_bound_constant( true );
+  test_push_cost();
   }
  catch( const std::exception & e ) {
   std::cout << "FAILED: exception " << e.what() << std::endl;

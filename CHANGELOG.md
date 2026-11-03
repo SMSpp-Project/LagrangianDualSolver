@@ -109,6 +109,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   program that used none had the module left out and its classes
   missing from the factory
 
+- `PrimalProximalHeur` finds its default `RecoveryCfg.txt` in an installed
+  tree: the file is installed in `share/LagrangianDualSolver`, and when it
+  is not after the filename prefix of the Configuration it is looked for
+  there, relative to the shared library, before the source tree of the
+  build, whose path a moved or packaged library (the conda-forge one, say)
+  does not have; the error says where it was looked for
+
+- `vintWhichPushCost` gave `intPushCostToOwner` to the wrong components,
+  every second one being skipped and the last ones read past the end, and
+  an index given twice gave the opposite value to the components listed
+  after it
+
 - `PrimalProximalHeur` saves a Block with no Solution of its own as a
   `ColVariableSolution`, and compares a recovered point with the bound of
   the Lagrangian Dual up to the accuracy that dual was solved with

@@ -190,7 +190,10 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * problem the primal recovery is, i.e., the one that turns a fractional
    * point into a feasible solution of the original problem. With the empty
    * string there is no primal recovery, and the only solutions recorded
-   * are those the iterations happen to hit. */
+   * are those the iterations happen to hit. A relative name is looked for
+   * after the filename prefix of the Configuration, then among the data
+   * the module installs (share/LagrangianDualSolver, where the default
+   * RecoveryCfg.txt is), then in the source tree of the module. */
 
   strLastPPHPar   ///< first allowed new str parameter for derived classes
                   /**< Convenience value for easily allow derived classes
