@@ -116,6 +116,35 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * the original problem, and stronger than the one of the continuous
    * relaxation. */
 
+  intRecoveryMIPStart ,
+  ///< give the primal recovery the best solution found as a MIP start
+  /**< If nonzero, each restricted problem the primal recovery solves with a
+   * MILPSolver gets the best solution in the pool of PrimalProximalHeur as a
+   * MIP start (it helps the last attempt, which fixes no binary Variable; the
+   * others ignore a start that is not compatible with their fixings). Off by
+   * default. */
+
+  intPenConstrBins ,
+  ///< apply the penalty also to the binaries that are only in Constraint
+  /**< If nonzero, the proximal penalty is also applied to the binary
+   * Variable of a sub-Block that are in its Constraint but not in its
+   * Objective, which are added to its Objective Function to this end; the
+   * sub-Block must accept it (a Block with a fixed physical layout of its
+   * Objective, say ThermalUnitBlock, does not, and throws). If zero (the
+   * default), only the binary Variable in the Objective are penalized. */
+
+  intNoRecoveryIfFeasible ,
+  ///< skip the primal recovery when the point already is a feasible one
+  /**< If nonzero, before each primal recovery (at an iteration, and the final
+   * one) the point the Variable hold is measured the way the recovered ones
+   * are [see is_recovered_feasible()]: if it passes (every row of the Block,
+   * including those the Lagrangian Dual dualizes, is satisfied, and its cost
+   * is not below the bound of the dual), its true cost is recorded and the
+   * recovery is not run; only when it does not pass is the recovery run, as
+   * usual. The recovery would in general leave the point feasible with a cost
+   * no larger, since it fixes the binaries and optimizes the rest, so this
+   * trades some quality of the bound for time. Off by default. */
+
   intLastPPHPar   ///< first allowed new int parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of int algorithmic parameters. */
@@ -161,7 +190,10 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * problem the primal recovery is, i.e., the one that turns a fractional
    * point into a feasible solution of the original problem. With the empty
    * string there is no primal recovery, and the only solutions recorded
-   * are those the iterations happen to hit. */
+   * are those the iterations happen to hit. A relative name is looked for
+   * after the filename prefix of the Configuration, then among the data
+   * the module installs (share/LagrangianDualSolver, where the default
+   * RecoveryCfg.txt is), then in the source tree of the module. */
 
   strLastPPHPar   ///< first allowed new str parameter for derived classes
                   /**< Convenience value for easily allow derived classes
@@ -182,6 +214,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
   maxIter   = Solver::get_dflt_int_par( intMaxIter );
   f_MaxSol  = get_dflt_int_par( intMaxSol );
   UseWSPSol = get_dflt_int_par( intUseWarmStartPSol );
+  RecMIPStart  = get_dflt_int_par( intRecoveryMIPStart );
+  PenConstrBins = get_dflt_int_par( intPenConstrBins );
+  NoRecIfFeas = get_dflt_int_par( intNoRecoveryIfFeasible );
   MaxThread = Solver::get_dflt_int_par( intMaxThread );
   R         = get_dflt_dbl_par( dbl_penaltyFactor );
   RelAcc    = Solver::get_dflt_dbl_par( dblRelAcc );
@@ -241,6 +276,19 @@ class PrimalProximalHeur : public LagrangianDualSolver
   *
   * - intUseWarmStartPSol [0]: whether the primal solution of the warm
   *                 start is the proximal center of the first iteration.
+  *
+  * - intRecoveryMIPStart [0]: whether the restricted problems of the primal
+  *                 recovery are given the best solution found so far as a MIP
+  *                 start (to the MILPSolver that take one).
+  *
+  * - intPenConstrBins [0]: whether the proximal penalty is also applied to
+  *                 the binary Variable of a sub-Block that are in its
+  *                 Constraint but not in its Objective (say, the routing
+  *                 Variable of a Block whose cost only depends on continuous
+  *                 Variable), which are then added to its Objective
+  *                 Function; a sub-Block that does not accept them (say,
+  *                 ThermalUnitBlock, whose Objective has a fixed physical
+  *                 layout) throws.
   *
   * - intMaxThread [0]: maximum number of threads that compute() spawns,
   *                 besides the one calling it, to solve the components in
@@ -361,13 +409,10 @@ class PrimalProximalHeur : public LagrangianDualSolver
   if( v_best_sol.empty() )  // no current solution
    return( false );         // no next solution either
 
-  // v_best_sol is a heap with the best Solution at the top, i.e., the one
-  // with largest value if f_max and smallest otherwise; use a custom
-  // comparator (returns true if a is worse than b in the chosen sense)
+  // v_best_sol is a heap with the best Solution at the top [see worse_sol()]
   std::pop_heap( v_best_sol.begin() , v_best_sol.end() ,
                  [ this ]( const sol_value & a , const sol_value & b ) {
-                  return( f_max ? ( a.second < b.second )
-                                : ( a.second > b.second ) );
+                  return( worse_sol( a , b ) );
                   } );
   delete v_best_sol.back().first;  // delete current best solution
   v_best_sol.pop_back();           // remove current best solution
@@ -388,6 +433,21 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( f_max ? - Inf< double >() : Inf< double >() );
   return( v_best_sol.front().second );
   }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ /// records the current value of the Variable of the Block as a solution
+ /** Seeds the pool of solutions of PrimalProximalHeur with the point the
+  * Variable of the Block currently hold, which the caller knows to be
+  * feasible (say, the allocation in force before the Block is re-optimized).
+  * The point is checked before being recorded: it must not be better than
+  * the bound of the Lagrangian Dual (up to its accuracy) and it must satisfy
+  * the rows of the Block, the ones the Lagrangian relaxation dualizes
+  * included. It returns true if it was recorded. Whatever the later
+  * iterations find replaces it as soon as it is better, so that
+  * get_var_solution() hands back at least this one. */
+
+ bool add_solution( void );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -421,10 +481,30 @@ class PrimalProximalHeur : public LagrangianDualSolver
   if( ! InnerSolver->has_var_solution() )
    return( f_max ? - Inf< double >() : Inf< double >() );
 
-  double value = 0;
+  return( solution_value() );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the original objective of f_Block at the current values of the Variable
+ /** The sum of subtree_value() over the sub-Blocks of f_Block plus the
+  * constant term of the Objective of f_Block itself, which has no Variable
+  * [see LagrangianDualSolver::set_Block()] but may have a constant (say,
+  * a fixed cost) that is part of the value of every solution. */
+
+ double solution_value( void ) {
+  double value = block_constant();
   for( Index idx = 0 ; idx < is_linear.size() ; ++idx )
    value += subtree_value( idx );
   return( value );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the constant term of the Objective of f_Block, 0 if it has none
+
+ double block_constant( void ) const {
+  const auto obj = dynamic_cast< const RealObjective * >(
+					     f_Block->get_objective() );
+  return( obj ? double( obj->get_constant_term() ) : 0.0 );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -435,29 +515,31 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * the objective of a sub-Block is in general not all of its cost, part of
   * which may be in its own nested Block. An objective of a nested Block
   * that is neither a LinearFunction nor a DQuadFunction has no copy, and it
-  * is evaluated as it is. */
+  * is evaluated as it is. Each objective is multiplied by its weight [see
+  * W_sbi and W_nested]. */
 
  double subtree_value( Index idx ) {
   double value = 0;
   if( is_linear[ idx ] ) {
    Funct_sbi[ idx ].compute( true );
-   value += Funct_sbi[ idx ].get_value();
+   value += W_sbi[ idx ] * Funct_sbi[ idx ].get_value();
    }
   else {
    Funct_sbi_quad[ idx ].compute( true );
-   value += Funct_sbi_quad[ idx ].get_value();
+   value += W_sbi[ idx ] * Funct_sbi_quad[ idx ].get_value();
    }
-  for( auto & lf : Funct_nested[ idx ] ) {
-   lf.compute( true );
-   value += lf.get_value();
+  for( Index i = 0 ; i < Funct_nested[ idx ].size() ; ++i ) {
+   Funct_nested[ idx ][ i ].compute( true );
+   value += W_nested[ idx ][ i ] * Funct_nested[ idx ][ i ].get_value();
    }
-  for( auto & qf : Funct_nested_quad[ idx ] ) {
-   qf.compute( true );
-   value += qf.get_value();
+  for( Index i = 0 ; i < Funct_nested_quad[ idx ].size() ; ++i ) {
+   Funct_nested_quad[ idx ][ i ].compute( true );
+   value += W_nested_quad[ idx ][ i ] *
+            Funct_nested_quad[ idx ][ i ].get_value();
    }
-  for( auto obj : Obj_nested[ idx ] ) {
-   obj->compute( true );
-   value += obj->value();
+  for( Index i = 0 ; i < Obj_nested[ idx ].size() ; ++i ) {
+   Obj_nested[ idx ][ i ]->compute( true );
+   value += W_Obj_nested[ idx ][ i ] * Obj_nested[ idx ][ i ]->value();
    }
   return( value );
   }
@@ -545,6 +627,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
   switch( par ) {
    case( intUseWarmStartPSol ): return( 0 );
+   case( intRecoveryMIPStart ):  return( 0 );
+   case( intPenConstrBins ):     return( 0 );
+   case( intNoRecoveryIfFeasible ): return( 0 );
    case( intLogVerb ):          return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_int_par( par ) );
@@ -582,6 +667,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
                                   << 4 ) );
    case( intMaxIter ):  return( maxIter );
    case( intUseWarmStartPSol ): return( UseWSPSol );
+   case( intRecoveryMIPStart ):  return( RecMIPStart ? 1 : 0 );
+   case( intPenConstrBins ):     return( PenConstrBins ? 1 : 0 );
+   case( intNoRecoveryIfFeasible ): return( NoRecIfFeas ? 1 : 0 );
    case( intMaxThread ):        return( MaxThread );
    }
   return( LagrangianDualSolver::get_int_par( par ) );
@@ -604,6 +692,12 @@ class PrimalProximalHeur : public LagrangianDualSolver
   const override {
   if( name == "intUseWarmStartPSol" )
    return( intUseWarmStartPSol );
+  if( name == "intRecoveryMIPStart" )
+   return( intRecoveryMIPStart );
+  if( name == "intPenConstrBins" )
+   return( intPenConstrBins );
+  if( name == "intNoRecoveryIfFeasible" )
+   return( intNoRecoveryIfFeasible );
   return( LagrangianDualSolver::int_par_str2idx( name ) );
   }
 
@@ -621,8 +715,17 @@ class PrimalProximalHeur : public LagrangianDualSolver
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
   static const std::string _ws = "intUseWarmStartPSol";
+  static const std::string _rms = "intRecoveryMIPStart";
+  static const std::string _pcb = "intPenConstrBins";
+  static const std::string _nrf = "intNoRecoveryIfFeasible";
   if( idx == intUseWarmStartPSol )
    return( _ws );
+  if( idx == intRecoveryMIPStart )
+   return( _rms );
+  if( idx == intPenConstrBins )
+   return( _pcb );
+  if( idx == intNoRecoveryIfFeasible )
+   return( _nrf );
   return( LagrangianDualSolver::int_par_idx2str( idx ) );
   }
 
@@ -690,6 +793,16 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PROTECTED METHODS ----------------------------*/
 /*--------------------------------------------------------------------------*/
+ /// true if the Solution a is worse than b in the optimization sense
+ /** The comparator of the heap v_best_sol, whose top is therefore the best
+  * Solution: the one with the largest value if f_max, the smallest
+  * otherwise. */
+
+ bool worse_sol( const sol_value & a , const sol_value & b ) const {
+  return( f_max ? ( a.second < b.second ) : ( a.second > b.second ) );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// the bound of the Lagrangian Dual opposite to that of get_lb() / get_ub()
  /** An upper bound on the value of the Lagrangian Dual of the original
   * objective for a minimization problem (a lower one for a maximization
@@ -718,6 +831,11 @@ class PrimalProximalHeur : public LagrangianDualSolver
  Index f_MaxSol;  ///< maximum number of Solution to keep
 
  int UseWSPSol;   ///< whether the warm-start primal is the first center
+ bool RecMIPStart = false;  ///< give the primal recovery a MIP start
+ bool PenConstrBins = false;  ///< penalize the binaries only in Constraint
+ bool NoRecIfFeas = false;    ///< skip the recovery if the point is feasible
+ bool f_PenConstr = false;    ///< some binary only in Constraint is penalized
+ bool f_Seeded = false;  ///< add_solution() seeded the pool since compute()
 
  int MaxThread;   ///< threads spawned by the consensus recovery
 
@@ -821,6 +939,15 @@ class PrimalProximalHeur : public LagrangianDualSolver
  ///< the objectives of the Block nested into each sub-Block that have no
  ///< copy, being neither linear nor quadratic, and are evaluated as they are
 
+ std::vector< double > W_sbi;
+ ///< the weight of the Objective of each sub-Block [see
+ ///< Block::set_objective_weight()], by which its value is multiplied
+
+ std::vector< std::vector< double > > W_nested , W_nested_quad , W_Obj_nested;
+ ///< the weights of the Objective in Funct_nested, Funct_nested_quad and
+ ///< Obj_nested, i.e., the products of the weights along the path from the
+ ///< sub-Block down to their Block, the latter comprised
+
  std::vector< bool > is_linear;
  ///< flags telling whether each sub-Block's inner objective is linear
  ///< (true) or quadratic (false)
@@ -890,15 +1017,29 @@ class PrimalProximalHeur : public LagrangianDualSolver
  bool recover_primal( double & cost );
 
 /*--------------------------------------------------------------------------*/
+ /// the current point as a feasible solution, without recovery
+ /** If intNoRecoveryIfFeasible is set and the point the Variable of f_Block
+  * hold is feasible (every row of f_Block, the dualized ones included, and
+  * a value that is not below the bound of the dual: see
+  * is_recovered_feasible()), writes its true cost in \p cost and returns
+  * true; the point is left as it is. Otherwise returns false and the caller
+  * runs recover_primal(). */
+
+ bool direct_feasible( double & cost );
+
+/*--------------------------------------------------------------------------*/
  /// whether what recover_primal() has left in f_Block can be recorded
  /** Checks that the point the recovery has left in f_Block is worth
   * recording as a solution, which means that it is feasible and that its
   * value is not better than the bound the Lagrangian Dual gives, no
   * feasible point being able to beat it. A point that is not is discarded
   * rather than handed over, since whoever asks the solver for a solution
-  * takes it as feasible and its value as a bound. */
+  * takes it as feasible and its value as a bound. With \p check_bound false
+  * the value is not compared with the bound, which is what one wants before
+  * compute() has run and no bound is known (say, in add_solution()): only
+  * the rows of f_Block are then checked. */
 
- bool is_recovered_feasible( double value );
+ bool is_recovered_feasible( double value , bool check_bound = true );
 
 /*--------------------------------------------------------------------------*/
 

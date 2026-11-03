@@ -7,6 +7,146 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-03
+
+### Added
+
+- a change of the weights of a component [see `Block::set_weight()`] after
+  the Lagrangian Dual is formed (`handles_weight_change()`, false with
+  `iBCopy`, whose copies do not follow the original): that of the Objective
+  reaches the `LagBFunction` of the component, and that of the Variable has
+  the Lagrangian terms of the component written again from the relaxed
+  Constraint with the new weight (`reweight_components()`), e.g., when a
+  `UCBlock` replicates one of its units while the Solver is attached
+
+- the weight of the Objective of a `Block` [see
+  `Block::set_objective_weight()`]: with `Recursive` the `LagBFunction` of a
+  component has the product of the weights of the Block relaxed above it, as an
+  ancestor of the component multiplying its Objective and not the Lagrangian
+  term, the constant of each relaxed Block enters with its weight, the copy of
+  a component (`iBCopy`) has its weight, the dual values `get_dual_solution()`
+  writes in a component are multiplied by its weight, which its `Solver` does
+  not see, and `PrimalProximalHeur` evaluates the objective of each sub-Block
+  and of its nested Block with their weights, the value of each component
+  solved alone in the consensus recovery included
+
+- the weight of the Variable of a `Block` [see
+  `Block::set_variable_weight()`]: the coefficient of a `Variable` of a
+  component in a relaxed Constraint enters its Lagrangian term multiplied by
+  the product of the weights from its `Block` up to the closest one that
+  also contains the Constraint, in the tree as it is before the decomposition
+  (`LagrangianDualSolver::variable_weight()`), when the Lagrangian terms are
+  built and when the relaxed Constraint change; the copy of a component
+  (`iBCopy`) has the weight of the original
+
+- the makefiles build the C++20 module `smspp.lagrangiandualsolver` when
+  `SMSppMOD` is not empty (e.g., `make SMSppMOD=1`), with clang++ 16 or
+  later [see `lib/makefile-mod` of SMS++]
+
+- `PrimalProximalHeur::add_solution()`, which records the point the
+  Variable of the Block currently hold as a solution, after checking that it
+  satisfies the rows of the Block; with `intRecoveryMIPStart` the best
+  solution so far is given as a MIP start to the `MILPSolver` of the primal
+  recovery, and the reason why a solver takes none is logged
+- `PrimalProximalHeur` parameter `intPenConstrBins`, which applies the
+  proximal penalty also to the binary Variable that only appear in the
+  Constraint of a sub-Block (say, routing Variable whose cost is not in the
+  objective), adding them to its Objective Function; a sub-Block that does
+  not accept them (say, `ThermalUnitBlock`) throws, hence the default (0)
+  keeps the penalty on the binary Variable of the Objective only
+- `LagrangianDualRelaxationSolver` chooses the variable to branch upon by the
+  components of the core (`BranchingRule.h` of SMS++): its candidates are
+  described as `BranchCandidate` (the convexified solution as the point, the
+  Lagrangian solution as the second point, the sub-Blocks as the blocks),
+  strong branching is `StrongBranching` on the children it solves, eLearned
+  is `LearnedBranching`; the choices are the same as before
+- `LagrangianDualRelaxationSolver` gives the estimates of the children of
+  each branching (it is a `BranchEstimator`, see `BranchingRule.h` of
+  SMS++), for a best-estimate search such as that of BranchAndXSolver: with
+  `intBranchEstimate` 1 they are those of the pseudocosts of the variables
+  (`PseudoCosts`), learned from the bound of each child solved right after
+  its parent and from the children of strong branching, a variable with no
+  observation taking the prior of `strEstimateModel` (`LearnedPseudoCosts`)
+  or the mean of the others; with the default 0 it gives none, and nothing
+  changes
+
+- the C++20 module `smspp.lagrangiandualsolver`
+  (`src/LagrangianDualSolver.cppm`), which exports every name that the
+  headers declare at namespace scope and re-exports `smspp.milpsolver`, so
+  that a source file can write `import smspp.lagrangiandualsolver;` in place
+  of the `#include` of the headers; it is built with the CMake option
+  `SMSpp_BUILD_MODULE`, as the target `SMS++::LagrangianDualSolver_module`.
+  `LagrangianDualRelaxationSolverML`, which needs Torch, is not in it
+
+### Changed
+
+- the README leaves the channels that distribute SMS++ to the
+  installation guide of the wiki (Installing-SMS++), keeping the names
+  of the packages of the module
+
+- the pipeline builds the module also with its makefiles, after CMake, and
+  runs on a change of the makefiles too [see `ci/makefile` of the umbrella]
+
+- `SMSpp_BUILD_MODULE` no longer stops the configuration when the C++20
+  module cannot be built, i.e., with a CMake older than 3.28, a generator
+  other than Ninja or Visual Studio, a compiler other than Clang 16 (with
+  `clang-scan-deps`) or MSVC 19.34, or a module it imports that is not
+  there: the option is turned off with a warning that says why, and the
+  build goes on with the headers [see `cmake/CheckModule.cmake` of SMS++]
+
+- the Modification of the relaxed constraints reach the multiplier of a
+  dynamic constraint in constant time, rather than by walking the list of
+  the dynamic multipliers at each access, which made a batch of changes
+  quadratic in the number of dynamic constraints
+
+### Fixed
+
+- on Windows, the executables that copy their DLLs next to themselves
+  are linked one at a time (a job pool of Ninja), since two copies of the
+  same DLL into one directory collided (e.g., with the clang++ of MSYS2)
+
+- with the compilers of MinGW (MSYS2) the target asks whoever links it
+  for the symbol that forces the module in, as with MSVC and on macOS:
+  the linker imports a DLL only for the symbols asked for, so that a
+  program that used none had the module left out and its classes
+  missing from the factory
+
+- `PrimalProximalHeur` finds its default `RecoveryCfg.txt` in an installed
+  tree: the file is installed in `share/LagrangianDualSolver`, and when it
+  is not after the filename prefix of the Configuration it is looked for
+  there, relative to the shared library, before the source tree of the
+  build, whose path a moved or packaged library (the conda-forge one, say)
+  does not have; the error says where it was looked for
+
+- `vintWhichPushCost` gave `intPushCostToOwner` to the wrong components,
+  every second one being skipped and the last ones read past the end, and
+  an index given twice gave the opposite value to the components listed
+  after it
+
+- `PrimalProximalHeur` saves a Block with no Solution of its own as a
+  `ColVariableSolution`, and compares a recovered point with the bound of
+  the Lagrangian Dual up to the accuracy that dual was solved with
+- `LagrangianDualSolver::get_dual_solution()` solves a component again at
+  the multipliers only if `compute()` has not stopped on a time or
+  iteration limit, within the time it has left, and never again for a
+  component whose Solver had no dual solution even after that (e.g., an
+  integer MILP): a tool writing the solution with `-O` re-solved every
+  integer component with its old time limit, which doubled the time of a
+  run stopped on `dblMaxTime`
+- `PrimalProximalHeur::get_Lagrangian_initial_status()` is the status of
+  the Lagrangian Dual also when there is no binary static Variable, whose
+  only solve was not recorded: it stayed kUnEval, which
+  `LagrangianDualRelaxationSolver::compute()` then returned (e.g., on the
+  unit commitments with no binary variable, such as the EC ones)
+
+- `PrimalProximalHeur` counts the constant term of the `Objective` of the
+  Block it is attached to in the value of its solutions: it added up those
+  of the sub-Blocks alone, while the bounds of the Lagrangian Dual include
+  it, so that with a constant (e.g., the network constant terms a bus
+  `UCBlock` keeps in its own `Objective`) a solution was either reported at
+  a value that is not its own or, being then below the Lagrangian bound,
+  thrown away by the primal recovery
+
 ## [0.5.1] - 2026-10-10
 
 ### Fixed
@@ -472,7 +612,8 @@ Initial release
 
 - Initial release.
 
-[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.5.1...develop
+[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.6.0...develop
+[0.6.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.5.1...0.6.0
 [0.5.1]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.5.0...0.5.1
 [0.5.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.4.0...0.5.0
 [0.4.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.3.0...0.4.0

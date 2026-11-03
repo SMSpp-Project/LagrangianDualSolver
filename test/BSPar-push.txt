@@ -1,0 +1,71 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - BSPar-push.txt  - - - - - - - - - - - - - - - -
+#
+# A txt description of the BlockSolverConfig of the module test for the
+# components whose Objective takes the Lagrangian cost: one
+# LagrangianDualSolver with LDCfg.txt, intPushCostToOwner 0 and
+# vintWhichPushCost, unsorted and with an index given twice, so that the
+# LagBFunction of the components 1 and 3 have intPushCostToOwner 0 and all
+# the others 1.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig     # exact type of the Configuration object
+
+0  # the BlockSolverConfig is not a "differential" one
+
+1  # number of (the names of) Solver in this BlockSolverConfig
+
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+LagrangianDualSolver  # name of 1st Solver
+
+1  # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# that of LDCfg.txt with intPushCostToOwner and vintWhichPushCost
+
+*LDCfg.txt +
+
+1  # f_diff == 1 ==> only the entries listed below are changed
+
+1  # number of integer parameters
+
+# now all the integer parameters
+intPushCostToOwner 0  # the value for the components of vintWhichPushCost
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+1  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+vintWhichPushCost  3 3 1 3   # the components 1 and 3, 3 given twice
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+*  # [none]
+
+# end of 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - END BSPar-push.txt  - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -55,9 +55,8 @@ include(BuildType)
 # look for the system-installed libraries.
 if (NOT hasParent)
     find_package(SMS++ REQUIRED)
-    # MILPSolver is needed by PrimalProximalHeur to warm-start the
-    # heuristic by solving the LP relaxation of f_Block; see the
-    # GRBMILPSolver include of src/PrimalProximalHeur.cpp.
+    # MILPSolver is needed by PrimalProximalHeur, which gives the MILPSolver
+    # of its primal recovery the best solution found so far as a MIP start.
     find_package(MILPSolver REQUIRED)
 endif ()
 
@@ -121,6 +120,11 @@ if (BUILD_SHARED_LIBS)
         # for by -u included, even under -dead_strip_dylibs
         target_link_options(${modName} INTERFACE
                 "LINKER:-u,_SMSpp_force_load_${modName}")
+    elseif (MINGW)
+        # the PE linker imports a DLL for the symbols asked for, -u
+        # included
+        target_link_options(${modName} INTERFACE
+                "LINKER:-u,SMSpp_force_load_${modName}")
     endif ()
 endif ()
 
@@ -160,6 +164,22 @@ target_link_libraries(${modName} PUBLIC
         ${modNamespace}::SMS++
         ${modNamespace}::MILPSolver)
 
+# PrimalProximalHeur reads RecoveryCfg.txt, when the configuration does not
+# say otherwise, from where the module installs its data: the path of that
+# directory relative to the one of the library is given at compile time, so
+# that an installed tree keeps finding it wherever it is moved, and the
+# library asks the dynamic loader where it is (dladdr() of libdl)
+if (WIN32)
+    set(libDest ${CMAKE_INSTALL_FULL_BINDIR})
+else ()
+    set(libDest ${CMAKE_INSTALL_FULL_LIBDIR})
+endif ()
+file(RELATIVE_PATH dataRel ${libDest}
+        ${CMAKE_INSTALL_FULL_DATADIR}/${modName})
+target_compile_definitions(${modName} PRIVATE
+        LgDSLV_DATA_DIR="${dataRel}")
+target_link_libraries(${modName} PRIVATE ${CMAKE_DL_LIBS})
+
 # LagrangianDualSolverML, which holds LagrangianDualRelaxationSolverML, is a
 # library of its own, as BundleSolverML is: Torch is some hundreds of
 # megabytes of shared objects, whose loading a program linking the one here
@@ -172,9 +192,21 @@ if (Torch_FOUND)
     add_library(${modName}ML)
     target_compile_features(${modName}ML PUBLIC cxx_std_20)
 
-    if (MSVC AND BUILD_SHARED_LIBS)
-        target_link_options(${modName}ML INTERFACE
-            "/INCLUDE:SMSpp_force_load_LagrangianDualRelaxationSolverML")
+    # the options of the target of the module [see above]
+    if (BUILD_SHARED_LIBS)
+        if (MSVC)
+            target_link_options(${modName}ML INTERFACE
+                "/INCLUDE:SMSpp_force_load_LagrangianDualRelaxationSolverML")
+        elseif (UNIX AND (NOT APPLE))
+            target_link_options(${modName}ML INTERFACE
+                "LINKER:--no-as-needed")
+        elseif (APPLE)
+            target_link_options(${modName}ML INTERFACE
+                "LINKER:-u,_SMSpp_force_load_LagrangianDualRelaxationSolverML")
+        elseif (MINGW)
+            target_link_options(${modName}ML INTERFACE
+                "LINKER:-u,SMSpp_force_load_LagrangianDualRelaxationSolverML")
+        endif ()
     endif ()
 
     target_sources(${modName}ML PRIVATE
@@ -196,6 +228,39 @@ endif ()
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
 add_library(${modNamespace}::${modName} ALIAS ${modName})
+
+# ----- C++20 module -------------------------------------------------------- #
+# The module smspp.lagrangiandualsolver (src/LagrangianDualSolver.cppm)
+# exports the names of the headers and re-exports smspp.milpsolver; like the
+# module smspp of the core, it is built when SMSpp_BUILD_MODULE is ON, which
+# needs CMake 3.28 or later, the Ninja or Visual Studio generator and a
+# compiler that scans the dependencies of the modules.
+# Where these are missing, or a module it imports is not there, the option
+# is turned off with a warning [see CheckModule.cmake of SMS++].
+smspp_check_module(${modNamespace}::MILPSolver_module)
+if (SMSpp_BUILD_MODULE)
+    # the scan of the module dependencies, and $<LINK_ONLY> honoured also for
+    # the target itself, which cmake_policy(VERSION 3.15) above leaves off
+    cmake_policy(SET CMP0155 NEW)
+    cmake_policy(SET CMP0131 NEW)
+
+    add_library(${modName}_module)
+    target_sources(${modName}_module PUBLIC
+            FILE_SET CXX_MODULES
+            BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src
+            FILES src/${modName}.cppm)
+    target_compile_features(${modName}_module PUBLIC cxx_std_20)
+    # the interface takes the include paths and the definitions of the
+    # library, but not its compile options (e.g., the -fopenmp of a source,
+    # which no header needs), so that it agrees with the module it imports
+    target_include_directories(${modName}_module PRIVATE
+            $<TARGET_PROPERTY:${modName},INTERFACE_INCLUDE_DIRECTORIES>)
+    target_compile_definitions(${modName}_module PRIVATE
+            $<TARGET_PROPERTY:${modName},INTERFACE_COMPILE_DEFINITIONS>)
+    target_link_libraries(${modName}_module PUBLIC $<LINK_ONLY:${modName}>
+            ${modNamespace}::MILPSolver_module)
+    add_library(${modNamespace}::${modName}_module ALIAS ${modName}_module)
+endif ()
 
 # ----- Subdirectories ------------------------------------------------------ #
 if (BUILD_TESTING)
@@ -225,6 +290,17 @@ install(TARGETS ${modName}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
+
+# Install the module, whose interface is compiled again by each importer
+if (SMSpp_BUILD_MODULE)
+    install(TARGETS ${modName}_module
+            EXPORT ${modName}Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            FILE_SET CXX_MODULES
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace}/modules)
+endif ()
 
 # Install the headers; the one of the ML variant only with it
 install(FILES
@@ -274,6 +350,12 @@ install(FILES
 install(FILES
         ${CMAKE_CURRENT_LIST_DIR}/README.md
         ${CMAKE_CURRENT_LIST_DIR}/LICENSE
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/${modName})
+
+# Install the default RecoveryCfg.txt of PrimalProximalHeur, where the
+# library looks for it (see LgDSLV_DATA_DIR above).
+install(FILES
+        ${CMAKE_CURRENT_LIST_DIR}/RecoveryCfg.txt
         DESTINATION ${CMAKE_INSTALL_DATADIR}/${modName})
 
 # ----- Add the build tree to RPATH------------------------------------------ #

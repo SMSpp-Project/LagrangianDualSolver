@@ -11,7 +11,7 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-BlockSolverConfig  # exact type of the Configuration object
+BlockSolverConfig     # exact type of the Configuration object
 
 0  # the BlockSolverConfig is not a "differential" one
 
@@ -63,18 +63,17 @@ int_LDSlv_NNMult   0  # multipliers of either sign
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
-# end of 1st ComputeConfig  - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # 2nd ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # that of LDCfg.txt as it is
 
 *LDCfg.txt
 
-# end of 2nd ComputeConfig  - - - - - - - - - - - - - - - - - - - - - - - - -
-
-# end of BlockSolverConfig  - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of 2nd ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - END BSPar.txt - - - - - - - - - - - - - - - -

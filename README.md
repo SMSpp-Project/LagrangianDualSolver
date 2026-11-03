@@ -1,5 +1,11 @@
 # LagrangianDualSolver
 
+[![Pipeline](https://gitlab.com/smspp/lagrangiandualsolver/badges/develop/pipeline.svg)](https://gitlab.com/smspp/lagrangiandualsolver/-/pipelines?ref=develop)
+[![Release](https://gitlab.com/smspp/lagrangiandualsolver/-/badges/release.svg)](https://gitlab.com/smspp/lagrangiandualsolver/-/releases)
+[![Documentation](https://img.shields.io/badge/docs-Doxygen-blue)](https://smspp.gitlab.io/smspp-project/)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
+
 Definition and implementation of the `LagrangianDualSolver` class, which
 implements the `CDASolver` interface within the SMS++ framework for a "generic"
 Lagrangian-based `Solver`.
@@ -69,7 +75,10 @@ and the `LagrangianDualRelaxationSolver`, that derives from
 the nodes of a Branch-and-Bound (such as the `BranchAndXSolver`), branching on
 a variable that is fractional in the convexified solution: the most
 fractional one, the best one by strong branching, or the one that a model
-learned from the data of strong branching ranks first. Its variant
+learned from the data of strong branching ranks first. It may also give
+the estimates of the two children of each branching by the pseudocosts of
+the variables, for a best-estimate search, a variable never branched upon
+taking the pseudocosts that a model read from a file gives. Its variant
 `LagrangianDualRelaxationSolverML` learns that model while the
 Branch-and-Bound goes on, from the strong branching of its first nodes, by
 the Torch C++ API; it is in a library of its own,
@@ -82,22 +91,10 @@ These instructions will let you build `LagrangianDualSolver` and
 `PrimalProximalHeur`.
 
 
-The module also comes ready-made, in any of
-
-```sh
-sudo add-apt-repository ppa:smspp-project/smspp   # Ubuntu
-sudo apt install libsmspp-lds-dev
-
-conda install -c conda-forge smspp-project        # Linux, macOS, Windows
-
-brew tap SMSpp-Project/smspp                      # macOS, Linux
-brew install smspp
-
-vcpkg install "smspp[core,lds]"                   # from the sources
-```
-
-where apt and the port give the module alone, while conda and the tap carry
-the whole framework. What follows is about building it yourself.
+The module also comes ready-made: on Ubuntu as `libsmspp-lds-dev`, in vcpkg as
+`smspp[core,lds]`, and in the other channels that the [installation
+guide](https://gitlab.com/smspp/smspp-project/-/wikis/Installing-SMS++) of
+SMS++ lists. What follows is about building it yourself.
 
 ### Requirements
 
