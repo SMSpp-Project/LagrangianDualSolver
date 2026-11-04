@@ -1409,6 +1409,22 @@ public:
  void add_Modification( sp_Mod & mod ) override;
 
 /*--------------------------------------------------------------------------*/
+ /// the kinds of Modification the LagrangianDualSolver reads
+ /** The abstract ones [see Solver::concerned_by()], those of the relaxed
+  * constraints and of the Objective that the Lagrangian Dual follows, and
+  * also the physical ones when the components are the sub-Block themselves
+  * (see v_held): a physical Modification of a component given back to its
+  * father is kept aside for its LagBFunction [see add_Modification()],
+  * which reads them. When the components are copies, a Modification of
+  * the original sub-Block is not read at all, and the physical ones of the
+  * Block are not read either. */
+
+ [[nodiscard]] Modification::ModConcern concerned_by( void ) const override {
+  return( v_held.empty() ? Modification::eModAbst
+	                 : Modification::eModAnything );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// returns the "inner" CDASolver used to solve the Lagrangian Dual
  /** Returns a pointer to the "inner" CDASolver used to solve the Lagrangian
   * Dual. This should not be necessary since LagrangianDualSolver makes it

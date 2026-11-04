@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `LagrangianDualSolver::concerned_by()` is `eModAbst` when the
+  components are copies (`iBCopy`), whose physical Modification it has no
+  use for, and all the kinds when they are the sub-Block themselves, whose
+  physical Modification it keeps aside for their `LagBFunction`
+
 ### Fixed
 
 - the sub-Block copied (`int_LDSlv_iBCopy` 1), which threw "Variable
