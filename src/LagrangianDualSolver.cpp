@@ -475,6 +475,12 @@ void LagrangianDualSolver::set_Block( Block * block )
  v_row_kind.clear();
  v_row_kind.reserve( NumVar );
 
+ // with the sub-Block copied, the relaxed Constraint are written with the
+ // Variable of the originals, the Lagrangian terms with those of the copies
+ f_copy_var.clear();
+ if( iBCopy )
+  map_copy_variables();
+
  // construct the auxiliary data structure to hold the Lagrangian terms;
  // LagTerms[ i ][ h ] contains the v_coeff_pair corresponding to the
  // Lagrangian term of sub-Block h for the i-th variable
@@ -1385,6 +1391,12 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
                                             Configuration * cfg ) {
   auto LSBb = v_LBF[ b ]->get_nested_Block( 0 );
 
+  // a copy is made with its Variable only [see map_copy_variables()]: its
+  // Constraint, where the duals of the component are written and from
+  // where they are mapped back, are made the first time they are asked
+  if( iBCopy )
+   LSBb->generate_abstract_constraints();
+
   // a component that has never been compute()-d, say because the inner
   // Solver handles it as an "easy" one, has no Solver yet: its dual values
   // are those the inner Solver has written, which are only mapped back if
@@ -1917,6 +1929,47 @@ double LagrangianDualSolver::constr2val( const FRowConstraint & con ,
 
 /*--------------------------------------------------------------------------*/
 
+void LagrangianDualSolver::map_copy_variables( void )
+{
+ // the ColVariable of a Block and of its sub-Block, recursively, in the
+ // order of the groups: the static ones, then the dynamic ones
+ const auto collect = []( Block * b , std::vector< ColVariable * > & v ) {
+  auto rec = [ & v ]( auto & self , Block * blck ) -> void {
+   for( const auto & group : blck->get_static_variable_groups() )
+    if( group )
+     group->for_each_as< ColVariable >( [ & v ]( ColVariable & var ) {
+      v.push_back( & var ); } );
+   for( const auto & group : blck->get_dynamic_variable_groups() )
+    if( group )
+     group->for_each_as< ColVariable >( [ & v ]( ColVariable & var ) {
+      v.push_back( & var ); } );
+   for( auto sb : blck->get_nested_Blocks() )
+    self( self , sb );
+   };
+  rec( rec , b );
+  };
+
+ std::vector< ColVariable * > orig;
+ std::vector< ColVariable * > copy;
+ for( Index i = 0 ; i < f_nsb ; ++i ) {
+  orig.clear();
+  copy.clear();
+  // the Variable have to be there in both, which costs nothing if they are
+  v_component[ i ]->generate_abstract_variables();
+  v_LBF[ i ]->get_inner_block()->generate_abstract_variables();
+  collect( v_component[ i ] , orig );
+  collect( v_LBF[ i ]->get_inner_block() , copy );
+  if( orig.size() != copy.size() )
+   throw( std::invalid_argument( "LagrangianDualSolver: the copy of a "
+				 "sub-Block has not the same Variable as the "
+				 "original, hence it cannot be relaxed" ) );
+  for( Index j = 0 ; j < orig.size() ; ++j )
+   f_copy_var[ orig[ j ] ] = copy[ j ];
+  }
+ }  // end( LagrangianDualSolver::map_copy_variables )
+
+/*--------------------------------------------------------------------------*/
+
 void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
 			 std::vector< LinearFunction::v_coeff_pair > & split )
 {
@@ -1933,9 +1986,12 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
 
  split.resize( f_nsb );
 
- // the coefficients enter with the weights of the Variable
+ // the coefficients enter with the weights of the Variable, which are those
+ // of the original components, while the Variable are those that the
+ // LagBFunction see, i.e., those of the copies if the sub-Block are copied
  const auto weighted = [ this , & con ]( LinearFunction::coeff_pair el ) {
   el.second *= variable_weight( el.first , con.get_Block() );
+  el.first = term_variable( el.first );
   return( el );
   };
 
@@ -1963,7 +2019,7 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
  // Variable-to-sub-Block-index information in blckidx to avoid computing
  // it twice;
  for( Index i = 0 ; i < vc.size() ; ) {
-  auto bi = Block2Index( vc[ i ].first->get_Block() );
+  auto bi = Block2Index( term_variable( vc[ i ].first )->get_Block() );
   blckidx[ i++ ] = bi;
   ++cntr[ bi ];
   }
@@ -2121,6 +2177,7 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  v_LBF.clear();
  v_no_dual.clear();
  v_component.clear();
+ f_copy_var.clear();
  v_component_w.clear();
  v_father.clear();
  v_row_kind.clear();

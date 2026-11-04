@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- the sub-Block copied (`int_LDSlv_iBCopy` 1), which threw "Variable
+  belonging to wrong Block" when the Solver was attached, since the relaxed
+  rows were split over the Variable of the original components while the
+  `LagBFunction` see those of their copies: each Variable of an original
+  component is now mapped to the one of its copy, with `intRecursive` too, and
+  a copy whose Variable are not laid out as those of its original is refused
+
+- `get_dual_solution()` with the sub-Block copied, which asked for the duals
+  of the components to be mapped back from copies that have no Constraint:
+  the Constraint of a copy are now made before its duals are asked
+
 ## [0.6.0] - 2026-11-03
 
 ### Added

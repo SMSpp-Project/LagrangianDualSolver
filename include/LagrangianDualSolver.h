@@ -2327,6 +2327,32 @@ FRowConstraint * constraint_with_index( Index i ) {
 /*--------------------------------------------------------------------------*/
  // return the index of the given sub-Block
 
+ /// maps the Variable of the original components to those of their copies
+ /** Fills f_copy_var by walking each original component and its copy in
+  * parallel, the static and then the dynamic Variable groups of each Block,
+  * recursively in its sub-Block; a copy whose Variable are not laid out as
+  * those of its original makes it throw, since then no Variable of the copy
+  * can be said to be the one of the original. */
+
+ void map_copy_variables( void );
+
+/*--------------------------------------------------------------------------*/
+ /// the Variable that stands for var in the Lagrangian terms
+ /** Returns the Variable of the copy that corresponds to var if the sub-Block
+  * are copied [see f_copy_var], var itself otherwise. */
+
+ ColVariable * term_variable( ColVariable * var ) const {
+  if( f_copy_var.empty() )
+   return( var );
+  auto it = f_copy_var.find( var );
+  if( it == f_copy_var.end() )
+   throw( std::invalid_argument(
+	  "LagrangianDualSolver: Variable belonging to no copied sub-Block" ) );
+  return( it->second );
+  }
+
+/*--------------------------------------------------------------------------*/
+
  Index Block2Index( Block * blck ) {
   for( ;; ) {
    if( auto lbf = dynamic_cast< LagBFunction * >( blck ) ) {
@@ -2607,6 +2633,16 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  std::vector< Block * > v_component;
  std::vector< Block * > v_father;
+
+ /// with the sub-Block copied, the Variable of each copy by its original
+ /** When the sub-Block are copied [see int_LDSlv_iBCopy], the relaxed
+  * Constraint are written with the Variable of the original components,
+  * while the Lagrangian terms have to be written with those of their copies,
+  * which are the ones the LagBFunction see: this maps each Variable of an
+  * original component to the corresponding one of its copy [see
+  * map_copy_variables()]. It is empty when the sub-Block are not copied. */
+
+ std::unordered_map< const Variable * , ColVariable * > f_copy_var;
 
  /// the weight of the Block above each component
  /** The product of the weights of the Objective [see
