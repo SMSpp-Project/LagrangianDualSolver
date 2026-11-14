@@ -258,6 +258,10 @@ void LagrangianDualSolver::set_Block( Block * block )
   Block * csbi;
   if( iBCopy ) {  // copying the sub-Block
    csbi = sb[ i ]->get_R3_Block( nullptr );  // the copy R3B
+   if( ! csbi )
+    throw( std::logic_error( "LagrangianDualSolver::set_Block: sub-Block " +
+			     std::to_string( i ) + " has no R3 Block, "
+			     "int_LDSlv_iBCopy cannot be used" ) );
    // which is the same problem, the weights of its Objective and of its
    // Variable comprised
    csbi->set_objective_weight( sb[ i ]->get_objective_weight() , eNoMod );

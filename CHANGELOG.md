@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- with `int_LDSlv_iBCopy` a sub-Block with no R3 Block (e.g., an
+  `AbstractBlock`, whose `get_R3_Block()` gives none) made `set_Block()`
+  crash: it now throws `std::logic_error`
+
 - the sub-Block copied (`int_LDSlv_iBCopy` 1), which threw "Variable
   belonging to wrong Block" when the Solver was attached, since the relaxed
   rows were split over the Variable of the original components while the
