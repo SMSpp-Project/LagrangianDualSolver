@@ -622,13 +622,6 @@ int PrimalProximalHeur::compute( bool changedvars )
   *f_log << "PrimalProximalHeur::compute: NumStatVar = " << NumStatVar
          << std::endl;
 
- // the best value so far is none, unless add_solution() has seeded the pool
- // since the last compute(), in which case it is that of the best solution
- // in it
- best_bound = ( f_Seeded && ( ! v_best_sol.empty() ) )
-              ? v_best_sol.front().second
-              : ( f_max ? - Inf< double >() : Inf< double >() );
- f_Seeded = false;
  valid_bound = f_max ? Inf< double >() : - Inf< double >();
  other_bound = - valid_bound;
 
@@ -645,6 +638,25 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  if( ! owned )
   f_Block->unlock( f_id );
+
+ // A new solve starts without a primal incumbent unless add_solution()
+ // explicitly seeded it. Clear the old pool together with its bounds:
+ // an early cutoff must not leave has_var_solution() true while get_ub()
+ // (get_lb() when maximizing) reports an infinite primal value. Pending
+ // Modifications have already removed any invalidated seeded solutions.
+ if( ! f_Seeded ) {
+  for( auto & s : v_best_sol )
+   delete s.first;
+  v_best_sol.clear();
+  }
+ best_bound = v_best_sol.empty()
+              ? ( f_max ? - Inf< double >() : Inf< double >() )
+              : v_best_sol.front().second;
+ worst_bound = v_best_sol.empty() ? - best_bound : best_bound;
+ for( const auto & s : v_best_sol )
+  worst_bound = f_max ? std::min( worst_bound , s.second )
+                      : std::max( worst_bound , s.second );
+ f_Seeded = false;
 
  // warm start: solve the relaxation of f_Block with the auxiliary Solver
  // that strWarmStartBSC describes, so that the dual variables, and hence

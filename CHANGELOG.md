@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-16
+
+### Changed
+
+- `LagrangianDualSolver::concerned_by()` is `eModAbst` when the
+  components are copies (`iBCopy`), whose physical Modification it has no
+  use for, and all the kinds when they are the sub-Block themselves, whose
+  physical Modification it keeps aside for their `LagBFunction`
+
+### Fixed
+
+- the installed module `smspp.lagrangiandualsolver` could not be imported,
+  since its package gave the interface of the module the target of the
+  library by its name in the build tree, which an installed package does not
+  have
+
+- with `int_LDSlv_iBCopy` a sub-Block with no R3 Block (e.g., an
+  `AbstractBlock`, whose `get_R3_Block()` gives none) made `set_Block()`
+  crash: it now throws `std::logic_error`
+
+- the sub-Block copied (`int_LDSlv_iBCopy` 1), which threw "Variable
+  belonging to wrong Block" when the Solver was attached, since the relaxed
+  rows were split over the Variable of the original components while the
+  `LagBFunction` see those of their copies: each Variable of an original
+  component is now mapped to the one of its copy, with `intRecursive` too, and
+  a copy whose Variable are not laid out as those of its original is refused
+
+- `get_dual_solution()` with the sub-Block copied, which asked for the duals
+  of the components to be mapped back from copies that have no Constraint:
+  the Constraint of a copy are now made before its duals are asked
+
 ## [0.6.0] - 2026-11-03
 
 ### Added
@@ -612,7 +643,8 @@ Initial release
 
 - Initial release.
 
-[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.6.0...develop
+[Unreleased]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.7.0...develop
+[0.7.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.6.0...0.7.0
 [0.6.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.5.1...0.6.0
 [0.5.1]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.5.0...0.5.1
 [0.5.0]: https://gitlab.com/smspp/lagrangiandualsolver/-/compare/0.4.0...0.5.0
