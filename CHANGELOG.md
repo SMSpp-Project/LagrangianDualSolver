@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - the path of the data relative to the library is the one of the programs
   where the library is a DLL, told by the import library of the platform
 
+- `PrimalProximalHeur` finds the directory of its library, and the data
+  installed next to it, by Boost.DLL instead of `dladdr()` and
+  `GetModuleHandleExW()`, with no test on the operating system
+
 ## [0.7.0] - 2026-11-16
 
 ### Changed

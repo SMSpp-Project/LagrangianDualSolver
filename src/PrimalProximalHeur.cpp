@@ -92,13 +92,8 @@ namespace {
 #include <filesystem>
 
 #ifdef LgDSLV_DATA_DIR
-#ifdef _WIN32
-#define NOMINMAX
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
+#define BOOST_DLL_USE_STD_FS
+#include <boost/dll/runtime_symbol_info.hpp>
 #endif
 
 /*--------------------------------------------------------------------------*/
@@ -1226,25 +1221,10 @@ void PrimalProximalHeur::process_outstanding_Modification( void )
 
 static std::filesystem::path installed_data_dir( void )
 {
- std::filesystem::path lib;
-#ifdef _WIN32
- HMODULE h = nullptr;
- if( GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-			   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT ,
-			 reinterpret_cast< LPCWSTR >( &installed_data_dir ) ,
-			 &h ) ) {
-  std::vector< wchar_t > buf( 32768 );
-  auto n = GetModuleFileNameW( h , buf.data() , DWORD( buf.size() ) );
-  if( n && ( n < buf.size() ) )
-   lib = std::wstring( buf.data() , n );
-  }
-#else
- Dl_info info;
- if( dladdr( reinterpret_cast< void * >( &installed_data_dir ) , &info ) &&
-     info.dli_fname && *info.dli_fname )
-  lib = info.dli_fname;
-#endif
- if( lib.empty() )
+ std::error_code ec;
+ const std::filesystem::path lib =
+   boost::dll::symbol_location( installed_data_dir , ec );
+ if( ec || lib.empty() )
   return( std::filesystem::path() );
  return( std::filesystem::absolute( lib ).parent_path() / LgDSLV_DATA_DIR );
  }
