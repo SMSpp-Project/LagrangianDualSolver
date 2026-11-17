@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the "meta" Configuration of `get_var_solution()` and
+  `get_dual_solution()` follows the format that `Solver::get_var_solution()`
+  describes for every :Solver: a sub-Block is also chosen when a Block below
+  it is, getting in `get_dual_solution()` the whole map, which its Solver
+  reads from there on, and the Block of this Solver chosen, by its
+  `classname()` or by "*", means all the solution, the multipliers of the
+  relaxed constraints included; `partial_solution_test` checks it on a
+  Block of three levels solved for real
+
 - the library is kept in whoever links it by a source that calls its
   `SMSpp_force_load_` function, the tests and the tools take the static
   libraries whole by the `WHOLE_ARCHIVE` feature of CMake and copy the DLLs

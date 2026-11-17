@@ -1540,16 +1540,17 @@ public:
   * is found anywhere in solc->value.
   *
   * If *solc is a SimpleConfiguration< std::map< std::string ,
-  * Configuration * > >, the same type as the "meta" Configurations that
-  * dispatch by class, the sub-Block are chosen by class rather than by
-  * index: the solution of a sub-Block is computed if and only if its
-  * classname() is a key of solc->value, and the sub-Block of any other class
-  * are skipped. This
-  * lets one configuration name the sub-Block whose solution is needed for
-  * instances whose sub-Block are numbered differently. The Configuration
-  * the key is mapped to (which can be nullptr, meaning all of it) is the
-  * one passed to map_back_solution() if the sub-Block are copies, and it is
-  * not used otherwise.
+  * Configuration * > >, the "meta" format of Solver::get_var_solution(), the
+  * sub-Block are chosen by class rather than by index: the solution of a
+  * sub-Block is computed, whole, if and only if its classname(), or that of
+  * a Block below it, is a key of solc->value [see has_selected()], and that
+  * of all of them if the Block of this Solver is chosen, by its classname()
+  * or by the key "*". This lets one configuration name the sub-Block whose
+  * solution is needed for instances whose sub-Block are numbered
+  * differently. The Configuration the classname() of a sub-Block is mapped
+  * to (which can be nullptr, meaning all of it) is the one passed to
+  * map_back_solution() if the sub-Block are copies, and it is not used
+  * otherwise.
   *
   * If solc == nullptr, or any other Configuration, the variable solution is
   * constructed for all the sub-Block. */
@@ -1594,15 +1595,19 @@ public:
   * - If \p solc is not nullptr, then it can be:
   *
   *   = a pointer to a SimpleConfiguration< std::map< std::string ,
-  *     Configuration * > >, the same type as the "meta" Configurations that
-  *     dispatch by class. In this case the sub-Block are chosen by class
-  *     rather than by index: the dual solution is only written for those
-  *     sub-Block whose classname() is a key of solc->f_value, the
-  *     Configuration that the key is mapped to being passed as the argument
-  *     to get_dual_solution() (which can be nullptr, meaning all of it),
-  *     while the sub-Block of any other class are skipped. The dual solution
-  *     of the relaxed constraints in the father Block is written if and only
-  *     if "relaxed" is a key of solc->f_value, in which case the
+  *     Configuration * > >, the "meta" format of Solver::get_var_solution().
+  *     In this case the sub-Block are chosen by class rather than by index:
+  *     the dual solution is written for those sub-Block whose classname() is
+  *     a key of solc->f_value, the Configuration that the key is mapped to
+  *     being passed as the argument to get_dual_solution() (which can be
+  *     nullptr, meaning all of it), and for those with a Block below them
+  *     whose classname() is a key, solc itself being passed, which the
+  *     Solver of the sub-Block reads from there on; the other sub-Block are
+  *     skipped. If the Block of this Solver is chosen, by its classname() or
+  *     by the key "*", all of the dual solution is written. Otherwise the
+  *     dual solution of the relaxed constraints in the father Block is
+  *     written if and only if "relaxed" is a key of solc->f_value, in which
+  *     case the
   *     Configuration it is mapped to is ignored; no Block has that
   *     classname(), which is not a class name by the naming convention of
   *     SMS++. That is, if one only wants the dual solution of the relaxed

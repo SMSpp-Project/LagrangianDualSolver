@@ -1,0 +1,51 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - -  MILPCfg-sol.txt  - - - - - - - - - - - - - - -
+#
+# The ComputeConfig of the :MILPSolver of test_partial_solution.cpp, both
+# that of each sub-Block [see InnerBSCfg-sol.txt] and that of the master
+# problem of the BundleSolver [see MPBCfg-sol.txt]: no log, every other
+# parameter at its default value.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig  # exact type of the Configuration object
+
+0  # f_diff == 0 ==> all non-provided parameters are set to the default value
+
+1  # number of integer parameters
+
+# now all the integer parameters
+intLogVerb  0  # no log
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+* # [none]
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - -  END MILPCfg-sol.txt  - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

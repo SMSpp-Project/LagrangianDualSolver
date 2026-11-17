@@ -28,6 +28,22 @@ add_test(NAME ${modName}_unit_test
          COMMAND ${modName}_unit_test
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
+# ----- partial_solution_test ----------------------------------------------- #
+# The parts of the solution that the "meta" Configuration of
+# get_var_solution() and get_dual_solution() asks for, on a Block of three
+# levels whose Lagrangian Dual is solved for real by a BundleSolver and a
+# GRBMILPSolver; it reads BSPar-sol.txt and the files it names from the
+# working directory
+if (TARGET SMS++::BundleSolver)
+    add_executable(partial_solution_test test_partial_solution.cpp)
+    target_link_libraries(partial_solution_test PRIVATE
+                          SMS++::LagrangianDualSolver
+                          SMS++::BundleSolver)
+    add_test(NAME partial_solution_test
+             COMMAND partial_solution_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
 # ----- the label of this module's tests ------------------------------------ #
 
 # The label lets the module CI select exactly the tests exercising this module

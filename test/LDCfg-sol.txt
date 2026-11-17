@@ -1,0 +1,56 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - LDCfg-sol.txt - - - - - - - - - - - - - - - -
+#
+# The ComputeConfig of the LagrangianDualSolver of test_partial_solution.cpp:
+# the inner Solver is a BundleSolver, with no easy component, whose master
+# problem is solved as MPBCfg-sol.txt says, and each sub-Block is solved as
+# InnerBSCfg-sol.txt says; the sub-Block are not copied, so that the
+# solution is written in them directly.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig  # exact type of the Configuration object
+
+1  # f_diff == 1 ==> only the parameters listed below are changed
+
+3  # number of integer parameters
+
+# now all the integer parameters
+int_LDSlv_iBCopy  0     # the sub-Block are not copied
+intDoEasy         0     # no easy component
+intLogVerb        0     # no log
+
+1  # number of double parameters
+
+# now all the double parameters
+dblRelAcc         1e-8  # relative accuracy required to the solution
+
+3  # number of string parameters
+
+# now all the string parameters
+str_LDSlv_ISName  BundleSolver        # the inner Solver
+str_LagBF_BSCfg   InnerBSCfg-sol.txt  # the Solver of each sub-Block
+strMPBSolverCfg   MPBCfg-sol.txt      # the Solver of the master problem
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+* # [none]
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END LDCfg-sol.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

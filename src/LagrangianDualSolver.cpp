@@ -1328,13 +1328,17 @@ void LagrangianDualSolver::get_var_solution( Configuration * solc )
   }
  else
   if( auto SCmc = dynamic_cast< p_SConf_m_s_c >( solc ) ) {
-   // by class: only the sub-Block whose classname() is a key
+   // the "meta" format [see Solver::get_var_solution()]: a sub-Block is
+   // written whole if it or a Block below it is chosen, all of them if the
+   // Block of this Solver is; the Configuration for map_back_solution() is
+   // the one of its classname(), if any
    const auto & cls = SCmc->value();
-   for( Index i = 0 ; i < f_nsb ; ++i ) {
-    const auto it = cls.find( v_component[ i ]->classname() );
-    if( it != cls.end() )
-     getsoli( i , it->second );
-    }
+   const bool all = cls.count( "*" ) || cls.count( f_Block->classname() );
+   for( Index i = 0 ; i < f_nsb ; ++i )
+    if( all || has_selected( v_component[ i ] , cls ) ) {
+     const auto it = cls.find( v_component[ i ]->classname() );
+     getsoli( i , it != cls.end() ? it->second : nullptr );
+     }
    }
   else
    for( Index i = 0 ; i < f_nsb ; ++i )
@@ -1470,11 +1474,24 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
 
  // the case of std::map< std::string , Configuration * >- - - - - - - - - -
  if( auto c = dynamic_cast< p_SConf_m_s_c >( solc ) ) {
+  // the "meta" format [see Solver::get_var_solution()]: the Block of this
+  // Solver chosen means all of it; a sub-Block chosen gets the
+  // Configuration of its classname(), one with a chosen Block below it the
+  // whole map, which its Solver reads from there on
   const auto & cls = c->value();
+  if( cls.count( "*" ) || cls.count( f_Block->classname() ) ) {
+   for( Index i = 0 ; i < f_nsb ; ++i )
+    lcfg( i , nullptr );
+   goto get_duals;
+   }
+
   for( Index i = 0 ; i < f_nsb ; ++i ) {
    const auto it = cls.find( v_component[ i ]->classname() );
    if( it != cls.end() )
     lcfg( i , it->second );
+   else
+    if( has_selected( v_component[ i ] , cls ) )
+     lcfg( i , solc );
    }
 
   if( cls.count( RelaxedKey ) )
