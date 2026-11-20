@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `intHeurFreq` of `LagrangianDualRelaxationSolver`: the heuristic of
+  `PrimalProximalHeur` runs at the first `compute()` and then at one every
+  `intHeurFreq` of them, 0 meaning at the first only, the others solving
+  only the Lagrangian Dual of the original objective, which gives the bound
+  and the convexified solution the branching needs
+
+- an entry of `vstrBranchGroups` may be "name[i]" or "name[i:j]", some of
+  the variables of the group, and the order of the entries is a priority:
+  the candidates are those of the first entry that has a fractional
+  variable
+
+- `PrimalProximalHeur` records an integral convexified solution that
+  satisfies the rows of the Block by its true cost, which closes the gap of
+  a node that it solves
+
 ### Changed
 
 - the "meta" Configuration of `get_var_solution()` and
@@ -31,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PrimalProximalHeur` finds the directory of its library, and the data
   installed next to it, by Boost.DLL instead of `dladdr()` and
   `GetModuleHandleExW()`, with no test on the operating system
+
+### Fixed
+
+- with `intApplyStrategy` `eMaster`, the bound that
+  `LagrangianDualRelaxationSolver` relaxes in a branching has the sign of
+  the relaxed constraints of a maximization problem, which it had the
+  opposite of, a child then getting a bound below its optimum
 
 ## [0.7.0] - 2026-11-16
 

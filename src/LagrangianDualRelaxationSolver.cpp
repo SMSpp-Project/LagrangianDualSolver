@@ -27,6 +27,10 @@
 
 #include <cmath>
 
+#include <cctype>
+
+#include <unordered_map>
+
 #include <unordered_set>
 
 #include "LagrangianDualRelaxationSolver.h"
@@ -77,6 +81,12 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par , int value )
 				  "intBranchEstimate is neither 0 nor 1" ) );
    f_branch_estimate = value;
    break;
+  case( intHeurFreq ):
+   if( value < 0 )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::set_par: "
+				  "intHeurFreq is negative" ) );
+   f_heur_freq = value;
+   break;
   default: PrimalProximalHeur::set_par( par , value );
   }
  }
@@ -90,6 +100,7 @@ int LagrangianDualRelaxationSolver::get_dflt_int_par( idx_type par ) const
   case( intBranchStrategy ): return( eMostFractional );
   case( intStrongCands ):    return( 10 );
   case( intBranchEstimate ): return( 0 );
+  case( intHeurFreq ):       return( 1 );
   default: return( PrimalProximalHeur::get_dflt_int_par( par ) );
   }
  }
@@ -103,6 +114,7 @@ int LagrangianDualRelaxationSolver::get_int_par( idx_type par ) const
   case( intBranchStrategy ): return( f_branch_strategy );
   case( intStrongCands ):    return( f_strong_cands );
   case( intBranchEstimate ): return( f_branch_estimate );
+  case( intHeurFreq ):       return( f_heur_freq );
   default: return( PrimalProximalHeur::get_int_par( par ) );
   }
  }
@@ -120,6 +132,8 @@ Solver::idx_type LagrangianDualRelaxationSolver::int_par_str2idx(
   return( intStrongCands );
  if( name == "intBranchEstimate" )
   return( intBranchEstimate );
+ if( name == "intHeurFreq" )
+  return( intHeurFreq );
  return( PrimalProximalHeur::int_par_str2idx( name ) );
  }
 
@@ -132,11 +146,13 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
  static const std::string branch = "intBranchStrategy";
  static const std::string cands = "intStrongCands";
  static const std::string estimate = "intBranchEstimate";
+ static const std::string heur = "intHeurFreq";
  switch( par ) {
   case( intApplyStrategy ):  return( apply );
   case( intBranchStrategy ): return( branch );
   case( intStrongCands ):    return( cands );
   case( intBranchEstimate ): return( estimate );
+  case( intHeurFreq ):       return( heur );
   default: return( PrimalProximalHeur::int_par_idx2str( par ) );
   }
  }
@@ -296,6 +312,10 @@ void LagrangianDualRelaxationSolver::set_global_information(
 
 int LagrangianDualRelaxationSolver::compute( bool changedvars )
 {
+ // the heuristic runs at the first call and at one every f_heur_freq
+ f_NoHeur = ( f_ncompute > 0 ) &&
+            ( ( f_heur_freq == 0 ) || ( f_ncompute % f_heur_freq != 0 ) );
+ ++f_ncompute;
  const int status = PrimalProximalHeur::compute( changedvars );
 
  // the bound of a child just after its parent branched is an observation
@@ -343,11 +363,11 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
  // fractional in it, but if there is none it can be neither branched nor
  // fenced, and what the inner Solver returned is said
  if( ld_status != kOK ) {
-  const auto mask = branchable();
+  const auto rank = branchable();
   bool frac = false;
   for( Index k = 0 ; ( ! frac ) && ( k < sol.size() ) ; ++k )
-   frac = mask[ k ] && ( std::abs( sol[ k ] - std::round( sol[ k ] ) )
-			 > FracEps );
+   frac = ( rank[ k ] < Inf< Index >() ) &&
+          ( std::abs( sol[ k ] - std::round( sol[ k ] ) ) > FracEps );
   if( ! frac )
    return( ld_status );
   }
@@ -496,15 +516,16 @@ LagrangianDualRelaxationSolver::candidates( void )
  // branched upon [see vstrBranchGroups], the most fractional first
  std::vector< Cand > cands;
  {
-  const auto mask = branchable();
+  const auto rank = branchable();
   Index k = 0;
   for( Index sb = 0 ; sb < idx_to_var_sbi1.size() ; ++sb )
    for( Index pos = 0 ; pos < idx_to_var_sbi1[ sb ].size() ; ++pos , ++k ) {
     const auto & dv = idx_to_var_sbi1[ sb ][ pos ];
     const double v = sol[ k ];
     const double frac = std::abs( v - std::round( v ) );
-    if( mask[ k ] && ( frac > FracEps ) )
-     cands.push_back( { dv.second , v , frac , k , sb , pos , dv.first } );
+    if( ( rank[ k ] < Inf< Index >() ) && ( frac > FracEps ) )
+     cands.push_back( { dv.second , v , frac , k , sb , pos , dv.first ,
+			rank[ k ] } );
     }
   }
 
@@ -523,9 +544,16 @@ LagrangianDualRelaxationSolver::candidates( void )
 			   "(dblNZEps) or vstrBranchGroups leaves out a "
 			   "fractional group" ) );
 
+ // those of the first entry of vstrBranchGroups that has any, the most
+ // fractional first [see vstrBranchGroups]
  std::stable_sort( cands.begin() , cands.end() ,
 		   []( const Cand & a , const Cand & b ) {
-		    return( a.frac > b.frac ); } );
+		    return( a.rank != b.rank ? a.rank < b.rank
+			                     : a.frac > b.frac ); } );
+ const auto first = cands.front().rank;
+ cands.erase( std::find_if( cands.begin() , cands.end() ,
+			    [ first ]( const Cand & c ) {
+			     return( c.rank != first ); } ) , cands.end() );
  return( cands );
 
  }  // end( LagrangianDualRelaxationSolver::candidates )
@@ -644,29 +672,72 @@ LagrangianDualRelaxationSolver::choose( std::vector< Cand > & cands )
 
 /*--------------------------------------------------------------------------*/
 
-std::vector< bool > LagrangianDualRelaxationSolver::branchable( void ) const
+std::vector< LagrangianDualRelaxationSolver::Index >
+LagrangianDualRelaxationSolver::branchable( void ) const
 {
- std::vector< bool > mask( NumStatVar , f_branch_groups.empty() );
+ std::vector< Index > rank( NumStatVar ,
+			    f_branch_groups.empty() ? 0 : Inf< Index >() );
  if( f_branch_groups.empty() )
-  return( mask );
+  return( rank );
 
- // the variables of the named groups of each sub-Block, then the flags in
- // the order in which PrimalProximalHeur has registered them
- std::unordered_set< const ColVariable * > vars;
+ // each entry is "name", "name[ i ]" or "name[ i : j ]", blanks being
+ // allowed anywhere [see vstrBranchGroups]
+ struct Entry {
+  std::string name;
+  Index lo , hi;
+  };
+ std::vector< Entry > entries;
+ for( const auto & e : f_branch_groups ) {
+  std::string s;
+  for( auto c : e )
+   if( ! std::isspace( static_cast< unsigned char >( c ) ) )
+    s.push_back( c );
+  const auto br = s.find( '[' );
+  if( br == std::string::npos ) {
+   entries.push_back( { s , 0 , Inf< Index >() } );
+   continue;
+   }
+  if( s.back() != ']' )
+   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::"
+				 "branchable: invalid entry " + e +
+				 " of vstrBranchGroups" ) );
+  const auto in = s.substr( br + 1 , s.size() - br - 2 );
+  const auto col = in.find( ':' );
+  const Index lo = std::stoul( in.substr( 0 , col ) );
+  const Index hi = ( col == std::string::npos ) ? lo + 1
+                   : Index( std::stoul( in.substr( col + 1 ) ) );
+  entries.push_back( { s.substr( 0 , br ) , lo , hi } );
+  }
+
+ // the first entry that has each variable of the groups of the sub-Blocks,
+ // then the ranks in the order in which PrimalProximalHeur has registered
+ // the variables
+ std::unordered_map< const ColVariable * , Index > first;
  for( const auto & sbi : f_Block->get_nested_Blocks() )
-  for( const auto & group : sbi->get_static_variable_groups() )
-   if( group && ( std::find( f_branch_groups.begin() , f_branch_groups.end() ,
-			     group->get_name() ) != f_branch_groups.end() ) )
-    group->for_each_as< ColVariable >( [ & ]( ColVariable & var ) {
-      vars.insert( & var );
-      } );
+  for( const auto & group : sbi->get_static_variable_groups() ) {
+   if( ! group )
+    continue;
+   Index pos = 0;
+   group->for_each_as< ColVariable >( [ & ]( ColVariable & var ) {
+     for( Index h = 0 ; h < entries.size() ; ++h )
+      if( ( entries[ h ].name == group->get_name() ) &&
+	  ( pos >= entries[ h ].lo ) && ( pos < entries[ h ].hi ) ) {
+       first.try_emplace( & var , h );
+       break;
+       }
+     ++pos;
+     } );
+   }
 
  Index k = 0;
  for( const auto & sbv : idx_to_var_sbi1 )
-  for( const auto & dv : sbv )
-   mask[ k++ ] = vars.contains( dv.second );
+  for( const auto & dv : sbv ) {
+   if( const auto it = first.find( dv.second ) ; it != first.end() )
+    rank[ k ] = it->second;
+   ++k;
+   }
 
- return( mask );
+ return( rank );
 
  }  // end( LagrangianDualRelaxationSolver::branchable )
 
@@ -835,19 +906,22 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
   const bool lb = ( type == AbstractChange::eChgLB );
 
   // the pair of the bound: g( x ) = value - x <= 0 for a lower bound,
-  // g( x ) = x - value <= 0 for an upper one
+  // g( x ) = x - value <= 0 for an upper one, the opposite for a
+  // maximization problem (as the relaxed constraints are reversed [see
+  // to_be_reversed()])
+  const bool rev = ( lb != f_max );
   auto & pair = map_varToLF[ pv ];
   auto & g = lb ? pair.second : pair.first;
   double old;
   if( g ) {
-   old = lb ? g->get_constant_term() : - g->get_constant_term();
-   g->set_constant_term( lb ? value : - value );
+   old = rev ? g->get_constant_term() : - g->get_constant_term();
+   g->set_constant_term( rev ? value : - value );
    }
   else {
    old = lb ? pv->get_lb() : pv->get_ub();
    g = new LinearFunction( LinearFunction::v_coeff_pair{
-					   { pv , lb ? -1.0 : 1.0 } } ,
-			   lb ? value : - value );
+					   { pv , rev ? -1.0 : 1.0 } } ,
+			   rev ? value : - value );
    auto y = new ColVariable();
    y->is_positive( true );
    lbf->add_dual_pairs( LagBFunction::v_dual_pair{ { y , g } } );

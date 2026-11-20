@@ -960,14 +960,23 @@ int PrimalProximalHeur::compute( bool changedvars )
   #endif
 
   // try to record the current solution if it is feasible (and integer in
-  // BIN_VARS mode) and we are past the first iteration
+  // BIN_VARS mode) and we are past the first iteration, or at the first one
+  // if it is the only one [see f_NoHeur], which then records the point by
+  // its true cost alone, with no recovery: otherwise a feasible Lagrangian
+  // solution would be lost, and a node that it solves would be left open
   #ifdef BIN_VARS
-  const bool can_record =
-    f_Block->is_feasible() && is_integer && ( iters >= 1 );
+  const bool can_record = f_Block->is_feasible() && is_integer &&
+                          ( ( iters >= 1 ) || f_NoHeur );
   #else
-   const bool can_record = f_Block->is_feasible() && ( iters >= 1 );
+   const bool can_record = f_Block->is_feasible() &&
+                           ( ( iters >= 1 ) || f_NoHeur );
   #endif
-  if( can_record ) {
+  if( can_record && f_NoHeur ) {
+   if( const double value = solution_value() ;
+       is_recovered_feasible( value ) )
+    record_feasible( value );
+   }
+  else if( can_record ) {
    LOG_VERB( 2 )
     *f_log << "  IS_FEASIBLE_SOL" << std::endl;
    double rec_cost;
@@ -1004,6 +1013,13 @@ int PrimalProximalHeur::compute( bool changedvars )
      }
     if( conv )
      v_LagrConvSol.resize( NumStatVar );
+    // an integral convexified solution that satisfies the rows of the Block
+    // is a solution worth the bound (up to the accuracy of the Lagrangian
+    // Dual), which closes the gap: it is recorded by its true cost
+    if( conv && is_integer_solution() && f_Block->is_feasible() )
+     if( const double value = solution_value() ;
+	 is_recovered_feasible( value ) )
+      record_feasible( value );
     const auto n_sub = f_Block->get_number_nested_Blocks();
     Index kvar = 0;
     for( Index index = 0 ; index < n_sub ; ++index )
@@ -1035,7 +1051,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( gap_closed() )
    break;
 
-  if( is_the_same || ( iters >= maxIter ) )
+  if( is_the_same || ( iters >= maxIter ) || f_NoHeur )
    break;
 
   if( time_left() <= 0 ) {
@@ -1098,8 +1114,10 @@ int PrimalProximalHeur::compute( bool changedvars )
  // with its true primal cost, hence a valid bound. This is done
  // unconditionally: value_FUNCTION is the Lagrangian value of the point (a
  // lower bound), never a valid upper bound. If the restricted problem is
- // infeasible the point is discarded.
- {
+ // infeasible the point is discarded. A derived class that asked for the
+ // Lagrangian Dual of the original objective only [see f_NoHeur] gets no
+ // recovery either.
+ if( ! f_NoHeur ) {
   double rec_cost;
   if( direct_feasible( rec_cost ) ||
           ( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) ) )

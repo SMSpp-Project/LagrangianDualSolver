@@ -282,13 +282,21 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   * - intBranchEstimate [0]: whether branch_estimates() gives the estimates
   *   of the children of each branch() [see PseudoCosts]: 0 gives none, so
   *   that a best-estimate search orders the nodes by their bounds, and 1
-  *   gives those of the pseudocosts, which are then learned. */
+  *   gives those of the pseudocosts, which are then learned;
+  *
+  * - intHeurFreq [1]: the heuristic of PrimalProximalHeur (its penalized
+  *   iterations and the primal recovery) is run at the first compute()
+  *   and then at one every intHeurFreq of them, 0 meaning at the first
+  *   only; at the others only the Lagrangian Dual of the original
+  *   objective is solved, which gives the bound and the convexified
+  *   solution the branching needs, and no solution is recorded. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
   intBranchStrategy ,                 ///< how the branching variable is chosen
   intStrongCands ,                    ///< candidates of strong branching
   intBranchEstimate ,                 ///< the estimates of the children
+  intHeurFreq ,                       ///< how often the heuristic runs
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
   };
 
@@ -345,7 +353,14 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   whose variables are determined by these of the others (say, start-up
   *   variables by the commitment ones) need not be branched upon, and
   *   leaving it out also spares the Solver of the sub-Block fixings it may
-  *   not support. */
+  *   not support. An entry may also be "name[i]", the i-th variable of
+  *   the group, or "name[i:j]", those from the i-th to the j-th, j
+  *   excluded, and the order of the entries is a priority: the candidates
+  *   are those of the first entry that has a fractional variable, the
+  *   most fractional first, those of the next entries coming only when
+  *   none of these is fractional. Thus, say, "x[0]" followed by "x"
+  *   branches upon the first variable of each sub-Block before the others,
+  *   which is what to do when that variable decides all of them. */
 
  enum vstr_par_type_LDRS {
   vstrBranchGroups = vstrLastLDSlvPar ,  ///< the groups branched upon
@@ -548,6 +563,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   Index sb;           ///< its sub-Block
   Index pos;          ///< its position among those of the sub-Block
   double cost;        ///< its cost in the objective of the sub-Block
+  Index rank;         ///< the entry of vstrBranchGroups it comes from
   };
 
  /// the number of the features of a candidate [see strBranchModel]
@@ -676,10 +692,11 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
 /*--------------------------------------------------------------------------*/
  /// the binary static variables that may be branched upon
- /** One flag per variable, in the order of the Lagrangian solution [see
-  * vstrBranchGroups]. */
+ /** One entry per variable, in the order of the Lagrangian solution: the
+  * first entry of vstrBranchGroups that has it, Inf< Index >() if none
+  * has, 0 for all if vstrBranchGroups is empty. */
 
- std::vector< bool > branchable( void ) const;
+ std::vector< Index > branchable( void ) const;
 
 /*--------------------------------------------------------------------------*/
  /// the Lagrangian multipliers, i.e., the active Variable of the LagBFunction
@@ -705,6 +722,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  std::string f_branch_model;               ///< strBranchModel
  std::vector< std::string > f_branch_groups; ///< vstrBranchGroups
  int f_branch_estimate = 0;                ///< intBranchEstimate
+ int f_heur_freq = 1;                      ///< intHeurFreq
+ Index f_ncompute = 0;                     ///< the calls to compute()
  std::string f_estimate_model;             ///< strEstimateModel
 
  /// the model of eLearned, read from strBranchModel at its first use
