@@ -55,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `PrimalProximalHeur` threw out of `compute()` when the convexified
+  solution gave a Variable fixed by a branching another value than the one
+  it is fixed at, as a solve stopped by the time limit may still weigh a
+  linearization taken before the fixing: there is then no convexified
+  solution, as when a component has no linearization to combine
+
 - with `intApplyStrategy` `eMaster`, the bound that
   `LagrangianDualRelaxationSolver` relaxes in a branching has the sign of
   the relaxed constraints of a maximization problem, which it had the

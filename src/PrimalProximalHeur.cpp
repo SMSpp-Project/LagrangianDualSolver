@@ -997,9 +997,13 @@ int PrimalProximalHeur::compute( bool changedvars )
   // the last LagrangianDualSolver::compute(); and even after a solve that
   // ended well a component may have no linearization to combine (say, its
   // master problem failed and the Bundle went on without it), which only
-  // get_var_solution() finds out, by throwing: then there is no convexified
-  // solution, and the binary variables it may have written are given back
-  // their values all the same
+  // get_var_solution() finds out, by throwing; so does a convexified
+  // solution that gives a fixed Variable another value than the one it is
+  // fixed at [see ColVariable::set_value()], as a solve stopped before its
+  // end (say, by the time limit) may still weigh a linearization taken
+  // before the fixing: then there is no convexified solution, and the
+  // binary variables it may have written are given back their values all
+  // the same
   if( f_save_conv_sol && ( ! penalized ) ) {
    v_LagrConvSol.clear();
    if( ( res >= kOK ) && ( ( res < kError ) || ( res == kLowPrecision ) ) &&
@@ -1009,6 +1013,9 @@ int PrimalProximalHeur::compute( bool changedvars )
      LagrangianDualSolver::get_var_solution();
      }
     catch( std::invalid_argument & ) {
+     conv = false;
+     }
+    catch( std::domain_error & ) {
      conv = false;
      }
     if( conv )
