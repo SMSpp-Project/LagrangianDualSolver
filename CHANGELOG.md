@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the makefiles give the shared library of the module by default on Linux
+  and on macOS, as CMake does, and its objects with `SMSppSTATIC` [see
+  `lib/makefile-shared` of SMS++]
+
 - the "meta" Configuration of `get_var_solution()` and
   `get_dual_solution()` follows the format that `Solver::get_var_solution()`
   describes for every :Solver: a sub-Block is also chosen when a Block below
