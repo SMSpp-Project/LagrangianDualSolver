@@ -95,13 +95,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only, so that the heuristic, and a `BranchAndXSolver` that gives it the
   time left to it, could go well past their budget
 
-- an integral convexified solution of `PrimalProximalHeur` is rounded
-  before the rows of the Block are checked: its binary Variable are integral
-  to within 1e-6 only, and a row summing many of them saw a violation that
-  is not there, so that the solution was not recorded, the node of
-  `LagrangianDualRelaxationSolver` was not fenced and its `candidates()`
-  threw, as on the type E instances of the GAP
-
 - the warm start of `PrimalProximalHeur` reaches the inner Solver: the
   multipliers were written in the Lambda Variables after the inner Solver
   had read them, when it was attached, so that the Lagrangian Dual started
