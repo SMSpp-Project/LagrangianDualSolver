@@ -396,6 +396,8 @@ void PrimalProximalHeur::set_par( idx_type par , std::string && value )
   PenRecBSC = std::move( value );
  else if( par == strPenaltyRecoveryBCfg )
   PenRecBCfg = std::move( value );
+ else if( par == strRecoveryBCfg )
+  RecBCfg = std::move( value );
  else
   LagrangianDualSolver::set_par( par , std::move( value ) );
 
@@ -1574,7 +1576,7 @@ bool PrimalProximalHeur::recover_primal( double & cost )
  // fixed binaries as bounds and enforces the coupling constraints
  auto solve_restricted = [ & ]( const char * stage ) -> bool {
   return( PrimalProximalHeur::solve_restricted( RecoveryBSC , stage ,
-                                                cost ) );
+                                                cost , RecBCfg ) );
   };
 
  bool ok = solve_restricted( "full" );

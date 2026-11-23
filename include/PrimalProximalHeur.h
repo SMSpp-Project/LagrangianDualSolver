@@ -224,6 +224,15 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * none, nothing is solved. With the empty string, the default, there is
    * no such problem. It is looked for as strRecoveryBSC. */
 
+  strRecoveryBCfg ,
+  ///< filename of the BlockConfig of the copy the restricted problems of
+  ///< the primal recovery are solved on
+  /**< As strPenaltyRecoveryBCfg, for the restricted problems of
+   * strRecoveryBSC: with the empty string, the default, they are solved on
+   * the Block itself, otherwise on a copy of it that this BlockConfig
+   * configures, e.g., with the rows that the formulation the Lagrangian
+   * Dual uses leaves out of the abstract representation. */
+
   strPenaltyRecoveryBCfg ,
   ///< filename of the BlockConfig of the copy the restricted problem of the
   ///< penalties is solved on
@@ -719,6 +728,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( _empty );
   if( par == strPenaltyRecoveryBCfg )
    return( _empty );
+  if( par == strRecoveryBCfg )
+   return( _empty );
   return( LagrangianDualSolver::get_dflt_str_par( par ) );
   }
 
@@ -828,6 +839,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( PenRecBSC );
   if( par == strPenaltyRecoveryBCfg )
    return( PenRecBCfg );
+  if( par == strRecoveryBCfg )
+   return( RecBCfg );
   return( LagrangianDualSolver::get_str_par( par ) );
   }
 
@@ -843,6 +856,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( strPenaltyRecoveryBSC );
   if( name == "strPenaltyRecoveryBCfg" )
    return( strPenaltyRecoveryBCfg );
+  if( name == "strRecoveryBCfg" )
+   return( strRecoveryBCfg );
   return( LagrangianDualSolver::str_par_str2idx( name ) );
   }
 
@@ -854,6 +869,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
   static const std::string _rc = "strRecoveryBSC";
   static const std::string _prc = "strPenaltyRecoveryBSC";
   static const std::string _prb = "strPenaltyRecoveryBCfg";
+  static const std::string _rb = "strRecoveryBCfg";
+  if( idx == strRecoveryBCfg )
+   return( _rb );
   if( idx == strPenaltyRecoveryBSC )
    return( _prc );
   if( idx == strPenaltyRecoveryBCfg )
@@ -958,6 +976,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
  std::string RecoveryBSC = "RecoveryCfg.txt";
  std::string PenRecBSC;  ///< BlockSolverConfig of the penalty recovery
  std::string PenRecBCfg; ///< BlockConfig of the copy it is solved on
+ std::string RecBCfg;    ///< the same for the primal recovery
  double PenRecFrac = 0;  ///< share of the binaries it keeps free
  ///< BlockSolverConfig of the primal recovery
 
