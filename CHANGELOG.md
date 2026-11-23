@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `intRowScaling` of `LagrangianDualSolver`: with 1 each relaxed
+  constraint enters its Lagrangian term, and the Objective of the
+  Lagrangian Dual, multiplied by a factor computed from the structure of
+  the problem (the number of groups of Variable that a constraint with a
+  nonzero side touches over the size of the side, the rows with a zero
+  side taking the largest factor of their group), so that families of
+  constraints of very different size give multipliers of similar size;
+  the dual bound is the same, the duals written back are those of the
+  original constraints
+
 - `intHeurFreq` of `LagrangianDualRelaxationSolver`: the heuristic of
   `PrimalProximalHeur` runs at the first `compute()` and then at one every
   `intHeurFreq` of them, 0 meaning at the first only, the others solving

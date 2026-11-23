@@ -50,6 +50,10 @@
  * - intPushCostToOwner together with vintWhichPushCost, unsorted and with
  *   an index given twice, which has to give intPushCostToOwner 0 to the
  *   LagBFunction of the components listed and 1 to all the others.
+ * - intRowScaling 1 (BSPar-scale.txt), with which the coefficients of each
+ *   multiplier have to be those without scaling times the factor of its
+ *   row, the multiplier the dual of the row divided by it, and the duals
+ *   written back by get_dual_solution() the ones it was made from.
  *
  * The test needs nothing but the core SMS++ and this module; the
  * Configuration files are read from the working directory.
@@ -101,6 +105,10 @@ struct Multiplier {
  int sign;     ///< +1 if it is >= 0, -1 if it is <= 0, 0 if it is free
  double term;  ///< the coefficient of the Variable of the first component
                ///< in its Lagrangian term, 0 if it has none
+ double value = 0;  ///< the value of the multiplier
+ std::vector< double > terms;  ///< the coefficient of the first Variable
+                               ///< of each component in its Lagrangian
+                               ///< term, 0 if it has none
  };
 
 /// what each compute() of ProbeCDASolver has seen, the last one at the end
@@ -133,22 +141,27 @@ class ProbeCDASolver : public CDASolver {
   std::vector< Multiplier > rec;
   auto obj = static_cast< FRealObjective * >( f_Block->get_objective() );
   auto lf = static_cast< LinearFunction * >( obj->get_function() );
-  auto lbf = static_cast< LagBFunction * >( static_cast< FRealObjective * >(
-	      f_Block->get_nested_Block( 0 )->get_objective() )->get_function() );
-
   for( const auto & el : lf->get_v_var() ) {
    Multiplier m{ el.second , 0 , 0 };
+   m.value = static_cast< ColVariable * >( el.first )->get_value();
    if( el.first->is_positive() )
     m.sign = 1;
    else
     if( el.first->is_negative() )
      m.sign = -1;
-   const auto i = lbf->is_active( el.first );
-   if( i < Inf< Index >() )
-    if( auto t = static_cast< LinearFunction * >(
+   for( auto sb : f_Block->get_nested_Blocks() ) {
+    auto lbf = static_cast< LagBFunction * >( static_cast< FRealObjective * >(
+					   sb->get_objective() )->get_function() );
+    double term = 0;
+    const auto i = lbf->is_active( el.first );
+    if( i < Inf< Index >() )
+     if( auto t = static_cast< LinearFunction * >(
 					   lbf->get_Lagrangian_term( i ) ) )
-     if( t->get_num_active_var() )
-      m.term = t->get_v_var().front().second;
+      if( t->get_num_active_var() )
+       term = t->get_v_var().front().second;
+    m.terms.push_back( term );
+    }
+   m.term = m.terms.front();
    rec.push_back( m );
    }
 
@@ -835,6 +848,130 @@ static void test_box_bound_constant( bool max )
 /*--------------------------------------------------------------------------*/
 /*---------------------------------- MAIN ----------------------------------*/
 /*--------------------------------------------------------------------------*/
+/// with intRowScaling 1 (the second Solver of BSPar-scale.txt) the
+/// coefficient of each multiplier in the Objective and in the Lagrangian
+/// terms is the one without scaling (the first Solver) times the factor of
+/// the row, and the multiplier is the dual of the row divided by it. The
+/// components are one with the Variable a and b and the row a + b <= 3, one
+/// with c and the row c <= 0.5, and one each with d, e and g; the relaxed
+/// rows are
+///   a + c = 4, b + d <= 2, a - c = 0, b - d >= 0, e - g = 0
+/// whose groups are { a , c }, { b , d } and { e , g }. The first two rows
+/// have the factor 1 / |b| of their own; a - c = 0 takes the largest of
+/// those of the rows that touch its group, 2 of c <= 0.5; b - d >= 0 the
+/// 2 / 3 of a + b <= 3, which touches two groups and beats the 1 / 2 of
+/// b + d <= 2; e - g = 0 has no row with a nonzero side in its group, and 1
+
+static void test_row_scaling( void )
+{
+ const std::vector< double > alpha = { 0.25 , 0.5 , 2 , 2.0 / 3 , 1 };
+ const std::vector< double > duals = { 1 , 2 , -3 , -4 , 5 };
+
+ auto b = new AbstractBlock();
+ auto comp0 = new AbstractBlock();
+ auto ab = new std::vector< ColVariable >( 2 );
+ comp0->add_static_variable( *ab , "x" );
+ auto r0 = new std::vector< FRowConstraint >( 1 );
+ ( *r0 )[ 0 ].set_function( new LinearFunction( LinearFunction::v_coeff_pair(
+			  { { & ( *ab )[ 0 ] , 1 } , { & ( *ab )[ 1 ] , 1 } } ) ) ,
+			    eNoMod );
+ ( *r0 )[ 0 ].set_lhs( -INF , eNoMod );
+ ( *r0 )[ 0 ].set_rhs( 3 , eNoMod );
+ comp0->add_static_constraint( *r0 , "row" );
+ auto obj = new FRealObjective();
+ obj->set_function( new LinearFunction( LinearFunction::v_coeff_pair(
+			  { { & ( *ab )[ 0 ] , 1 } , { & ( *ab )[ 1 ] , 1 } } ) ) );
+ obj->set_sense( Objective::eMin , eNoMod );
+ comp0->set_objective( obj );
+ b->add_nested_Block( comp0 );
+
+ for( Index h = 1 ; h < 5 ; ++h )
+  b->add_nested_Block( component( double( h ) , false ) );
+
+ auto comp1 = static_cast< AbstractBlock * >( b->get_nested_Block( 1 ) );
+ auto r1 = new std::vector< FRowConstraint >( 1 );
+ ( *r1 )[ 0 ].set_function( new LinearFunction( LinearFunction::v_coeff_pair(
+					      { { var_of( comp1 ) , 1 } } ) ) ,
+			    eNoMod );
+ ( *r1 )[ 0 ].set_lhs( -INF , eNoMod );
+ ( *r1 )[ 0 ].set_rhs( 0.5 , eNoMod );
+ comp1->add_static_constraint( *r1 , "row" );
+
+ const auto a = & ( *ab )[ 0 ];
+ const auto bv = & ( *ab )[ 1 ];
+ const auto c = var_of( comp1 );
+ const auto d = var_of( b->get_nested_Block( 2 ) );
+ const auto e = var_of( b->get_nested_Block( 3 ) );
+ const auto g = var_of( b->get_nested_Block( 4 ) );
+
+ struct LRow { ColVariable * x , * y; double sy , lhs , rhs; };
+ const std::vector< LRow > rows = {
+  { a , c , 1 , 4 , 4 } , { bv , d , 1 , -INF , 2 } , { a , c , -1 , 0 , 0 } ,
+  { bv , d , -1 , 0 , INF } , { e , g , -1 , 0 , 0 } };
+
+ auto lnk = new std::vector< FRowConstraint >( rows.size() );
+ for( Index i = 0 ; i < rows.size() ; ++i ) {
+  auto & r = ( *lnk )[ i ];
+  r.set_function( new LinearFunction( LinearFunction::v_coeff_pair(
+			{ { rows[ i ].x , 1 } , { rows[ i ].y , rows[ i ].sy } } ) ) ,
+		  eNoMod );
+  r.set_lhs( rows[ i ].lhs , eNoMod );
+  r.set_rhs( rows[ i ].rhs , eNoMod );
+  r.set_dual( duals[ i ] );
+  }
+ b->add_static_constraint( *lnk , "link" );
+ empty_objective( b , false );
+
+ auto bsc = attach( b , "BSPar-scale.txt" );
+ std::vector< std::vector< Multiplier > > rec;
+ for( auto s : b->get_registered_solvers() ) {
+  s->compute();
+  rec.push_back( Records.back() );
+  }
+
+ check( ( rec.size() == 2 ) && ( rec[ 0 ].size() == alpha.size() ) &&
+	( rec[ 1 ].size() == alpha.size() ) ,
+	"row scaling: not two Solver with 5 multipliers each" );
+
+ const auto near = []( double x , double y ) {
+  return( std::abs( x - y ) <= 1e-12 * std::max( 1.0 , std::abs( y ) ) );
+  };
+
+ for( Index i = 0 ; ( rec.size() == 2 ) && ( i < rec[ 0 ].size() ) &&
+		    ( i < rec[ 1 ].size() ) ; ++i ) {
+  const auto & u = rec[ 0 ][ i ];
+  const auto & sc = rec[ 1 ][ i ];
+  const std::string w = "row scaling: multiplier " + std::to_string( i );
+  check( near( sc.coef , alpha[ i ] * u.coef ) ,
+	 w + " has coefficient " + std::to_string( sc.coef ) +
+	 " instead of " + std::to_string( alpha[ i ] * u.coef ) );
+  check( sc.sign == u.sign , w + " has another sign constraint" );
+  for( Index h = 0 ; h < u.terms.size() ; ++h )
+   check( near( sc.terms[ h ] , alpha[ i ] * u.terms[ h ] ) ,
+	  w + " has term " + std::to_string( sc.terms[ h ] ) +
+	  " in component " + std::to_string( h ) + " instead of " +
+	  std::to_string( alpha[ i ] * u.terms[ h ] ) );
+  check( near( alpha[ i ] * sc.value , u.value ) ,
+	 w + " has value " + std::to_string( sc.value ) + " instead of " +
+	 std::to_string( u.value / alpha[ i ] ) );
+  }
+
+ // the duals written back are those the multipliers were made from
+ for( auto s : b->get_registered_solvers() ) {
+  for( auto & r : ( *lnk ) )
+   r.set_dual( 0 );
+  static_cast< CDASolver * >( s )->get_dual_solution();
+  for( Index i = 0 ; i < ( *lnk ).size() ; ++i )
+   check( near( ( *lnk )[ i ].get_dual() , duals[ i ] ) ,
+	  "row scaling: the dual of row " + std::to_string( i ) +
+	  " written back is " + std::to_string( ( *lnk )[ i ].get_dual() ) +
+	  " instead of " + std::to_string( duals[ i ] ) );
+  }
+
+ detach( b , bsc );
+ }
+
+/*--------------------------------------------------------------------------*/
 
 int main( void )
 {
@@ -851,6 +988,7 @@ int main( void )
   test_box_bound_constant( false );
   test_box_bound_constant( true );
   test_push_cost();
+  test_row_scaling();
   }
  catch( const std::exception & e ) {
   std::cout << "FAILED: exception " << e.what() << std::endl;

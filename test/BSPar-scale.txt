@@ -1,0 +1,73 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSPar-scale.txt - - - - - - - - - - - - - - -
+#
+# The BlockSolverConfig of the test of intRowScaling: two
+# LagrangianDualSolver with the ComputeConfig of LDCfg.txt, the second with
+# the relaxed constraints scaled by their structure.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig     # exact type of the Configuration object
+
+0  # the BlockSolverConfig is not a "differential" one
+
+2  # number of (the names of) Solver in this BlockSolverConfig
+
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+LagrangianDualSolver  # name of 1st Solver
+LagrangianDualSolver  # name of 2nd Solver
+
+2  # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# no scaling
+
+*LDCfg.txt
+
+# 2nd ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# the relaxed constraints scaled
+
+*LDCfg.txt +
+
+1  # f_diff == 1 ==> only the entries listed below are changed
+
+1  # number of integer parameters
+
+# now all the integer parameters
+intRowScaling      1  # the relaxed constraints scaled by their structure
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+*  # [none]
+
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSPar-scale.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

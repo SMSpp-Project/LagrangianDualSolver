@@ -42,6 +42,8 @@
 
 #include <memory>
 
+#include <unordered_map>
+
 #include <string>
 
 /*--------------------------------------------------------------------------*/
@@ -458,6 +460,9 @@ void LagrangianDualSolver::set_Block( Block * block )
    NumVar += group->get_num_elements();
    }
 
+ // the scale of each relaxed constraint, in the order of the multipliers
+ compute_row_scales();
+
  // create the static and dynamic Lagrangian variables- - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -501,7 +506,8 @@ void LagrangianDualSolver::set_Block( Block * block )
    // initialize the value of the Lagrangian variable with the current dual
    // solution of the FRowConstraint, for the odd chance that someone has
    // already put there a meaningful value (say, a warm start)
-   Lit->set_value( dual2mult( con ) );
+   const Index pos = v_row_kind.size();
+   Lit->set_value( dual2mult( con , pos ) );
 
    // record the type of the constraint its multiplier is made for
    v_row_kind.push_back( row_kind( con ) );
@@ -519,13 +525,13 @@ void LagrangianDualSolver::set_Block( Block * block )
     return;
     }
 
-   auto coef = constr2val( con , *Lit );
+   auto coef = constr2val( con , *Lit ) * v_row_scale[ pos ];
 
    // write the coefficient in the objective
    *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
    // split the linear constraint among the sub-Block
-   split_constraint( con , *( LTit++ ) );
+   split_constraint( con , pos , *( LTit++ ) );
    };
 
   // finally apply the lambda to all static constraints
@@ -553,7 +559,8 @@ void LagrangianDualSolver::set_Block( Block * block )
    // initialize the value of the Lagrangian variable with the current dual
    // solution of the FRowConstraint, for the odd chance that someone has
    // already put there a meaningful value (say, a warm start)
-   Lit->set_value( dual2mult( con ) );
+   const Index pos = v_row_kind.size();
+   Lit->set_value( dual2mult( con , pos ) );
 
    // record the type of the constraint its multiplier is made for
    v_row_kind.push_back( row_kind( con ) );
@@ -575,13 +582,13 @@ void LagrangianDualSolver::set_Block( Block * block )
     return;
     }
 
-   auto coef = constr2val( con , *Lit );
+   auto coef = constr2val( con , *Lit ) * v_row_scale[ pos ];
 
    // write the coefficient in the objective
    *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
    // split the linear constraint among the sub-Block
-   split_constraint( con , *( LTit++ ) );
+   split_constraint( con , pos , *( LTit++ ) );
    };
 
   // finally apply the lambda to all dynamic constraints
@@ -944,6 +951,14 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
     throw( std::logic_error( "changing SparseLagPairs with registered "
                               "Block" ) );
    SparseLagPairs = bool( value );
+   break;
+  case( intRowScaling ):
+   if( LagrDual )
+    throw( std::logic_error( "changing RowScaling with registered Block" ) );
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument( "LagrangianDualSolver::set_par: "
+				  "intRowScaling must be 0 or 1" ) );
+   RowScaling = value;
    break;
   default:
    InnerSolver->set_par(  int_par_lds( par ) , value );
@@ -1576,15 +1591,13 @@ void LagrangianDualSolver::get_dual_solution( Configuration * solc )
  // the Lagrangian variables come in the order in which the constraints were
  // scanned, which is the storage order of the groups, so the same walk
  // gives back the duals
+ Index pos = 0;
  auto write_duals = [ & ]( const Vec_Group & groups , auto & it ) {
   for( const auto & group : groups ) {
    if( ! group )
     continue;
    group->for_each_as< FRowConstraint >( [ & ]( FRowConstraint & con ) {
-     auto val = ( it++ )->get_value();
-     if( NNMult && to_be_reversed( con ) )
-      val = - val;
-     con.set_dual( val );
+     con.set_dual( row_factor( con , pos++ ) * ( it++ )->get_value() );
      } );
    }
   };
@@ -1821,11 +1834,148 @@ bool LagrangianDualSolver::to_be_reversed( const FRowConstraint & con )
 
 /*--------------------------------------------------------------------------*/
 
-double LagrangianDualSolver::dual2mult( const FRowConstraint & con )
+double LagrangianDualSolver::dual2mult( const FRowConstraint & con ,
+				       Index pos )
 {
- return( ( NNMult && to_be_reversed( con ) ) ? - con.get_dual()
-                                             : con.get_dual() );
+ return( con.get_dual() / row_factor( con , pos ) );
  }
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualSolver::compute_row_scales( void )
+{
+ v_row_scale.assign( NumVar , 1 );
+ if( ! RowScaling )
+  return;
+
+ // the relaxed constraints, in the order of the multipliers
+ std::vector< const FRowConstraint * > rows;
+ rows.reserve( NumVar );
+ const auto take = [ & rows ]( FRowConstraint & con ) {
+  rows.push_back( & con );
+  };
+ for( auto rb : v_relaxed )
+  for( const auto & group : rb->get_static_constraint_groups() )
+   if( group )
+    group->for_each_as< FRowConstraint >( take );
+ for( auto rb : v_relaxed )
+  for( const auto & group : rb->get_dynamic_constraint_groups() )
+   if( group )
+    group->for_each_as< FRowConstraint >( take );
+ if( rows.size() != NumVar )
+  throw( std::logic_error( "LagrangianDualSolver::compute_row_scales: the "
+			   "relaxed constraints are not as many as the "
+			   "multipliers" ) );
+
+ // the linear part of a row, if it has one and a Lagrangian term
+ const auto linear = []( const FRowConstraint & con ) -> const LinearFunction *
+ {
+  if( con.is_relaxed() )
+   return( nullptr );
+  if( ( con.get_lhs() == -INFshift ) && ( con.get_rhs() == INFshift ) )
+   return( nullptr );
+  return( dynamic_cast< const LinearFunction * >( con.get_function() ) );
+  };
+
+ // the finite side of a row of larger absolute value
+ const auto side = []( const FRowConstraint & con ) {
+  double b = 0;
+  if( const double lhs = con.get_lhs() ; lhs > -INFshift )
+   b = std::abs( lhs );
+  if( const double rhs = con.get_rhs() ; rhs < INFshift )
+   b = std::max( b , std::abs( rhs ) );
+  return( b );
+  };
+
+ // the groups: the Variable of the relaxed rows, joined by a union-find
+ // along each row
+ std::unordered_map< const Variable * , Index > vid;
+ std::vector< Index > parent;
+ const auto root = [ & parent ]( Index v ) {
+  while( parent[ v ] != v )
+   v = parent[ v ] = parent[ parent[ v ] ];
+  return( v );
+  };
+
+ for( auto con : rows ) {
+  const auto lf = linear( *con );
+  if( ! lf )
+   continue;
+  Index first = Inf< Index >();
+  for( const auto & el : lf->get_v_var() ) {
+   auto [ it , added ] = vid.try_emplace( el.first , parent.size() );
+   if( added )
+    parent.push_back( it->second );
+   if( first == Inf< Index >() )
+    first = root( it->second );
+   else
+    if( const auto r = root( it->second ) ; r != first )
+     parent[ r ] = first;
+   }
+  }
+
+ // the largest C_j / |b_j| of the rows touching each group, the rows being
+ // the relaxed ones and those of the sub-Blocks with a nonzero finite side
+ std::vector< double > best( parent.size() , 0 );
+ std::vector< Index > roots;
+ const auto ratio = [ & ]( const FRowConstraint & con ) -> double {
+  const auto lf = dynamic_cast< const LinearFunction * >( con.get_function() );
+  if( ! lf )
+   return( 0 );
+  const double b = side( con );
+  if( b == 0 )
+   return( 0 );
+  roots.clear();
+  for( const auto & el : lf->get_v_var() )
+   if( const auto it = vid.find( el.first ) ; it != vid.end() )
+    roots.push_back( root( it->second ) );
+  if( roots.empty() )
+   return( 0 );
+  std::sort( roots.begin() , roots.end() );
+  roots.erase( std::unique( roots.begin() , roots.end() ) , roots.end() );
+  const double r = double( roots.size() ) / b;
+  for( auto g : roots )
+   best[ g ] = std::max( best[ g ] , r );
+  return( r );
+  };
+
+ std::vector< double > own( rows.size() , 0 );
+ for( Index i = 0 ; i < rows.size() ; ++i )
+  if( linear( *rows[ i ] ) )
+   own[ i ] = ratio( *rows[ i ] );
+
+ const auto visit = [ & ]( auto & self , Block * blck ) -> void {
+  const auto each = [ & ]( FRowConstraint & con ) {
+   if( ! con.is_relaxed() )
+    ratio( con );
+   };
+  for( const auto & group : blck->get_static_constraint_groups() )
+   if( group )
+    group->for_each_as< FRowConstraint >( each );
+  for( const auto & group : blck->get_dynamic_constraint_groups() )
+   if( group )
+    group->for_each_as< FRowConstraint >( each );
+  for( auto sb : blck->get_nested_Blocks() )
+   self( self , sb );
+  };
+ for( auto cb : v_component )
+  visit( visit , cb );
+
+ // the scale of each relaxed row: its own ratio if its side is nonzero,
+ // else the largest one of its group, else 1
+ for( Index i = 0 ; i < rows.size() ; ++i ) {
+  if( own[ i ] > 0 ) {
+   v_row_scale[ i ] = own[ i ];
+   continue;
+   }
+  const auto lf = linear( *rows[ i ] );
+  if( ( ! lf ) || lf->get_v_var().empty() )
+   continue;
+  const auto g = root( vid.find( lf->get_v_var().front().first )->second );
+  if( best[ g ] > 0 )
+   v_row_scale[ i ] = best[ g ];
+  }
+ }  // end( LagrangianDualSolver::compute_row_scales )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1992,6 +2142,7 @@ void LagrangianDualSolver::map_copy_variables( void )
 /*--------------------------------------------------------------------------*/
 
 void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
+					     Index pos ,
 			 std::vector< LinearFunction::v_coeff_pair > & split )
 {
  auto lf = dynamic_cast< const p_LF >( con.get_function() );
@@ -2020,9 +2171,9 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
   split.front().clear();
   for( const auto & el : vc )
    split.front().push_back( weighted( el ) );
-  if( NNMult && to_be_reversed( con ) )
+  if( const auto fct = row_factor( con , pos ) ; fct != 1 )
    for( auto & el : split.front() )
-    el.second = - el.second;
+    el.second *= fct;
 
   return;
   }
@@ -2056,11 +2207,11 @@ void LagrangianDualSolver::split_constraint( const FRowConstraint & con ,
  for( Index i = 0 ; i < vc.size() ; ++i )
   split[ blckidx[ i ] ][ cntr[ blckidx[ i ] ]++ ] = weighted( vc[ i ] );
 
- // if necessary change the sign
- if( NNMult && to_be_reversed( con ) )
+ // if necessary change the sign and the scale
+ if( const auto fct = row_factor( con , pos ) ; fct != 1 )
   for( auto & el : split )
    for( auto & lel : el )
-    lel.second = - lel.second;
+    lel.second *= fct;
 
  }  // end( LagrangianDualSolver::split_constraint )
 
@@ -2202,6 +2353,7 @@ void LagrangianDualSolver::cleanup_LagrDual( bool keepcfg )
  v_component_w.clear();
  v_father.clear();
  v_row_kind.clear();
+ v_row_scale.clear();
 
  }  // end( LagrangianDualSolver::cleanup_LagrDual )
 
@@ -2733,8 +2885,7 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 
    nms.push_back( pos );
 
-   if( NNMult && to_be_reversed( *cnst ) )
-    lrhs = - lrhs;
+   lrhs *= row_factor( *cnst , pos );
    lrhsval.push_back( - lrhs );  // note the necessary "-"
 
    }  // end( RowConstraintMod )
@@ -2779,14 +2930,14 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
 		 lf->get_coefficient( lf->is_active( tmod->vars()[ i ] ) ) *
 		 variable_weight( tmod->vars()[ i ] , cnst->get_Block() ) );
 
-   // if necessary change the sign
-   if( NNMult && to_be_reversed( *cnst ) )
+   // if necessary change the sign and the scale
+   auto pos = index_of_constraint( cnst );
+   if( const auto fct = row_factor( *cnst , pos ) ; fct != 1 )
     for( auto & el : split )
      for( auto & lel : el )
-      lel.second = - lel.second;
+      lel.second *= fct;
 
    // now call add_variables() for all the appropriate LinearFunction
-   auto pos = index_of_constraint( cnst );
    for( Index h = 0 ; h < f_nsb ; ++h ) {
     if( ! cntr[ h ] )
      continue;
@@ -2912,11 +3063,11 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
      variable_weight( tmod->vars()[ i ] , cnst->get_Block() );
     }
 
-   // if necessary change the sign
-   if( NNMult && to_be_reversed( *cnst ) )
+   // if necessary change the sign and the scale
+   if( const auto fct = row_factor( *cnst , pos ) ; fct != 1 )
     for( auto & el : delta )
      for( auto & lel : el )
-      lel = - lel;
+      lel *= fct;
 
    // now call modify_coefficients() for all the appropriate LinearFunction
    for( Index h = 0 ; h < f_nsb ; ++h ) {
@@ -2987,9 +3138,12 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
    for( Index r = w ; r < v_row_kind.size() ; ++r )
     if( ( git != gone.end() ) && ( *git == r ) )
      ++git;
-    else
+    else {
+     v_row_scale[ w ] = v_row_scale[ r ];
      v_row_kind[ w++ ] = v_row_kind[ r ];
+     }
    v_row_kind.resize( w );
+   v_row_scale.resize( w );
    }
 
   // open a channel where to bunch all the removal Modifications
@@ -3185,7 +3339,9 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     * to be, and whoever removes the row later asks them for that index. */
    *( i2dcit++ ) = el;
    *( dc2iit++ ) = std::make_pair( el , i++ );
+   const Index pos = v_row_kind.size();
    v_row_kind.push_back( row_kind( *el ) );
+   v_row_scale.push_back( 1 );
 
    // check the LHS/RHS
    auto lhs = el->get_lhs();
@@ -3202,13 +3358,13 @@ void LagrangianDualSolver::process_outstanding_Modification( void )
     continue;
     }
 
-   auto coef = constr2val( *el , *Lit );
+   auto coef = constr2val( *el , *Lit ) * v_row_scale[ pos ];
 
    // write the coefficient in the objective
    *( objit++ ) = std::make_pair( &*( Lit++ ) , coef );
 
    // split the linear constraint among the sub-Block
-   split_constraint( *el , *( LTit++ ) );
+   split_constraint( *el , pos , *( LTit++ ) );
    }
 
   // re-sort the dynamic constraints-->Lagrangian-variables dictionary
@@ -3301,7 +3457,7 @@ void LagrangianDualSolver::reweight_components( void )
 
  /* Each coefficient of the Lagrangian term of a component is the one of its
   * Variable in the relaxed row times the weight of the Variable, with the
-  * sign of the row [see split_constraint()]: it is read again from the row,
+  * sign and the scale of the row [see split_constraint()]: it is read again from the row,
   * with the current weight, for each Variable of the term, all the terms of
   * a component in one channel. */
 
@@ -3323,7 +3479,7 @@ void LagrangianDualSolver::reweight_components( void )
 
    const auto cnst = constraint_with_index( pos );
    const auto lf = static_cast< const p_LF >( cnst->get_function() );
-   const double sign = ( NNMult && to_be_reversed( *cnst ) ) ? -1 : 1;
+   const double sign = row_factor( *cnst , pos );
 
    LinearFunction::Vec_FunctionValue coeff( lfh->get_num_active_var() );
    bool changed = false;

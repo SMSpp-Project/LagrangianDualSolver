@@ -689,11 +689,12 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( haveduals ) {
    // the Lambda Variables follow the storage order of the groups, which is
    // the order in which LagrangianDualSolver scanned the Constraint
+   Index pos = 0;
    auto read_duals = [ & ]( const Vec_Group & groups , auto & it ) {
     for( const auto & group : groups )
      if( group )
       group->for_each_as< FRowConstraint >( [ & ]( FRowConstraint & con ) {
-        ( it++ )->set_value( dual2mult( con ) ); } );
+        ( it++ )->set_value( dual2mult( con , pos++ ) ); } );
     };
 
    auto Ls = LagrDual->get_static_variable_v< ColVariable >( "Lambda_s" );

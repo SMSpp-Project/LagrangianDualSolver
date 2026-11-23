@@ -466,6 +466,38 @@ public:
   * the instance, hence the parameter. Default 0, i.e., the children are the
   * components. */
 
+ intRowScaling ,
+ ///< how the relaxed constraints are scaled
+ /**< The Lagrangian term of the relaxed constraint i, and its coefficient
+  * in the Objective of the Lagrangian Dual, are multiplied by a factor
+  * \f$ \alpha_i > 0 \f$, so that the multiplier \f$ \lambda_i \f$ of the
+  * Lagrangian Dual stands for the dual \f$ \alpha_i \lambda_i \f$ of the
+  * constraint, which is what get_dual_solution() writes. Any choice of the
+  * \f$ \alpha_i \f$ gives the same dual bound: what changes is the metric
+  * in which the inner Solver sees the multipliers, and with it how fast a
+  * method of the bundle or subgradient family converges when different
+  * families of relaxed constraints have multipliers of very different
+  * size. The possible values are:
+  *
+  * - 0: no scaling, \f$ \alpha_i = 1 \f$;
+  *
+  * - 1: structural scaling. The Variable of the relaxed constraints are
+  *   partitioned in groups, two of them being in the same group if a chain
+  *   of relaxed constraints, any two consecutive ones sharing a Variable,
+  *   links them; then, for each linear constraint j with a nonzero finite
+  *   side \f$ b_j \f$, either relaxed or of a sub-Block, \f$ C_j \f$ is
+  *   the number of groups it touches. A relaxed constraint with
+  *   \f$ b_i \neq 0 \f$ has \f$ \alpha_i = C_i / |b_i| \f$, and one with
+  *   \f$ b_i = 0 \f$ has the largest \f$ C_j / |b_j| \f$ among the
+  *   constraints j touching its group, or 1 if there is none. Of a
+  *   constraint with two finite sides, \f$ b_j \f$ is the one of larger
+  *   absolute value; the constraints of the sub-Blocks are those that they
+  *   have when set_Block() is called, the bounds of the Variable
+  *   (OneVarConstraint) are not counted.
+  *
+  * The factors are computed in set_Block(), and a relaxed constraint added
+  * later has \f$ \alpha_i = 1 \f$. Default 0. */
+
  intLastLDSlvPar   ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of int algorithmic parameters. */
@@ -599,6 +631,7 @@ public:
   PushCostToOwner = get_dflt_int_par( intPushCostToOwner );
   SparseLagPairs  = get_dflt_int_par( intSparseLagPairs );
   Recursive       = get_dflt_int_par( intRecursive );
+  RowScaling      = get_dflt_int_par( intRowScaling );
   ISName          = get_dflt_str_par( str_LDSlv_ISName );
   // all the other string parameters are empty by default, which corresponds
   // to f_BCfg == f_BSCfg == f_DBCfg == f_DBSCfg == nullptr
@@ -1799,6 +1832,7 @@ public:
     1 , // intSparseLagPairs (default on; sparse path is bit-equivalent
         //                   to dense and unlocks DoEasy=1 in LDS)
     0 , // intRecursive (default off: the children are the components)
+    0 , // intRowScaling (default off: no scaling)
    };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastLDSlvPar ) )
@@ -1874,6 +1908,7 @@ public:
    case( intPushCostToOwner ):   return( PushCostToOwner );
    case( intSparseLagPairs ):    return( SparseLagPairs );
    case( intRecursive ):         return( Recursive );
+   case( intRowScaling ):        return( RowScaling );
    }
 
   return( InnerSolver->get_int_par( int_par_lds( par ) ) );
@@ -1944,7 +1979,8 @@ public:
    { "int_InnerS_WDualSCfg" , int_InnerS_WDualSCfg } ,
    { "intPushCostToOwner"   , intPushCostToOwner } ,
    { "intSparseLagPairs"    , intSparseLagPairs } ,
-   { "intRecursive"         , intRecursive }
+   { "intRecursive"         , intRecursive } ,
+   { "intRowScaling"        , intRowScaling }
    };
 
   const auto it = int_pars_map.find( name );
@@ -2021,10 +2057,10 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 7 > int_pars_str = {
+  static const std::array< std::string , 8 > int_pars_str = {
    "int_LDSlv_iBCopy" , "int_LDSlv_NNMult" , "int_InnerS_WVarSCfg" ,
    "int_InnerS_WDualSCfg" , "intPushCostToOwner" , "intSparseLagPairs" ,
-   "intRecursive" };
+   "intRecursive" , "intRowScaling" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastLDSlvPar ) )
    return( int_pars_str[ idx - intLastParCDAS ] );
@@ -2412,11 +2448,28 @@ FRowConstraint * constraint_with_index( Index i ) {
 
 /*--------------------------------------------------------------------------*/
 /* The Lagrangian multiplier corresponding to the current dual of the
- * FRowConstraint con, i.e., the dual changed sign if con is reversed [see
- * to_be_reversed()]: the inverse of what get_dual_solution() does, so that
- * the duals it writes are read back as the same multipliers. */
+ * FRowConstraint con, whose multiplier has index pos, i.e., the dual divided
+ * by row_factor( con , pos ): the inverse of what get_dual_solution() does,
+ * so that the duals it writes are read back as the same multipliers. */
 
- double dual2mult( const FRowConstraint & con );
+ double dual2mult( const FRowConstraint & con , Index pos );
+
+/*--------------------------------------------------------------------------*/
+/* The factor by which the relaxed FRowConstraint con, whose multiplier has
+ * index pos, enters its Lagrangian term: the scale of the row [see
+ * intRowScaling and v_row_scale], changed sign if con is reversed [see
+ * to_be_reversed()]. The dual of con is the factor times the multiplier. */
+
+ double row_factor( const FRowConstraint & con , Index pos ) {
+  const double scale = ( pos < v_row_scale.size() ) ? v_row_scale[ pos ] : 1;
+  return( ( NNMult && to_be_reversed( con ) ) ? - scale : scale );
+  }
+
+/*--------------------------------------------------------------------------*/
+/* Computes v_row_scale for the NumVar relaxed constraints, in the order of
+ * the multipliers, according to intRowScaling. */
+
+ void compute_row_scales( void );
 
 /*--------------------------------------------------------------------------*/
 /** The sum of the constant terms of the Objective of the Block whose
@@ -2451,7 +2504,7 @@ FRowConstraint * constraint_with_index( Index i ) {
 
 /*--------------------------------------------------------------------------*/
 
- void split_constraint( const FRowConstraint & con ,
+ void split_constraint( const FRowConstraint & con , Index pos ,
 			std::vector< LinearFunction::v_coeff_pair > & split );
 
 /*--------------------------------------------------------------------------*/
@@ -2486,11 +2539,13 @@ FRowConstraint * constraint_with_index( Index i ) {
 
  bool PushCostToOwner;  ///< how to set the same-named LagBFunction parameter
 
+ /// true if dual pairs with empty Lagrangian term are skipped in set_Block
  bool SparseLagPairs;
 
  /// true if the decomposable descendants are decomposed in turn
  bool Recursive;
- ///< true if dual pairs with empty Lagrangian term are skipped in set_Block
+
+ int RowScaling;      ///< how the relaxed constraints are scaled
 
  std::string ISName;  ///< classname of the inner Solver
 
@@ -2590,6 +2645,12 @@ FRowConstraint * constraint_with_index( Index i ) {
   * latter and the sign of its Lagrangian term, were defined. */
 
  std::vector< row_kind_type > v_row_kind;
+
+ /// the scale of each relaxed constraint [see intRowScaling]
+ /** v_row_scale[ i ] is the factor \f$ \alpha_i > 0 \f$ of the i-th
+  * relaxed constraint, in the same order as v_row_kind. */
+
+ std::vector< double > v_row_scale;
 
  Index static_cons;  ///< number of static constraints
                      /** Total number of static constraints in the Block: the
