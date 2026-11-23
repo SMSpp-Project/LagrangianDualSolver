@@ -68,6 +68,8 @@
 #include <atomic>
 
 #include <cmath>
+#include <numeric>
+#include <tuple>
 
 // optional statistics (environment variable SFDCR_STATS): one line per
 // iteration with the time of the Lagrangian Dual and the cumulative time of
@@ -370,6 +372,7 @@ void PrimalProximalHeur::set_par( idx_type par , double value )
 {
  switch( par ) {
   case( dbl_penaltyFactor ): R = value; break;
+  case( dblPenaltyRecoveryFrac ): PenRecFrac = value; break;
 
   // the accuracy required of the heuristic, and the time it is given, are
   // those of this algorithm; the accuracy the inner Solver solves the
@@ -389,6 +392,8 @@ void PrimalProximalHeur::set_par( idx_type par , std::string && value )
   WarmStartBSC = std::move( value );
  else if( par == strRecoveryBSC )
   RecoveryBSC = std::move( value );
+ else if( par == strPenaltyRecoveryBSC )
+  PenRecBSC = std::move( value );
  else
   LagrangianDualSolver::set_par( par , std::move( value ) );
 
@@ -1025,6 +1030,14 @@ int PrimalProximalHeur::compute( bool changedvars )
   else LOG_VERB( 2 )
    *f_log << "  IS_INFEASIBLE_SOL" << std::endl;
 
+  // after the Lagrangian Dual of the original objective, the restricted
+  // problem over the binaries of smallest penalty [see strPenaltyRecoveryBSC]
+  if( ( ! penalized ) && ( ! f_NoHeur ) ) {
+   double rec_cost;
+   if( penalty_recovery( rec_cost ) && is_recovered_feasible( rec_cost ) )
+    record_feasible( rec_cost );
+   }
+
   // the convexified solution of the unpenalized Lagrangian Dual, if asked
   // for: get_var_solution() writes it into the Variable of the sub-Block,
   // whose binary ones are then given back the values of the Lagrangian
@@ -1538,97 +1551,8 @@ bool PrimalProximalHeur::recover_primal( double & cost )
  // solve the restricted problem with the recovery Solver, which sees the
  // fixed binaries as bounds and enforces the coupling constraints
  auto solve_restricted = [ & ]( const char * stage ) -> bool {
-  auto recovery = new_aux_solver( RecoveryBSC );
-
-  Index index = 0;
-
- for( const auto & sbi : f_Block->get_nested_Blocks() ) {
-  const auto chnl = sbi->open_channel();
-  const auto mp = Observer::make_par( eModBlck , chnl );
-  auto fobj = static_cast< Function * >(
-                  static_cast< p_FRO >( sbi->get_objective()
-                                        )->get_function() );
-
-  if( ! is_linear[ index ] ) {
-   auto qf = static_cast< p_DQF >( fobj );
-   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
-    const auto idx_in_obj = fobj->is_active(
-                              idx_to_var_sbi1[ index ][ ivar ].second );
-    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
-    const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
-    if( qf->get_num_active_var() > idx_in_obj )
-     #ifdef BIN_VARS
-      qf->modify_linear_coefficient( idx_in_obj , c1 , mp );
-     #else
-      qf->modify_term( idx_in_obj , c1 , c2 , mp );
-     #endif
-    }
-   }
-  else {
-   auto lf = static_cast< p_LF >( fobj );
-   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
-    const auto idx_in_obj = fobj->is_active(
-                              idx_to_var_sbi1[ index ][ ivar ].second );
-    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
-    if( lf->get_num_active_var() > idx_in_obj )
-     lf->modify_coefficient( idx_in_obj , c1 , mp );
-    }
-   }
-
-  sbi->close_channel( chnl );
-  ++index;
-  }
-
-  // with no time left to the heuristic the stage is not run, and it fails
-  if( ! give_time_left( recovery ) ) {
-   LOG_VERB( 2 )
-    *f_log << "  recover_primal[ " << stage << " ]: out of time" << std::endl;
-   delete recovery;
-   return( false );
-   }
-
-  recovery->set_Block( f_Block );
-
-  // the best solution found so far is a feasible point of the original
-  // problem: it is the MIP start of the recovery (of no use to a restriction
-  // that fixes the binaries elsewhere, which the solver then ignores, but
-  // it is for the last attempt, which fixes none)
-  if( RecMIPStart && ( ! v_best_sol.empty() ) )
-   if( auto milp = dynamic_cast< MILPSolver * >( recovery ) ) {
-    const auto why = give_mip_start( milp , f_Block ,
-                                     v_best_sol.front().first );
-    if( ! why.empty() )
-     LOG_VERB( 1 )
-      *f_log << "  no MIP start for the recovery: " << why << std::endl;
-    }
-
-  const auto rec_t0 = std::chrono::steady_clock::now();
-  const auto rc = recovery->compute( true );
-  f_rec_time += std::chrono::duration< double >(
-		    std::chrono::steady_clock::now() - rec_t0 )
-		    .count();
-  ++f_rec_calls;
-  const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
-                  recovery->has_var_solution();
-  if( ok ) {
-   recovery->get_var_solution();  // the completion into the Block Variables
-
-   // evaluate the recovered solution on the pristine copies of the inner
-   // objectives: the live ones only had the true costs restored on the
-   // binary Variables, so their value is not the true cost of the solution
-   cost = solution_value();
-   }
-
-  LOG_VERB( 2 ) {
-   *f_log << "  recover_primal[ " << stage << " ]: ";
-   if( ok )
-    *f_log << "cost = " << cost << std::endl;
-   else
-    *f_log << "infeasible" << std::endl;
-   }
-
-  delete recovery;
-  return( ok );
+  return( PrimalProximalHeur::solve_restricted( RecoveryBSC , stage ,
+                                                cost ) );
   };
 
  bool ok = solve_restricted( "full" );
@@ -1669,6 +1593,155 @@ bool PrimalProximalHeur::recover_primal( double & cost )
  return( ok );
 
  }  // end( PrimalProximalHeur::recover_primal )
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::solve_restricted( const std::string & bsc ,
+					   const char * stage , double & cost )
+{
+ auto recovery = new_aux_solver( bsc );
+
+ Index index = 0;
+
+ for( const auto & sbi : f_Block->get_nested_Blocks() ) {
+  const auto chnl = sbi->open_channel();
+  const auto mp = Observer::make_par( eModBlck , chnl );
+  auto fobj = static_cast< Function * >(
+                  static_cast< p_FRO >( sbi->get_objective()
+                                        )->get_function() );
+
+  if( ! is_linear[ index ] ) {
+   auto qf = static_cast< p_DQF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    const auto c2 = idx_to_var_sbi2[ index ][ ivar ].first;
+    if( qf->get_num_active_var() > idx_in_obj )
+     #ifdef BIN_VARS
+      qf->modify_linear_coefficient( idx_in_obj , c1 , mp );
+     #else
+      qf->modify_term( idx_in_obj , c1 , c2 , mp );
+     #endif
+    }
+   }
+  else {
+   auto lf = static_cast< p_LF >( fobj );
+   for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+    const auto idx_in_obj = fobj->is_active(
+                              idx_to_var_sbi1[ index ][ ivar ].second );
+    const auto c1 = idx_to_var_sbi1[ index ][ ivar ].first;
+    if( lf->get_num_active_var() > idx_in_obj )
+     lf->modify_coefficient( idx_in_obj , c1 , mp );
+    }
+   }
+
+  sbi->close_channel( chnl );
+  ++index;
+ }
+
+ // with no time left to the heuristic the stage is not run, and it fails
+ if( ! give_time_left( recovery ) ) {
+  LOG_VERB( 2 )
+   *f_log << "  recover_primal[ " << stage << " ]: out of time" << std::endl;
+  delete recovery;
+  return( false );
+  }
+
+ recovery->set_Block( f_Block );
+
+ // the best solution found so far is a feasible point of the original
+ // problem: it is the MIP start of the recovery (of no use to a restriction
+ // that fixes the binaries elsewhere, which the solver then ignores, but
+ // it is for the last attempt, which fixes none)
+ if( RecMIPStart && ( ! v_best_sol.empty() ) )
+  if( auto milp = dynamic_cast< MILPSolver * >( recovery ) ) {
+   const auto why = give_mip_start( milp , f_Block ,
+                                    v_best_sol.front().first );
+   if( ! why.empty() )
+    LOG_VERB( 1 )
+     *f_log << "  no MIP start for the recovery: " << why << std::endl;
+   }
+
+ const auto rec_t0 = std::chrono::steady_clock::now();
+ const auto rc = recovery->compute( true );
+ f_rec_time += std::chrono::duration< double >(
+ 		    std::chrono::steady_clock::now() - rec_t0 )
+ 		    .count();
+ ++f_rec_calls;
+ const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
+                 recovery->has_var_solution();
+ if( ok ) {
+  recovery->get_var_solution();  // the completion into the Block Variables
+
+  // evaluate the recovered solution on the pristine copies of the inner
+  // objectives: the live ones only had the true costs restored on the
+  // binary Variables, so their value is not the true cost of the solution
+  cost = solution_value();
+  }
+
+ LOG_VERB( 2 ) {
+  *f_log << "  recover_primal[ " << stage << " ]: ";
+  if( ok )
+   *f_log << "cost = " << cost << std::endl;
+  else
+   *f_log << "infeasible" << std::endl;
+  }
+
+ delete recovery;
+ return( ok );
+ }  // end( PrimalProximalHeur::solve_restricted )
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::penalty_recovery( double & cost )
+{
+ if( PenRecBSC.empty() || ( PenRecFrac <= 0 ) )
+  return( false );
+
+ // the penalties of the binaries of the components at the current
+ // multipliers, which their Objective hold after an unpenalized solve; a
+ // component that cannot give them leaves the recovery undone
+ std::vector< std::tuple< ColVariable * , double , double > > pen;
+ for( auto sbi : f_Block->get_nested_Blocks() )
+  if( ! sbi->get_fixing_penalties( pen ) ) {
+   LOG_VERB( 1 )
+    *f_log << "  penalty_recovery: a component gives no penalties"
+           << std::endl;
+   return( false );
+   }
+
+ // the binaries of smallest penalty at 1 stay free, up to the fraction
+ // PenRecFrac of them, the others are fixed to 0 (or to 1, when they cannot
+ // be 0); eNoMod keeps the fixing invisible to the Solver attached to
+ // f_Block, and it is undone before returning
+ std::vector< Index > ord( pen.size() );
+ std::iota( ord.begin() , ord.end() , 0 );
+ std::stable_sort( ord.begin() , ord.end() , [ & ]( Index a , Index b ) {
+   return( std::get< 2 >( pen[ a ] ) < std::get< 2 >( pen[ b ] ) ); } );
+ const Index keep = Index( std::ceil( PenRecFrac * pen.size() ) );
+ std::vector< ColVariable * > fixed;
+ for( Index h = keep ; h < ord.size() ; ++h ) {
+  const auto & [ v , p0 , p1 ] = pen[ ord[ h ] ];
+  if( v->is_fixed() )
+   continue;
+  v->set_value( p0 == Inf< double >() ? 1 : 0 );
+  v->is_fixed( true , eNoMod );
+  fixed.push_back( v );
+  }
+
+ LOG_VERB( 2 )
+  *f_log << "  penalty_recovery: " << keep << " of " << pen.size()
+         << " binaries free" << std::endl;
+
+ const bool ok = solve_restricted( PenRecBSC , "penalty" , cost );
+
+ for( auto v : fixed )
+  v->is_fixed( false , eNoMod );
+
+ return( ok );
+
+ }  // end( PrimalProximalHeur::penalty_recovery )
 
 /*--------------------------------------------------------------------------*/
 

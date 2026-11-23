@@ -173,6 +173,13 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
   dbl_penaltyFactor = dblLastLDSlvPar ,  ///< PPH quadratic penalty factor
 
+  dblPenaltyRecoveryFrac ,
+  ///< share of the binaries the restricted problem of the penalties keeps
+  /**< The share of the binary Variable of the components that the
+   * restricted problem of strPenaltyRecoveryBSC keeps free: those of
+   * smallest penalty at 1 [see Block::get_fixing_penalties()], the others
+   * being fixed to 0. With 0, the default, there is no such problem. */
+
   dblLastPPHPar   ///< first allowed new double parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of double algorithmic parameters. */
@@ -205,6 +212,17 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * after the filename prefix of the Configuration, then among the data
    * the module installs (share/LagrangianDualSolver, where the default
    * RecoveryCfg.txt is), then in the source tree of the module. */
+
+  strPenaltyRecoveryBSC ,
+  ///< filename of the BlockSolverConfig of the restricted problem of the
+  ///< penalties
+  /**< The BlockSolverConfig of the Solver that, after the Lagrangian Dual
+   * of the original objective, solves the restricted problem where only the
+   * share dblPenaltyRecoveryFrac of the binaries of smallest penalty at 1
+   * is free, the penalties at the current multipliers being those of
+   * Block::get_fixing_penalties() of the components; if a component gives
+   * none, nothing is solved. With the empty string, the default, there is
+   * no such problem. It is looked for as strRecoveryBSC. */
 
   strLastPPHPar   ///< first allowed new str parameter for derived classes
                   /**< Convenience value for easily allow derived classes
@@ -668,6 +686,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
   switch( par ) {
    case( dbl_penaltyFactor ): return( 0 );
+   case( dblPenaltyRecoveryFrac ): return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_dbl_par( par ) );
   }
@@ -682,6 +701,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( _empty );
   if( par == strRecoveryBSC )
    return( _rec );
+  if( par == strPenaltyRecoveryBSC )
+   return( _empty );
   return( LagrangianDualSolver::get_dflt_str_par( par ) );
   }
 
@@ -709,6 +730,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
  [[nodiscard]] double get_dbl_par( idx_type par ) const override {
   switch( par ) {
    case( dbl_penaltyFactor ): return( R );
+   case( dblPenaltyRecoveryFrac ): return( PenRecFrac );
    case( dblRelAcc ):         return( RelAcc );
    case( dblMaxTime ):        return( MaxTime );
    }
@@ -738,6 +760,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
   const override {
   if( name == "dbl_penaltyFactor" )
    return( dbl_penaltyFactor );
+  if( name == "dblPenaltyRecoveryFrac" )
+   return( dblPenaltyRecoveryFrac );
   return( LagrangianDualSolver::dbl_par_str2idx( name ) );
   }
 
@@ -768,8 +792,11 @@ class PrimalProximalHeur : public LagrangianDualSolver
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
   static const std::string _pf = "dbl_penaltyFactor";
+  static const std::string _prf = "dblPenaltyRecoveryFrac";
   if( idx == dbl_penaltyFactor )
    return( _pf );
+  if( idx == dblPenaltyRecoveryFrac )
+   return( _prf );
   return( LagrangianDualSolver::dbl_par_idx2str( idx ) );
   }
 
@@ -781,6 +808,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( WarmStartBSC );
   if( par == strRecoveryBSC )
    return( RecoveryBSC );
+  if( par == strPenaltyRecoveryBSC )
+   return( PenRecBSC );
   return( LagrangianDualSolver::get_str_par( par ) );
   }
 
@@ -792,6 +821,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( strWarmStartBSC );
   if( name == "strRecoveryBSC" )
    return( strRecoveryBSC );
+  if( name == "strPenaltyRecoveryBSC" )
+   return( strPenaltyRecoveryBSC );
   return( LagrangianDualSolver::str_par_str2idx( name ) );
   }
 
@@ -801,6 +832,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
   const override {
   static const std::string _ws = "strWarmStartBSC";
   static const std::string _rc = "strRecoveryBSC";
+  static const std::string _prc = "strPenaltyRecoveryBSC";
+  if( idx == strPenaltyRecoveryBSC )
+   return( _prc );
   if( idx == strWarmStartBSC )
    return( _ws );
   if( idx == strRecoveryBSC )
@@ -899,6 +933,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
  std::string WarmStartBSC;  ///< BlockSolverConfig of the warm start
 
  std::string RecoveryBSC = "RecoveryCfg.txt";
+ std::string PenRecBSC;  ///< BlockSolverConfig of the penalty recovery
+ double PenRecFrac = 0;  ///< share of the binaries it keeps free
  ///< BlockSolverConfig of the primal recovery
 
  // working state - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1087,6 +1123,28 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * undone before returning, so it is invisible to any other Solver. */
 
  bool recover_primal( double & cost );
+
+/*--------------------------------------------------------------------------*/
+ /// solves the restricted problem of the fixings in place, by a Solver of bsc
+ /** Gives the components their true costs on the binary Variable, solves
+  * f_Block (whose binaries fixed are bounds) with the first Solver of the
+  * BlockSolverConfig of the file \p bsc, and on success writes the cost of
+  * the solution in \p cost and leaves it in the Variable; \p stage only
+  * names the attempt in the log. */
+
+ bool solve_restricted( const std::string & bsc , const char * stage ,
+			double & cost );
+
+/*--------------------------------------------------------------------------*/
+ /// the restricted problem over the binaries of smallest penalty
+ /** If strPenaltyRecoveryBSC and dblPenaltyRecoveryFrac are set and every
+  * component gives its penalties [see Block::get_fixing_penalties()],
+  * keeps free the share dblPenaltyRecoveryFrac of the binaries of smallest
+  * penalty at 1, fixes the others to 0 (to 1 those that cannot be 0) with
+  * eNoMod, solves the restricted problem [see solve_restricted()] and
+  * undoes the fixing; returns what solve_restricted() does. */
+
+ bool penalty_recovery( double & cost );
 
 /*--------------------------------------------------------------------------*/
  /// the current point as a feasible solution, without recovery

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `strPenaltyRecoveryBSC` and `dblPenaltyRecoveryFrac` of
+  `PrimalProximalHeur`: after the Lagrangian Dual of the original objective,
+  the restricted problem where only the share `dblPenaltyRecoveryFrac` of
+  the binaries of smallest penalty at 1 [see `Block::get_fixing_penalties()`
+  of SMS++] is free, solved by the Solver of `strPenaltyRecoveryBSC`; the
+  restricted problem of the primal recovery is solved by the same method
+
 - `intWarmStartOnce` of `PrimalProximalHeur`, which runs the warm start of
   `strWarmStartBSC` once, in `set_Block()`, before the Lagrangian Dual is
   formed, so that in a branch-and-bound the continuous relaxation is solved
