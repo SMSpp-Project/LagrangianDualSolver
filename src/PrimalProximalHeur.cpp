@@ -487,12 +487,20 @@ int PrimalProximalHeur::compute( bool changedvars )
  // Solver of the Lagrangian Dual several times and the recovery after it
  ComponentHold hold( *this );
 
+ // dblMaxTime is the time the heuristic is given as a whole, so each
+ // Solver it runs is given what is left of it [see give_time_left()]
+ f_start = std::chrono::steady_clock::now();
+
  // no static binary Variable to apply the proximal penalty to: PPH has
  // nothing to add over the inner Lagrangian Dual, which is solved as it is;
  // its primal solution is then the point the consensus recovery starts
  // from, if the relaxed Constraint tie copies of a decision
  if( NumStatVar == 0 ) {
+  const double inner_time = InnerSolver->get_dbl_par( dblMaxTime );
+  if( MaxTime < Inf< double >() )
+   InnerSolver->set_par( dblMaxTime , std::min( inner_time , MaxTime ) );
   const auto res = LagrangianDualSolver::compute( changedvars );
+  InnerSolver->set_par( dblMaxTime , inner_time );
   // the only solve is the unpenalized one, whose status is the one of the
   // Lagrangian Dual of the original objective [see
   // get_Lagrangian_initial_status()]
@@ -517,19 +525,10 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  lock();  // lock the Solver mutex
 
- // dblMaxTime is the time the heuristic is given as a whole, so each call
- // to the inner Solver is given what is left of it
- const auto start_time = std::chrono::steady_clock::now();
-
- auto elapsed = [ & start_time ]() -> double {
+ auto elapsed = [ this ]() -> double {
   const std::chrono::duration< double > el =
-   std::chrono::steady_clock::now() - start_time;
+   std::chrono::steady_clock::now() - f_start;
   return( el.count() );
-  };
-
- auto time_left = [ & elapsed , this ]() -> double {
-  return( MaxTime >= Inf< double >() ? Inf< double >()
-                                     : MaxTime - elapsed() );
   };
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -665,18 +664,19 @@ int PrimalProximalHeur::compute( bool changedvars )
 
   auto warmstart = new_aux_solver( WarmStartBSC );
   warmstart->set_Block( f_Block );
-  if( auto tl = time_left() ; tl < Inf< double >() )
-   warmstart->set_par( dblMaxTime , tl );
-  warmstart->compute( changedvars );
+  const bool ran = give_time_left( warmstart );
+  if( ran )
+   warmstart->compute( changedvars );
 
   // the relaxation may have been stopped, by the time limit above or by its
-  // own, before producing anything: what it has is asked for, and what it
-  // does not have is not, a warm start that did not happen leaving the
-  // multipliers where set_Block() put them, exactly as with no warm start
-  const bool haveduals = warmstart->has_dual_solution();
+  // own, before producing anything, or not run at all for want of time:
+  // what it has is asked for, and what it does not have is not, a warm
+  // start that did not happen leaving the multipliers where set_Block() put
+  // them, exactly as with no warm start
+  const bool haveduals = ran && warmstart->has_dual_solution();
   if( haveduals )
    warmstart->get_dual_solution();
-  if( warmstart->has_var_solution() )
+  if( ran && warmstart->has_var_solution() )
    warmstart->get_var_solution();
 
   delete warmstart;
@@ -710,6 +710,10 @@ int PrimalProximalHeur::compute( bool changedvars )
  // iteration and are given back to it at the end
  const double up_cutoff = InnerSolver->get_dbl_par( dblUpCutOff );
  const double lw_cutoff = InnerSolver->get_dbl_par( dblLwCutOff );
+
+ // and its time limit, which each iteration caps by what is left to the
+ // heuristic
+ const double inner_time = InnerSolver->get_dbl_par( dblMaxTime );
 
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -837,7 +841,8 @@ int PrimalProximalHeur::compute( bool changedvars )
           << std::endl;
 
   if( auto tl = time_left() ; tl < Inf< double >() )
-   InnerSolver->set_par( dblMaxTime , std::max( double( 0 ) , tl ) );
+   InnerSolver->set_par( dblMaxTime ,
+                         std::min( inner_time , std::max( 0.0 , tl ) ) );
 
   // the conditional bound and the cutoff bound the Lagrangian Dual of the
   // original objective only, not that of the penalized one
@@ -1081,6 +1086,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  InnerSolver->set_par( dblUpCutOff , up_cutoff );
  InnerSolver->set_par( dblLwCutOff , lw_cutoff );
+ InnerSolver->set_par( dblMaxTime , inner_time );
 
  // if the inner Block is not an R3B-copy, restore the original inner
  // objectives "as if nothing had happened"
@@ -1335,6 +1341,36 @@ CDASolver * PrimalProximalHeur::new_aux_solver( const std::string & cfgname )
 
 /*--------------------------------------------------------------------------*/
 
+double PrimalProximalHeur::time_left( void ) const
+{
+ if( MaxTime >= Inf< double >() )
+  return( Inf< double >() );
+
+ const std::chrono::duration< double > el =
+  std::chrono::steady_clock::now() - f_start;
+ return( MaxTime - el.count() );
+
+ }  // end( PrimalProximalHeur::time_left )
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::give_time_left( Solver * slvr ) const
+{
+ const double tl = time_left();
+ if( tl >= Inf< double >() )
+  return( true );
+
+ if( tl <= 0 )
+  return( false );
+
+ slvr->set_par( dblMaxTime , std::min( slvr->get_dbl_par( dblMaxTime ) ,
+                                       tl ) );
+ return( true );
+
+ }  // end( PrimalProximalHeur::give_time_left )
+
+/*--------------------------------------------------------------------------*/
+
 // what a recovered point may violate a row of the Block by, in relative
 // terms: past this it is not a point of the original problem, whatever its
 // cost says, and handing it over would call a bound what is not one
@@ -1487,6 +1523,14 @@ bool PrimalProximalHeur::recover_primal( double & cost )
   sbi->close_channel( chnl );
   ++index;
   }
+
+  // with no time left to the heuristic the stage is not run, and it fails
+  if( ! give_time_left( recovery ) ) {
+   LOG_VERB( 2 )
+    *f_log << "  recover_primal[ " << stage << " ]: out of time" << std::endl;
+   delete recovery;
+   return( false );
+   }
 
   recovery->set_Block( f_Block );
 
@@ -1661,6 +1705,10 @@ bool PrimalProximalHeur::consensus_recovery( double & cost )
 
  auto one = [ & ]( Index k ) {
   auto recovery = new_aux_solver( RecoveryBSC );
+  if( ! give_time_left( recovery ) ) {
+   delete recovery;
+   return;
+   }
   recovery->set_Block( sbs[ k ] );
   const auto rc = recovery->compute( true );
   if( ( rc >= kOK ) && ( rc < kError ) && recovery->has_var_solution() ) {

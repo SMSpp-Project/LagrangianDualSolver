@@ -40,6 +40,8 @@
 
 #include "Solution.h"
 
+#include <chrono>
+
 #include <queue>
 
 /*--------------------------------------------------------------------------*/
@@ -846,6 +848,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  double MaxTime;  ///< time limit of the whole heuristic (dblMaxTime)
 
+ std::chrono::steady_clock::time_point f_start;
+ ///< when the current compute() started, which MaxTime is counted from
+
  std::string WarmStartBSC;  ///< BlockSolverConfig of the warm start
 
  std::string RecoveryBSC = "RecoveryCfg.txt";
@@ -988,6 +993,19 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * already attached to f_Block); the caller owns it and must delete it. */
 
  CDASolver * new_aux_solver( const std::string & cfgname );
+
+ /// the time left to the current compute() of dblMaxTime
+ /** What is left of MaxTime since f_start, Inf< double >() if there is no
+  * time limit; it may be negative. */
+
+ double time_left( void ) const;
+
+ /// gives a Solver the time left to the heuristic, if any is
+ /** Sets the dblMaxTime of \p slvr to the minimum between its own and
+  * time_left(); returns false, having changed nothing, if no time is left,
+  * in which case the Solver is not to be compute()-d. */
+
+ bool give_time_left( Solver * slvr ) const;
 
  /// recovers a feasible solution by the consensus of the copies of a decision
  /** The relaxed Constraint of the form x_a - x_b = 0 tie copies of one
