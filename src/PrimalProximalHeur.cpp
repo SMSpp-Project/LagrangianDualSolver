@@ -1020,11 +1020,22 @@ int PrimalProximalHeur::compute( bool changedvars )
      v_LagrConvSol.resize( NumStatVar );
     // an integral convexified solution that satisfies the rows of the Block
     // is a solution worth the bound (up to the accuracy of the Lagrangian
-    // Dual), which closes the gap: it is recorded by its true cost
-    if( conv && is_integer_solution() && f_Block->is_feasible() )
-     if( const double value = solution_value() ;
-	 is_recovered_feasible( value ) )
-      record_feasible( value );
+    // Dual), which closes the gap: it is recorded by its true cost. Its
+    // binary Variable are integral to within 1e-6 only, and the rows of a
+    // Block summing many of them would see a violation that is not there,
+    // hence they are rounded before the rows are checked
+    if( conv && is_integer_solution() ) {
+     const auto n_sub = f_Block->get_number_nested_Blocks();
+     for( Index index = 0 ; index < n_sub ; ++index )
+      for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+       const auto var = idx_to_var_sbi1[ index ][ ivar ].second;
+       var->set_value( std::round( var->get_value() ) );
+       }
+     if( f_Block->is_feasible() )
+      if( const double value = solution_value() ;
+	  is_recovered_feasible( value ) )
+       record_feasible( value );
+     }
     const auto n_sub = f_Block->get_number_nested_Blocks();
     Index kvar = 0;
     for( Index index = 0 ; index < n_sub ; ++index )

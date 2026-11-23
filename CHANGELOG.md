@@ -83,6 +83,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prints with `SFDCR_STATS` are its own, not shared by all the instances,
   whose `compute()` run in different threads raced on them
 
+- `LagrangianDualRelaxationSolver` said `kOK` of a node where no variable
+  branched upon was fractional, and `branch()` then threw out of
+  `candidates()`: such a node is solved, `kOK` with no branching Change, if
+  the Lagrangian Dual is and a feasible solution is within `dblRelAcc` of
+  the bound, otherwise it can be neither branched nor fenced, and the status
+  is that of the Lagrangian Dual, or `kLowPrecision` if that is `kOK`; an
+  entry of `vstrBranchGroups` that names no group of the sub-Blocks, which
+  left every variable out of the branching, is refused with an exception
+
+- the integral convexified solution that `PrimalProximalHeur` records has
+  its binary Variable rounded before the rows of the Block are checked,
+  which summing many values integral to within 1e-6 only saw a violation
+  that is not there
+
 ## [0.7.0] - 2026-11-16
 
 ### Changed

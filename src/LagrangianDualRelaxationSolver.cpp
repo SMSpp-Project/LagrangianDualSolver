@@ -316,6 +316,7 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
  f_NoHeur = ( f_ncompute > 0 ) &&
             ( ( f_heur_freq == 0 ) || ( f_ncompute % f_heur_freq != 0 ) );
  ++f_ncompute;
+ f_solved = false;
  const int status = PrimalProximalHeur::compute( changedvars );
 
  // the bound of a child just after its parent branched is an observation
@@ -357,21 +358,28 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
  if( sol.size() != NumStatVar )
   return( ld_status == kOK ? int( kError ) : ld_status );
 
- // the Lagrangian Dual not solved (stopped by a budget, or kLowPrecision)
- // gives a valid bound, and a convexified solution that need not satisfy
- // the relaxed constraints: the node can still be branched on a variable
- // fractional in it, but if there is none it can be neither branched nor
- // fenced, and what the inner Solver returned is said
- if( ld_status != kOK ) {
-  const auto rank = branchable();
-  bool frac = false;
-  for( Index k = 0 ; ( ! frac ) && ( k < sol.size() ) ; ++k )
-   frac = ( rank[ k ] < Inf< Index >() ) &&
-          ( std::abs( sol[ k ] - std::round( sol[ k ] ) ) > FracEps );
-  if( ! frac )
-   return( ld_status );
-  }
+ // the node is branched on a variable fractional in the convexified
+ // solution, among those branched upon, as candidates() does
+ const auto rank = branchable();
+ bool frac = false;
+ for( Index k = 0 ; ( ! frac ) && ( k < sol.size() ) ; ++k )
+  frac = ( rank[ k ] < Inf< Index >() ) &&
+         ( std::abs( sol[ k ] - std::round( sol[ k ] ) ) > FracEps );
+ if( frac )
+  return( kOK );
 
+ // with none, the node is solved if the Lagrangian Dual is and a feasible
+ // solution is within the accuracy of its bound (the convexified solution
+ // itself, if integral and feasible [see PrimalProximalHeur::compute()]),
+ // and branch() gives no Change; otherwise it can be neither branched nor
+ // fenced, and the status is that of the Lagrangian Dual (stopped by a
+ // budget, say), or kLowPrecision if it is solved but a variable not
+ // branched upon is fractional, or the integral solution is not feasible
+ if( ld_status != kOK )
+  return( ld_status );
+ if( ! gap_closed() )
+  return( kLowPrecision );
+ f_solved = true;
  return( kOK );
 
  }  // end( LagrangianDualRelaxationSolver::compute )
@@ -413,6 +421,8 @@ Solution * LagrangianDualRelaxationSolver::get_true_solution(
 
 std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
 {
+ if( f_solved )
+  return( std::vector< Change * >() );
  auto cands = candidates();
  ++f_n_branch;
  f_estimates.clear();
@@ -529,20 +539,14 @@ LagrangianDualRelaxationSolver::candidates( void )
     }
   }
 
- // no fractional variable: an integral Lagrangian solution of a
- // well-terminated Lagrangian Dual satisfies the relaxed constraints, i.e.,
- // it solves the node, which is then fenced by bound and never branched;
- // were it to be branched, the two children would be the same node, hence
- // this is an error, of the termination of the inner Solver (say, dblNZEps
- // too large), or of vstrBranchGroups leaving out a group that the others
- // do not determine
+ // no fractional variable: compute() says kOK for such a node only if it
+ // has solved it, and then branch() asks for no candidate, so being asked
+ // for them is an error of the caller, which has branched a node whose
+ // compute() said it cannot be [see compute()]
  if( cands.empty() )
   throw( std::logic_error( "LagrangianDualRelaxationSolver::candidates: no "
-			   "variable branched upon is fractional, either the "
-			   "relaxed constraints are violated beyond the "
-			   "termination tolerance of the Lagrangian Dual "
-			   "(dblNZEps) or vstrBranchGroups leaves out a "
-			   "fractional group" ) );
+			   "variable branched upon is fractional, and the "
+			   "node cannot be branched" ) );
 
  // those of the first entry of vstrBranchGroups that has any, the most
  // fractional first [see vstrBranchGroups]
@@ -713,11 +717,14 @@ LagrangianDualRelaxationSolver::branchable( void ) const
  // then the ranks in the order in which PrimalProximalHeur has registered
  // the variables
  std::unordered_map< const ColVariable * , Index > first;
+ std::vector< bool > named( entries.size() , false );
  for( const auto & sbi : f_Block->get_nested_Blocks() )
   for( const auto & group : sbi->get_static_variable_groups() ) {
    if( ! group )
     continue;
    Index pos = 0;
+   for( Index h = 0 ; h < entries.size() ; ++h )
+    named[ h ] = named[ h ] || ( entries[ h ].name == group->get_name() );
    group->for_each_as< ColVariable >( [ & ]( ColVariable & var ) {
      for( Index h = 0 ; h < entries.size() ; ++h )
       if( ( entries[ h ].name == group->get_name() ) &&
@@ -728,6 +735,15 @@ LagrangianDualRelaxationSolver::branchable( void ) const
      ++pos;
      } );
    }
+
+ // an entry that names no group branches upon nothing, which is a mistake
+ // of the configuration rather than a node with nothing fractional
+ for( Index h = 0 ; h < entries.size() ; ++h )
+  if( ! named[ h ] )
+   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::"
+				 "branchable: entry " + f_branch_groups[ h ] +
+				 " of vstrBranchGroups names no group of the "
+				 "sub-Blocks" ) );
 
  Index k = 0;
  for( const auto & sbv : idx_to_var_sbi1 )

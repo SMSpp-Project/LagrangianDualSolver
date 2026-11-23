@@ -367,7 +367,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   most fractional first, those of the next entries coming only when
   *   none of these is fractional. Thus, say, "x[0]" followed by "x"
   *   branches upon the first variable of each sub-Block before the others,
-  *   which is what to do when that variable decides all of them. */
+  *   which is what to do when that variable decides all of them. An entry
+  *   that names no group of the sub-Blocks is an error. */
 
  enum vstr_par_type_LDRS {
   vstrBranchGroups = vstrLastLDSlvPar ,  ///< the groups branched upon
@@ -464,7 +465,15 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   * branch() only needs that; when it is not there, the status is that of
   * the Lagrangian Dual, or kError if that is kOK. kCutOff, i.e., the
   * Lagrangian Dual beyond the cutoff [see dblUpCutOff], is returned as it
-  * is, the node being then fenced. */
+  * is, the node being then fenced. A Lagrangian solution where no variable
+  * branched upon [see vstrBranchGroups] is fractional leaves nothing to
+  * branch upon: if the Lagrangian Dual is solved and the best feasible
+  * solution found is within dblRelAcc of the bound [see
+  * PrimalProximalHeur::gap_closed()], which it is when the Lagrangian
+  * solution is integral and feasible, the node is solved, the status is kOK
+  * and branch() returns no Change; otherwise the node can be neither
+  * branched nor fenced, and the status is that of the Lagrangian Dual, or
+  * kLowPrecision if that is kOK. */
 
  int compute( bool changedvars = true ) override;
 
@@ -535,6 +544,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 /*--------------------------------------------------------------------------*/
 
  /// branch on a fractional variable [see intBranchStrategy]
+ /** No Change if the last compute() has solved the node with nothing to
+  * branch upon [see compute()]. */
 
  std::vector< Change * > branch( void ) override;
 
@@ -691,7 +702,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /// the binary static variables that may be branched upon
  /** One entry per variable, in the order of the Lagrangian solution: the
   * first entry of vstrBranchGroups that has it, Inf< Index >() if none
-  * has, 0 for all if vstrBranchGroups is empty. */
+  * has, 0 for all if vstrBranchGroups is empty. Throws
+  * std::invalid_argument if an entry names no group of the sub-Blocks. */
 
  std::vector< Index > branchable( void ) const;
 
@@ -740,6 +752,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  /// the estimates of the children of the last branch()
  std::vector< double > f_estimates;
+
+ /// whether the last compute() has solved the node with nothing to branch
+ /// upon [see compute()], so that branch() returns no Change
+ bool f_solved = false;
 
  /// the multipliers taken by the last branch(), if no node has been solved
  /// since then, so that they are still those of the inner Solver [see
