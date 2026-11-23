@@ -125,6 +125,23 @@ void PrimalProximalHeur::set_Block( Block * block )
  if( f_Block )           // was already attached to a Block
   guts_of_destructor();  // release the PPH-specific state first
 
+ // with intWarmStartOnce the warm start is done here, before the
+ // Lagrangian Dual is formed and the inner Solver attached, so that the
+ // base set_Block() starts the multipliers from the duals just computed,
+ // and the inner Solver from the multipliers; compute() then has none
+ f_Warmed = f_WarmAtSet = false;
+ if( block && WarmOnce && ( ! WarmStartBSC.empty() ) ) {
+  auto warmstart = new_aux_solver( WarmStartBSC );
+  warmstart->set_Block( block );
+  warmstart->compute( false );
+  if( warmstart->has_dual_solution() )
+   warmstart->get_dual_solution();
+  if( warmstart->has_var_solution() )
+   warmstart->get_var_solution();
+  delete warmstart;
+  f_Warmed = f_WarmAtSet = true;
+  }
+
  LagrangianDualSolver::set_Block( block );  // call the base method
 
  if( f_Block ) {         // a new Block is now attached
@@ -336,6 +353,7 @@ void PrimalProximalHeur::set_par( idx_type par , int value )
   case( intRecoveryMIPStart ):  RecMIPStart = ( value != 0 ); break;
   case( intPenConstrBins ):     PenConstrBins = ( value != 0 ); break;
   case( intNoRecoveryIfFeasible ): NoRecIfFeas = ( value != 0 ); break;
+  case( intWarmStartOnce ):     WarmOnce = ( value != 0 ); break;
   case( intMaxThread ):  MaxThread = value; break;
   case( intLogVerb ):
    logVerb = value & 3;
@@ -658,8 +676,14 @@ int PrimalProximalHeur::compute( bool changedvars )
  // that strWarmStartBSC describes, so that the dual variables, and hence
  // the initial Lambda multipliers of the inner Lagrangian Dual, start from
  // a meaningful point; with no strWarmStartBSC there is no warm start and
- // the multipliers start from wherever set_Block() left them
- const bool warm = ! WarmStartBSC.empty();
+ // the multipliers start from wherever set_Block() left them, and with
+ // intWarmStartOnce only the first call has it
+ const bool warm = ( ! WarmStartBSC.empty() ) &&
+                  ( ! ( WarmOnce && f_Warmed ) );
+ f_Warmed |= warm;
+ // the warm start that set_Block() did counts as one of this call
+ const bool warmed = warm || f_WarmAtSet;
+ f_WarmAtSet = false;
 
  if( warm ) {
   LOG_VERB( 2 )
@@ -707,6 +731,13 @@ int PrimalProximalHeur::compute( bool changedvars )
    auto Ld = LagrDual->get_dynamic_variable< ColVariable >( "Lambda_d" );
    auto Ldit = Ld->begin();
    read_duals( f_Block->get_dynamic_constraint_groups() , Ldit );
+
+   // the inner Solver reads its starting point from the Lambda Variables
+   // when it is attached to the Lagrangian Dual Block [see ReSetAlg() of
+   // BundleSolver], and set_value() issues no Modification: it is attached
+   // again, so that it starts from the multipliers just written
+   unregister_inner_Solver();
+   register_inner_Solver();
    }
   }
 
@@ -767,7 +798,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   // of the next one is the fractional solution the Lagrangian Dual
   // converges to, which is what the penalty is meant to be built on
   const bool penalized = ( R != 0 ) &&
-                         ( ( iters > 0 ) || ( UseWSPSol && warm ) );
+                         ( ( iters > 0 ) || ( UseWSPSol && warmed ) );
 
   LOG_VERB( 2 )
    *f_log << "PrimalProximalHeur::compute: adding penalty terms"

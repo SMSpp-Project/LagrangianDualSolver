@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `intWarmStartOnce` of `PrimalProximalHeur`, which runs the warm start of
+  `strWarmStartBSC` once, in `set_Block()`, before the Lagrangian Dual is
+  formed, so that in a branch-and-bound the continuous relaxation is solved
+  at the root and not at every node
+
 - `intHeurFreq` of `LagrangianDualRelaxationSolver`: the heuristic of
   `PrimalProximalHeur` runs at the first `compute()` and then at one every
   `intHeurFreq` of them, 0 meaning at the first only, the others solving
@@ -75,6 +80,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   limit, up to half of the budget; the recovery ran with its own time limit
   only, so that the heuristic, and a `BranchAndXSolver` that gives it the
   time left to it, could go well past their budget
+
+- an integral convexified solution of `PrimalProximalHeur` is rounded
+  before the rows of the Block are checked: its binary Variable are integral
+  to within 1e-6 only, and a row summing many of them saw a violation that
+  is not there, so that the solution was not recorded, the node of
+  `LagrangianDualRelaxationSolver` was not fenced and its `candidates()`
+  threw, as on the type E instances of the GAP
+
+- the warm start of `PrimalProximalHeur` reaches the inner Solver: the
+  multipliers were written in the Lambda Variables after the inner Solver
+  had read them, when it was attached, so that the Lagrangian Dual started
+  from where it was before the warm start; the inner Solver is attached
+  again after them
 
 - `PrimalProximalHeur` threw out of `compute()` when the convexified
   solution gave a Variable fixed by a branching another value than the one

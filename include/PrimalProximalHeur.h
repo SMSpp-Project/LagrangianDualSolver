@@ -147,6 +147,15 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * no larger, since it fixes the binaries and optimizes the rest, so this
    * trades some quality of the bound for time. Off by default. */
 
+  intWarmStartOnce ,
+  ///< run the warm start at the first call to compute() only
+  /**< If nonzero, the warm start of strWarmStartBSC is run once, in
+   * set_Block(), before the Lagrangian Dual is formed, which then starts
+   * from its duals; the calls to compute() start from the multipliers the
+   * previous one left, which is what a branch-and-bound wants, whose nodes
+   * after the root are solved from the multipliers of their father. If
+   * zero (the default), it is run at each call to compute(). */
+
   intLastPPHPar   ///< first allowed new int parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of int algorithmic parameters. */
@@ -219,6 +228,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   RecMIPStart  = get_dflt_int_par( intRecoveryMIPStart );
   PenConstrBins = get_dflt_int_par( intPenConstrBins );
   NoRecIfFeas = get_dflt_int_par( intNoRecoveryIfFeasible );
+  WarmOnce  = get_dflt_int_par( intWarmStartOnce );
   MaxThread = Solver::get_dflt_int_par( intMaxThread );
   R         = get_dflt_dbl_par( dbl_penaltyFactor );
   RelAcc    = Solver::get_dflt_dbl_par( dblRelAcc );
@@ -278,6 +288,10 @@ class PrimalProximalHeur : public LagrangianDualSolver
   *
   * - intUseWarmStartPSol [0]: whether the primal solution of the warm
   *                 start is the proximal center of the first iteration.
+  *
+  * - intWarmStartOnce [0]: whether the warm start of strWarmStartBSC is run
+  *                 once, in set_Block(), as the root of a branch-and-bound
+  *                 wants, rather than at each call to compute().
   *
   * - intRecoveryMIPStart [0]: whether the restricted problems of the primal
   *                 recovery are given the best solution found so far as a MIP
@@ -643,6 +657,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
    case( intRecoveryMIPStart ):  return( 0 );
    case( intPenConstrBins ):     return( 0 );
    case( intNoRecoveryIfFeasible ): return( 0 );
+   case( intWarmStartOnce ):     return( 0 );
    case( intLogVerb ):          return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_int_par( par ) );
@@ -683,6 +698,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
    case( intRecoveryMIPStart ):  return( RecMIPStart ? 1 : 0 );
    case( intPenConstrBins ):     return( PenConstrBins ? 1 : 0 );
    case( intNoRecoveryIfFeasible ): return( NoRecIfFeas ? 1 : 0 );
+   case( intWarmStartOnce ):     return( WarmOnce ? 1 : 0 );
    case( intMaxThread ):        return( MaxThread );
    }
   return( LagrangianDualSolver::get_int_par( par ) );
@@ -711,6 +727,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( intPenConstrBins );
   if( name == "intNoRecoveryIfFeasible" )
    return( intNoRecoveryIfFeasible );
+  if( name == "intWarmStartOnce" )
+   return( intWarmStartOnce );
   return( LagrangianDualSolver::int_par_str2idx( name ) );
   }
 
@@ -731,6 +749,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   static const std::string _rms = "intRecoveryMIPStart";
   static const std::string _pcb = "intPenConstrBins";
   static const std::string _nrf = "intNoRecoveryIfFeasible";
+  static const std::string _wso = "intWarmStartOnce";
   if( idx == intUseWarmStartPSol )
    return( _ws );
   if( idx == intRecoveryMIPStart )
@@ -739,6 +758,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( _pcb );
   if( idx == intNoRecoveryIfFeasible )
    return( _nrf );
+  if( idx == intWarmStartOnce )
+   return( _wso );
   return( LagrangianDualSolver::int_par_idx2str( idx ) );
   }
 
@@ -854,6 +875,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
  bool RecMIPStart = false;  ///< give the primal recovery a MIP start
  bool PenConstrBins = false;  ///< penalize the binaries only in Constraint
  bool NoRecIfFeas = false;    ///< skip the recovery if the point is feasible
+ bool WarmOnce = false;       ///< the warm start at the first compute() only
+ bool f_Warmed = false;       ///< the warm start ran since set_Block()
+ bool f_WarmAtSet = false;    ///< set_Block() did it, compute() not yet run
  bool f_NoHeur = false;  ///< only the Lagrangian Dual of the original one
  bool f_PenConstr = false;    ///< some binary only in Constraint is penalized
  bool f_Seeded = false;  ///< add_solution() seeded the pool since compute()
