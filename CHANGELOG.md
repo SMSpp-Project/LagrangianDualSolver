@@ -58,9 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - the `dblMaxTime` of `PrimalProximalHeur` bounds every Solver it runs, the
   recovery ones included, each given the minimum between its own time limit
   and what is left to the heuristic, and not run when nothing is, its stage
-  then failing; the recovery ran with its own time limit only, so that the
-  heuristic, and a `BranchAndXSolver` that gives it the time left to it,
-  could go well past their budget
+  then failing, the iterations keeping for the final recovery its own time
+  limit, up to half of the budget; the recovery ran with its own time limit
+  only, so that the heuristic, and a `BranchAndXSolver` that gives it the
+  time left to it, could go well past their budget
 
 - `PrimalProximalHeur` threw out of `compute()` when the convexified
   solution gave a Variable fixed by a branching another value than the one

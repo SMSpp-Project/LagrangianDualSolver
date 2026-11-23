@@ -338,7 +338,18 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * double parameters are:
   *
   * - dbl_penaltyFactor [0]: factor for the quadratic proximal term added
-  *                          to the inner objective to force integrality. */
+  *                          to the inner objective to force integrality.
+  *
+  * - dblMaxTime [Inf]: the time the heuristic is given as a whole. Every
+  *                     Solver it runs is given the minimum between its own
+  *                     dblMaxTime and the time left, and is not run when
+  *                     none is left. The iterations (and the recovery
+  *                     inside them) leave the final recovery a reserve,
+  *                     the dblMaxTime of the Solver of strRecoveryBSC,
+  *                     but no more than half of dblMaxTime (half of it if
+  *                     that one has no time limit), so that the final
+  *                     recovery runs within the budget; there is no
+  *                     reserve when there is no final recovery. */
 
  void set_par( idx_type par , double value ) override;
 
@@ -851,6 +862,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
  std::chrono::steady_clock::time_point f_start;
  ///< when the current compute() started, which MaxTime is counted from
 
+ double f_reserve = 0;
+ ///< the time of MaxTime kept for the final recovery [see dblMaxTime]
+
  std::string WarmStartBSC;  ///< BlockSolverConfig of the warm start
 
  std::string RecoveryBSC = "RecoveryCfg.txt";
@@ -996,7 +1010,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  /// the time left to the current compute() of dblMaxTime
  /** What is left of MaxTime since f_start, Inf< double >() if there is no
-  * time limit; it may be negative. */
+  * time limit; it may be negative. The reserve f_reserve left to the
+  * final recovery is not counted as left. */
 
  double time_left( void ) const;
 
@@ -1006,6 +1021,10 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * in which case the Solver is not to be compute()-d. */
 
  bool give_time_left( Solver * slvr ) const;
+
+ /// the time kept for the final recovery out of MaxTime [see dblMaxTime]
+
+ double recovery_reserve( void );
 
  /// recovers a feasible solution by the consensus of the copies of a decision
  /** The relaxed Constraint of the form x_a - x_b = 0 tie copies of one

@@ -488,8 +488,10 @@ int PrimalProximalHeur::compute( bool changedvars )
  ComponentHold hold( *this );
 
  // dblMaxTime is the time the heuristic is given as a whole, so each
- // Solver it runs is given what is left of it [see give_time_left()]
+ // Solver it runs is given what is left of it, but for the time kept for
+ // the final recovery [see dblMaxTime]
  f_start = std::chrono::steady_clock::now();
+ f_reserve = recovery_reserve();
 
  // no static binary Variable to apply the proximal penalty to: PPH has
  // nothing to add over the inner Lagrangian Dual, which is solved as it is;
@@ -498,9 +500,11 @@ int PrimalProximalHeur::compute( bool changedvars )
  if( NumStatVar == 0 ) {
   const double inner_time = InnerSolver->get_dbl_par( dblMaxTime );
   if( MaxTime < Inf< double >() )
-   InnerSolver->set_par( dblMaxTime , std::min( inner_time , MaxTime ) );
+   InnerSolver->set_par( dblMaxTime ,
+                         std::min( inner_time , MaxTime - f_reserve ) );
   const auto res = LagrangianDualSolver::compute( changedvars );
   InnerSolver->set_par( dblMaxTime , inner_time );
+  f_reserve = 0;  // what is left is for the consensus recovery
   // the only solve is the unpenalized one, whose status is the one of the
   // Lagrangian Dual of the original objective [see
   // get_Lagrangian_initial_status()]
@@ -1139,6 +1143,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  // infeasible the point is discarded. A derived class that asked for the
  // Lagrangian Dual of the original objective only [see f_NoHeur] gets no
  // recovery either.
+ f_reserve = 0;  // what is left is for the final recovery
  if( ! f_NoHeur ) {
   double rec_cost;
   if( direct_feasible( rec_cost ) ||
@@ -1348,7 +1353,7 @@ double PrimalProximalHeur::time_left( void ) const
 
  const std::chrono::duration< double > el =
   std::chrono::steady_clock::now() - f_start;
- return( MaxTime - el.count() );
+ return( MaxTime - f_reserve - el.count() );
 
  }  // end( PrimalProximalHeur::time_left )
 
@@ -1368,6 +1373,25 @@ bool PrimalProximalHeur::give_time_left( Solver * slvr ) const
  return( true );
 
  }  // end( PrimalProximalHeur::give_time_left )
+
+/*--------------------------------------------------------------------------*/
+
+double PrimalProximalHeur::recovery_reserve( void )
+{
+ // no time limit, or no final recovery: nothing to keep
+ if( ( MaxTime >= Inf< double >() ) || RecoveryBSC.empty() ||
+     ( f_NoHeur && ( NumStatVar > 0 ) ) )
+  return( 0 );
+
+ // the time limit of the recovery is that of its Solver, which is made for
+ // reading it only
+ auto recovery = new_aux_solver( RecoveryBSC );
+ const double own = recovery->get_dbl_par( dblMaxTime );
+ delete recovery;
+
+ return( std::min( own , MaxTime / 2 ) );
+
+ }  // end( PrimalProximalHeur::recovery_reserve )
 
 /*--------------------------------------------------------------------------*/
 
