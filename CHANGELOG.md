@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of SMS++] is free, solved by the Solver of `strPenaltyRecoveryBSC`; the
   restricted problem of the primal recovery is solved by the same method
 
+- `strPenaltyRecoveryBCfg` of `PrimalProximalHeur`: the restricted problem
+  of `strPenaltyRecoveryBSC` is solved on a copy of the Block configured by
+  this BlockConfig, e.g., with the components in a formulation other than
+  the one the Lagrangian Dual uses, the fixings of the Block carried over
+  and the solution mapped back
+
 - `intWarmStartOnce` of `PrimalProximalHeur`, which runs the warm start of
   `strWarmStartBSC` once, in `set_Block()`, before the Lagrangian Dual is
   formed, so that in a branch-and-bound the continuous relaxation is solved

@@ -394,6 +394,8 @@ void PrimalProximalHeur::set_par( idx_type par , std::string && value )
   RecoveryBSC = std::move( value );
  else if( par == strPenaltyRecoveryBSC )
   PenRecBSC = std::move( value );
+ else if( par == strPenaltyRecoveryBCfg )
+  PenRecBCfg = std::move( value );
  else
   LagrangianDualSolver::set_par( par , std::move( value ) );
 
@@ -432,6 +434,26 @@ static Solution * current_solution( Block * block )
  auto sol = new ColVariableSolution;
  sol->read( block );
  return( sol );
+ }
+
+/*--------------------------------------------------------------------------*/
+// the static ColVariable of the Block and of its nested Block, in the order
+// of the groups, of their elements and of the nested Block
+
+static std::vector< ColVariable * > static_col_variables( Block * block )
+{
+ std::vector< ColVariable * > vars;
+ std::function< void( Block * ) > scan = [ & ]( Block * b ) {
+  for( const auto & group : b->get_static_variable_groups() )
+   if( group )
+    group->for_each_as< ColVariable >( [ & ]( ColVariable & var ) {
+      vars.push_back( & var );
+      } );
+  for( auto nb : b->get_nested_Blocks() )
+   scan( nb );
+  };
+ scan( block );
+ return( vars );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1597,7 +1619,8 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 /*--------------------------------------------------------------------------*/
 
 bool PrimalProximalHeur::solve_restricted( const std::string & bsc ,
-					   const char * stage , double & cost )
+					   const char * stage , double & cost ,
+					   const std::string & bcfg )
 {
  auto recovery = new_aux_solver( bsc );
 
@@ -1648,13 +1671,67 @@ bool PrimalProximalHeur::solve_restricted( const std::string & bsc ,
   return( false );
   }
 
- recovery->set_Block( f_Block );
+ // with a BlockConfig, the problem is solved on a copy of f_Block that it
+ // configures, made now that the components have their true costs, to
+ // which the fixings of f_Block (of the branching, which the copy of a
+ // component may also carry, and of the caller) are given by position
+ Block * blk = f_Block;
+ if( ! bcfg.empty() ) {
+  Block * copy = nullptr;
+  try {
+   copy = f_Block->get_R3_Block();
+   }
+  catch( std::exception & e ) {
+   LOG_VERB( 1 )
+    *f_log << "  recover_primal[ " << stage << " ]: no copy of the Block ("
+	   << e.what() << ")" << std::endl;
+   }
+  if( ( ! copy ) || ( copy == f_Block ) ) {
+   delete recovery;
+   return( false );
+   }
+
+  auto c = Configuration::deserialize( bcfg );
+  auto bc = dynamic_cast< BlockConfig * >( c );
+  if( ! bc ) {
+   delete c;
+   delete copy;
+   delete recovery;
+   throw( std::invalid_argument( "PrimalProximalHeur::solve_restricted: " +
+				 bcfg + " is not a BlockConfig" ) );
+   }
+  bc->apply( copy );
+  delete bc;
+
+  copy->generate_abstract_variables();
+  const auto from = static_col_variables( f_Block );
+  const auto to = static_col_variables( copy );
+  if( from.size() != to.size() ) {
+   LOG_VERB( 1 )
+    *f_log << "  recover_primal[ " << stage << " ]: the copy has "
+	   << to.size() << " Variable, the Block " << from.size()
+	   << std::endl;
+   delete copy;
+   delete recovery;
+   return( false );
+   }
+  for( Index i = 0 ; i < from.size() ; ++i )
+   if( from[ i ]->is_fixed() ) {
+    to[ i ]->set_value( from[ i ]->get_value() );
+    to[ i ]->is_fixed( true , eNoMod );
+    }
+
+  blk = copy;
+  }
+
+ recovery->set_Block( blk );
 
  // the best solution found so far is a feasible point of the original
  // problem: it is the MIP start of the recovery (of no use to a restriction
  // that fixes the binaries elsewhere, which the solver then ignores, but
- // it is for the last attempt, which fixes none)
- if( RecMIPStart && ( ! v_best_sol.empty() ) )
+ // it is for the last attempt, which fixes none); it is a solution of
+ // f_Block, so a copy is given none
+ if( RecMIPStart && ( blk == f_Block ) && ( ! v_best_sol.empty() ) )
   if( auto milp = dynamic_cast< MILPSolver * >( recovery ) ) {
    const auto why = give_mip_start( milp , f_Block ,
                                     v_best_sol.front().first );
@@ -1673,6 +1750,8 @@ bool PrimalProximalHeur::solve_restricted( const std::string & bsc ,
                  recovery->has_var_solution();
  if( ok ) {
   recovery->get_var_solution();  // the completion into the Block Variables
+  if( blk != f_Block )
+   f_Block->map_back_solution( blk );
 
   // evaluate the recovered solution on the pristine copies of the inner
   // objectives: the live ones only had the true costs restored on the
@@ -1689,6 +1768,8 @@ bool PrimalProximalHeur::solve_restricted( const std::string & bsc ,
   }
 
  delete recovery;
+ if( blk != f_Block )
+  delete blk;
  return( ok );
  }  // end( PrimalProximalHeur::solve_restricted )
 
@@ -1734,7 +1815,8 @@ bool PrimalProximalHeur::penalty_recovery( double & cost )
   *f_log << "  penalty_recovery: " << keep << " of " << pen.size()
          << " binaries free" << std::endl;
 
- const bool ok = solve_restricted( PenRecBSC , "penalty" , cost );
+ const bool ok = solve_restricted( PenRecBSC , "penalty" , cost ,
+                                   PenRecBCfg );
 
  for( auto v : fixed )
   v->is_fixed( false , eNoMod );
