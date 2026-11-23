@@ -74,8 +74,6 @@
 // the primal recovery, printed on std::cout
 namespace {
  const bool pph_stats = ( std::getenv( "SFDCR_STATS" ) != nullptr );
- double pph_rec_time = 0;   ///< cumulative time in the recovery MIPs
- int    pph_rec_calls = 0;  ///< and number of MIPs solved
  }
 
 #include <exception>
@@ -716,8 +714,8 @@ int PrimalProximalHeur::compute( bool changedvars )
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- pph_rec_time = 0;
- pph_rec_calls = 0;
+ f_rec_time = 0;
+ f_rec_calls = 0;
  Index iters = 0;
  bool is_the_same = false;
  bool is_integer  = false;
@@ -1047,8 +1045,8 @@ int PrimalProximalHeur::compute( bool changedvars )
              << " dual_time " << stat_dual_time << " inner_iters "
              << InnerSolver->get_elapsed_iterations() << " status " << res
              << " inner_lb " << InnerSolver->get_lb() << " inner_ub "
-             << InnerSolver->get_ub() << " rec_time_cum " << pph_rec_time
-             << " rec_calls_cum " << pph_rec_calls << " elapsed " << elapsed()
+             << InnerSolver->get_ub() << " rec_time_cum " << f_rec_time
+             << " rec_calls_cum " << f_rec_calls << " elapsed " << elapsed()
              << " best " << ( f_max ? get_lb() : get_ub() ) << std::endl;
 
   // the accuracy required of the heuristic has been reached: the best
@@ -1110,7 +1108,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  if( pph_stats )
   std::cout << "PPHSTAT loop_end iters " << iters << " rec_time_cum "
-	    << pph_rec_time << " rec_calls_cum " << pph_rec_calls
+	    << f_rec_time << " rec_calls_cum " << f_rec_calls
 	    << " elapsed " << elapsed() << std::endl;
 
  // final primal recovery: a Lagrangian point in general violates the
@@ -1133,7 +1131,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  if( pph_stats )
   std::cout << "PPHSTAT end converged " << is_the_same << " rec_time_cum "
-	    << pph_rec_time << " rec_calls_cum " << pph_rec_calls
+	    << f_rec_time << " rec_calls_cum " << f_rec_calls
 	    << " elapsed " << elapsed() << std::endl;
 
  LOG_VERB( 2 )
@@ -1496,10 +1494,10 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 
   const auto rec_t0 = std::chrono::steady_clock::now();
   const auto rc = recovery->compute( true );
-  pph_rec_time += std::chrono::duration< double >(
+  f_rec_time += std::chrono::duration< double >(
 		    std::chrono::steady_clock::now() - rec_t0 )
 		    .count();
-  ++pph_rec_calls;
+  ++f_rec_calls;
   const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
                   recovery->has_var_solution();
   if( ok ) {

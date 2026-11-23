@@ -885,6 +885,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
 
  Index NumStatVar;    ///< (current) number of binary static Variables
 
+ double f_rec_time = 0;  ///< time in the recovery MIPs of this compute()
+ int f_rec_calls = 0;    ///< and number of MIPs solved
+
  Index pos_id;        ///< running counter of binary static Variables per
                       ///< sub-Block (working variable during initialize())
 

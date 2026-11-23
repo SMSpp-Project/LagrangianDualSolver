@@ -79,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relative to the Block, and the branching on a variable with the
   sub-Blocks copied is refused with an exception that says why
 
+- the time and the number of the recovery MIPs that `PrimalProximalHeur`
+  prints with `SFDCR_STATS` are its own, not shared by all the instances,
+  whose `compute()` run in different threads raced on them
+
 ## [0.7.0] - 2026-11-16
 
 ### Changed
