@@ -98,7 +98,7 @@ class LagrangianChange : public AbstractChange {
  ~LagrangianChange() override = default;
 
 /*--------------------------------------------------------------------------*/
- /// the multipliers of the node that branched, which a child may start from
+ /// the multipliers of the node that branched, used to start its children
 
  using Center = std::vector< std::pair< ColVariable * , double > >;
 
@@ -111,12 +111,17 @@ class LagrangianChange : public AbstractChange {
  /// the multipliers of the node that branched, nullptr if none
  /** Returns the Lagrangian multipliers, each with its value, that the node
   * producing this LagrangianChange had when it branched, i.e., the stability
-  * centre its Lagrangian Dual ended at, which the child starts from [see
-  * LagrangianDualRelaxationSolver::apply()]. The LagrangianChange that undo
-  * another one carry none. */
+  * centre its Lagrangian Dual ended at. apply() queues this snapshot; the
+  * next inner compute() restores it if the inner Solver supports intRstAlg.
+  * Changes that undo another one carry none. */
 
  [[nodiscard]] const Center * get_center( void ) const {
   return( f_center.get() );
+  }
+
+ /// shared ownership lets a queued centre outlive the Change carrying it
+ [[nodiscard]] const std::shared_ptr< const Center > & shared_center() const {
+  return( f_center );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -202,6 +207,13 @@ class LagrangianChange : public AbstractChange {
  *   fixing makes infeasible are kept in the GlobalInformation [see
  *   set_global_information()], and given back to the LagBFunction when the
  *   variable is unfixed.
+ *
+ * Each child starts from its parent's Lagrangian multipliers when the inner
+ * Solver supports intRstAlg. apply() queues the shared snapshot; it is
+ * restored just before the next inner solve, with multipliers added since
+ * the snapshot set to zero. The restart lasts for that solve only, also on
+ * cutoff or exception. Strong branching uses the same parent snapshot for
+ * both children and queues it again after the trials.
  *
  * As a BranchEstimator [see BranchingRule.h], it may also give the
  * estimates of the best value under the two children of each branch()
@@ -364,11 +376,15 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  /// destructor
 
- ~LagrangianDualRelaxationSolver() override = default;
+ ~LagrangianDualRelaxationSolver() override { set_Block( nullptr ); }
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
+
+ /// release node-specific state when rebuilding the Lagrangian Dual
+
+ void set_Block( Block * block ) override;
 
  using PrimalProximalHeur::set_par;  // keep the other set_par() visible
 
@@ -612,6 +628,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  virtual Index choose( std::vector< Cand > & cands );
 
+ /// load the queued parent centre and restart only this inner solve
+ int compute_inner_solver( bool changedvars ) override;
+
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED FIELDS ------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -686,16 +706,14 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  std::shared_ptr< const LagrangianChange::Center > center( void ) const;
 
-/*--------------------------------------------------------------------------*/
- /// put back the multipliers of center, those added since then at 0
- /** Writes in the Lagrangian multipliers the values in center, and 0 in
-  * those that are not there, i.e., the multipliers of the dual pairs added
-  * since center was taken; a Variable of center that is no longer a
-  * multiplier is left alone. The inner Solver is asked, once, to restart
-  * from them at its next compute(), emptying its bundle [see intRstAlg of
-  * BundleSolver]; returns false, doing nothing, if it cannot be asked. */
+ /// restore the parent multipliers and request one restart of the inner Solver
+ /** Coordinates added after the snapshot start at zero. Returns false,
+  * leaving the multipliers unchanged, if the inner Solver has no intRstAlg. */
+ bool restore_center( const LagrangianChange::Center & cntr );
 
- bool restore_center( const LagrangianChange::Center & center );
+ /// load the last requested snapshot just before an inner solve, then
+ /// invalidate the shortcut that says its centre has not moved yet
+ void prepare_center( void );
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PRIVATE FIELDS -------------------------------*/
@@ -725,14 +743,19 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /// the estimates of the children of the last branch()
  std::vector< double > f_estimates;
 
- /// the multipliers taken by the last branch(), if no node has been solved
- /// since then, so that they are still those of the inner Solver [see
- /// apply()]; nullptr otherwise
- mutable const LagrangianChange::Center * f_fresh_center = nullptr;
+ /// last snapshot requested while navigating; no multiplier is written
+ /// until an inner compute() actually starts
+ std::shared_ptr< const LagrangianChange::Center > f_requested_center;
 
- /// the intRstAlg of the inner Solver to put back after the compute() that
- /// restore_center() asked a restart for, -1 if none
- int f_rst_alg = -1;
+ /// a reset is consumed by the next inner compute(), not the whole PPH
+ bool f_restart_pending = false;
+
+ /// snapshot still matching the current inner centre (before any solve)
+ mutable std::shared_ptr< const LagrangianChange::Center > f_fresh_center;
+
+ /// owns the additional multipliers until the dual has been dismantled;
+ /// LagBFunction owns the LinearFunction of a pair, but not its Variable
+ std::vector< std::unique_ptr< ColVariable > > f_bound_multipliers;
 
  /// for each variable, the dual pairs of its upper (first) and lower
  /// (second) bound added by apply() with eMaster, nullptr if none

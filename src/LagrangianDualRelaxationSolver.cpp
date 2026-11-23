@@ -59,10 +59,81 @@ SMSpp_insert_in_factory_cpp_0( LagrangianDualRelaxationSolver );
 
 SMSpp_insert_in_factory_cpp_0( LagrangianChange );
 
+namespace
+{
+
+// Run cleanup on every exit, including stack unwinding. The actions below
+// restore an existing parameter, queue a shared snapshot, or undo a branch.
+template< class Action >
+class ScopeExit
+{
+ public:
+ explicit ScopeExit( Action action ) : f_action( std::move( action ) ) { }
+ ScopeExit( const ScopeExit & ) = delete;
+ ScopeExit & operator=( const ScopeExit & ) = delete;
+ ~ScopeExit() noexcept( noexcept( f_action() ) ) { f_action(); }
+
+ private:
+ Action f_action;
+ };
+
+// A restart is scoped to exactly one solve, including its error exits.
+// PPH dispatches its inner iterations through compute_inner_solver(); the
+// no-binary path and strong branching solve through LagrangianDualSolver.
+class RestartParameter
+{
+ public:
+ RestartParameter( CDASolver * solver , bool & pending ) : f_solver( solver ) {
+  if( ! pending )
+   return;
+  const auto par = solver->int_par_str2idx( "intRstAlg" );
+  if( par != Inf< ThinComputeInterface::idx_type >() ) {
+   const int saved = solver->get_int_par( par );
+   solver->set_par( par , saved | 2 | 4 );
+   f_par = par;
+   f_saved = saved;
+   }
+  pending = false;
+  }
+ RestartParameter( const RestartParameter & ) = delete;
+ RestartParameter & operator=( const RestartParameter & ) = delete;
+ ~RestartParameter() {
+  if( f_par != Inf< ThinComputeInterface::idx_type >() )
+   f_solver->set_par( f_par , f_saved );
+  }
+
+ private:
+ CDASolver * f_solver;
+ ThinComputeInterface::idx_type f_par =
+   Inf< ThinComputeInterface::idx_type >();
+ int f_saved = 0;
+ };
+
+}  // anonymous namespace
+
 /*--------------------------------------------------------------------------*/
 /*---------------- METHODS OF LagrangianDualRelaxationSolver ---------------*/
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualRelaxationSolver::set_Block( Block * block )
+{
+ // The base class destroys the old LagBFunction and their terms. Forget
+ // the non-owning pointers first; keep their multipliers alive until the
+ // old dual and its inner Solver have been detached and destroyed.
+ map_varToLF.clear();
+ f_restart_pending = false;
+ f_requested_center.reset();
+ f_fresh_center.reset();
+ f_pending.reset();
+ f_estimates.clear();
+ f_pc = PseudoCosts();
+ f_n_branch = 0;
+ PrimalProximalHeur::set_Block( block );
+ f_bound_multipliers.clear();
+ }
+
 /*--------------------------------------------------------------------------*/
 
 void LagrangianDualRelaxationSolver::set_par( idx_type par , int value )
@@ -294,9 +365,27 @@ void LagrangianDualRelaxationSolver::set_global_information(
 /*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
 /*--------------------------------------------------------------------------*/
 
+int LagrangianDualRelaxationSolver::compute_inner_solver( bool changedvars )
+{
+ prepare_center();
+ RestartParameter restart( InnerSolver , f_restart_pending );
+ return( PrimalProximalHeur::compute_inner_solver( changedvars ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 int LagrangianDualRelaxationSolver::compute( bool changedvars )
 {
- const int status = PrimalProximalHeur::compute( changedvars );
+ int status;
+ if( NumStatVar == 0 ) {
+  // PPH delegates this single solve to LagrangianDualSolver, bypassing the
+  // hook used by its proximal iterations.
+  prepare_center();
+  RestartParameter restart( InnerSolver , f_restart_pending );
+  status = PrimalProximalHeur::compute( changedvars );
+  }
+ else
+  status = PrimalProximalHeur::compute( changedvars );
 
  // the bound of a child just after its parent branched is an observation
  // of the pseudocost of the variable branched upon [see intBranchEstimate];
@@ -312,16 +401,6 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
  // whoever set the cutoff needs to know
  if( status == kCutOff )
   return( status );
-
- // the restart that restore_center() asked for is over
- if( f_rst_alg >= 0 ) {
-  InnerSolver->set_par( InnerSolver->int_par_str2idx( "intRstAlg" ) ,
-			f_rst_alg );
-  f_rst_alg = -1;
-  }
-
- // the multipliers are now those of this node [see apply()]
- f_fresh_center = nullptr;
 
  const bool done = ( status >= kOK ) &&
                    ( ( status == kLowPrecision ) || ( status < kError ) );
@@ -546,23 +625,23 @@ std::vector< LagrangianDualRelaxationSolver::StrongEval >
 LagrangianDualRelaxationSolver::strong_branching(
 					       const std::vector< Cand > & cands )
 {
+ const auto parent_center = f_requested_center ? f_requested_center : center();
+ ScopeExit restore_parent(
+   [ & ]() noexcept { f_requested_center = parent_center; } );
+
  // the children of a candidate: its two LagrangianChange, each applied,
  // solved and undone
  auto children = [ & ]( const BranchCandidate & bc ) {
   const auto & cd = cands[ bc.id ];
   auto changes = branchings( cd.var , cd.value );
-  std::array< double , 2 > bounds;
-  try {
-   bounds = { child_bound( changes[ 0 ] ) , child_bound( changes[ 1 ] ) };
-   }
-  catch( ... ) {
-   for( auto ch : changes )
-    delete ch;
-   throw;
-   }
-  for( auto ch : changes )
-   delete ch;
-  return( bounds );
+  std::array< std::unique_ptr< Change > , 2 > owned{
+   std::unique_ptr< Change >( changes[ 0 ] ) ,
+   std::unique_ptr< Change >( changes[ 1 ] )
+   };
+  for( const auto & ch : owned )
+   static_cast< LagrangianChange * >( ch.get() )->set_center( parent_center );
+  return( std::array< double , 2 >{ child_bound( owned[ 0 ].get() ) ,
+				    child_bound( owned[ 1 ].get() ) } );
   };
 
  auto evals = StrongBranching::evaluate( describe( cands ) , children ,
@@ -697,11 +776,14 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branchings(
 				 "branchings: unknown intApplyStrategy" ) );
   }
 
- // the children start from the multipliers of this node [see apply()]
- const auto cntr = center();
+ // Children share the multipliers of their parent, also across best-first
+ // jumps to another branch.
+ const auto cntr = f_requested_center ? f_requested_center : center();
  for( auto ch : changes )
   static_cast< LagrangianChange * >( ch )->set_center( cntr );
- f_fresh_center = cntr.get();
+ // After strong branching the parent centre is queued, not loaded yet.
+ if( ! f_requested_center )
+  f_fresh_center = cntr;
 
  return( changes );
 
@@ -724,49 +806,51 @@ std::shared_ptr< const LagrangianChange::Center >
 /*--------------------------------------------------------------------------*/
 
 bool LagrangianDualRelaxationSolver::restore_center(
-				     const LagrangianChange::Center & center )
+  const LagrangianChange::Center & cntr )
 {
- const auto par = InnerSolver->int_par_str2idx( "intRstAlg" );
- if( par == Inf< idx_type >() )
+ // Without a way of telling the inner Solver to read its Variable, merely
+ // writing them would leave its internal centre unchanged.
+ if( InnerSolver->int_par_str2idx( "intRstAlg" ) == Inf< idx_type >() )
   return( false );
-
- std::unordered_map< ColVariable * , double > value;
+ std::unordered_map< ColVariable * , double > values;
  for( auto lbf : v_LBF )
   for( Index i = 0 ; i < lbf->get_num_active_var() ; ++i )
-   if( auto y = static_cast< ColVariable * >( lbf->get_active_var( i ) ) )
-    value[ y ] = 0;
- for( const auto & [ y , v ] : center )
-  if( auto it = value.find( y ) ; it != value.end() )
+   values[ static_cast< ColVariable * >( lbf->get_active_var( i ) ) ] = 0;
+ for( const auto & [ y , v ] : cntr )
+  if( auto it = values.find( y ); it != values.end() )
    it->second = v;
- for( const auto & [ y , v ] : value )
+ for( const auto & [ y , v ] : values )
   y->set_value( v );
-
- // the bundle is emptied and the algorithm restarts from the Variable, at
- // the next compute() only
- if( f_rst_alg < 0 ) {
-  f_rst_alg = InnerSolver->get_int_par( par );
-  InnerSolver->set_par( par , f_rst_alg | 2 | 4 );
-  }
+ f_restart_pending = true;
+ f_fresh_center.reset();
  return( true );
+ }
 
- }  // end( LagrangianDualRelaxationSolver::restore_center )
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualRelaxationSolver::prepare_center( void )
+{
+ if( f_requested_center ) {
+  if( f_requested_center != f_fresh_center )
+   restore_center( *f_requested_center );
+  f_requested_center.reset();
+  }
+ // The solve about to start may move the multipliers, including on failure.
+ f_fresh_center.reset();
+ }
 
 /*--------------------------------------------------------------------------*/
 
 double LagrangianDualRelaxationSolver::child_bound( Change * change )
 {
- auto undo = apply( change , true );
+ std::unique_ptr< Change > undo( apply( change , true ) );
+ ScopeExit restore_branch( [ & ] { apply( undo.get() , false ); } );
+ prepare_center();
+ RestartParameter restart( InnerSolver , f_restart_pending );
  const int res = LagrangianDualSolver::compute( false );
- f_fresh_center = nullptr;  // the multipliers are those of the child now
- double bound;
- if( res == kInfeasible )
-  bound = f_max ? - Inf< double >() : Inf< double >();
- else
-  bound = f_max ? LagrangianDualSolver::get_ub()
-                : LagrangianDualSolver::get_lb();
- apply( undo , false );
- delete undo;
- return( bound );
+ return( res == kInfeasible ? ( f_max ? -Inf< double >() : Inf< double >() )
+			     : ( f_max ? LagrangianDualSolver::get_ub()
+				       : LagrangianDualSolver::get_lb() ) );
 
  }  // end( LagrangianDualRelaxationSolver::child_bound )
 
@@ -786,14 +870,11 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
  if( f_branch_estimate )
   f_pending = c->get_branching();
 
- // a child starts from the multipliers its father had, not from those of
- // whatever node was solved last, which may be anywhere in the tree and may
- // have been infeasible, its multipliers grown without bound: going down to
- // it, each LagrangianChange writes those of its own father, so that the
- // last one, the father of the node, is what is left. The first child
- // solved right after its father branched finds them there already
- if( c->get_center() && ( c->get_center() != f_fresh_center ) )
-  restore_center( *c->get_center() );
+ // Navigation only replaces a shared pointer. The last forward Change
+ // supplies the selected node's parent centre; undo Changes carry none.
+ // Loading it (and zeroing newer coordinates) waits until the next solve.
+ if( c->get_center() )
+  f_requested_center = c->shared_center();
 
  const auto type = c->get_type();
  if( ( type != AbstractChange::eChgLB ) &&
@@ -836,21 +917,26 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
 
   // the pair of the bound: g( x ) = value - x <= 0 for a lower bound,
   // g( x ) = x - value <= 0 for an upper one
+  // Reverse both terms for a maximum, keeping the multiplier nonnegative
+  // also when int_LDSlv_NNMult requires it.
+  const double sign = f_max ? -1.0 : 1.0;
   auto & pair = map_varToLF[ pv ];
   auto & g = lb ? pair.second : pair.first;
   double old;
   if( g ) {
-   old = lb ? g->get_constant_term() : - g->get_constant_term();
-   g->set_constant_term( lb ? value : - value );
+   old = sign * ( lb ? g->get_constant_term() : -g->get_constant_term() );
+   g->set_constant_term( sign * ( lb ? value : -value ) );
    }
   else {
    old = lb ? pv->get_lb() : pv->get_ub();
-   g = new LinearFunction( LinearFunction::v_coeff_pair{
-					   { pv , lb ? -1.0 : 1.0 } } ,
-			   lb ? value : - value );
-   auto y = new ColVariable();
+   g = new LinearFunction(
+     LinearFunction::v_coeff_pair{ { pv , sign * ( lb ? -1.0 : 1.0 ) } } ,
+     sign * ( lb ? value : -value ) );
+   auto y = std::make_unique< ColVariable >();
    y->is_positive( true );
-   lbf->add_dual_pairs( LagBFunction::v_dual_pair{ { y , g } } );
+   f_bound_multipliers.push_back( std::move( y ) );
+   lbf->add_dual_pairs(
+     LagBFunction::v_dual_pair{ { f_bound_multipliers.back().get() , g } } );
    }
   return( undo( type , { old } ) );
   }

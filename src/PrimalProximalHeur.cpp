@@ -849,7 +849,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   InnerSolver->set_par( dblLwCutOff , penalized ? - Inf< double >()
 		                                : lw_cutoff );
   const auto stat_t0 = std::chrono::steady_clock::now();
-  res = InnerSolver->compute( changedvars );
+  res = compute_inner_solver( changedvars );
   const double stat_dual_time = std::chrono::duration< double >(
 				  std::chrono::steady_clock::now() - stat_t0 )
 				  .count();

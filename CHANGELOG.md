@@ -32,6 +32,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installed next to it, by Boost.DLL instead of `dladdr()` and
   `GetModuleHandleExW()`, with no test on the operating system
 
+### Fixed
+
+- `LagrangianDualRelaxationSolver` queues the parent multipliers while
+  navigating the search tree and restores them only before the next inner
+  solve, with newer coordinates set to zero; the restart requested through
+  `intRstAlg` lasts for that solve only, including cutoff and error exits
+  and the inner iterations of `PrimalProximalHeur`
+
+- strong branching starts both children from the same parent multipliers,
+  queues that centre again afterwards, and undoes each trial branch also
+  when its solve throws
+
+- with `eMaster`, branching bounds have the correct sign also for a
+  maximization with nonnegative multipliers; the Solver owns their added
+  multipliers until the dual is dismantled, and rebuilding it clears the
+  node-specific state
+
 ## [0.7.0] - 2026-11-16
 
 ### Changed

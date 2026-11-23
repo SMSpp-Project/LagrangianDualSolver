@@ -793,6 +793,13 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PROTECTED METHODS ----------------------------*/
 /*--------------------------------------------------------------------------*/
+ /// solve one dual iteration; derived classes may prepare the inner Solver
+ /// and scope temporary parameters to this call, including on exceptions
+ virtual int compute_inner_solver( bool changedvars ) {
+  return( InnerSolver->compute( changedvars ) );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// true if the Solution a is worse than b in the optimization sense
  /** The comparator of the heap v_best_sol, whose top is therefore the best
   * Solution: the one with the largest value if f_max, the smallest
