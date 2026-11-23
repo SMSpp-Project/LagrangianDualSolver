@@ -783,11 +783,15 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branchings(
 std::shared_ptr< const LagrangianChange::Center >
                        LagrangianDualRelaxationSolver::center( void ) const
 {
- auto cntr = std::make_shared< LagrangianChange::Center >();
- for( auto lbf : v_LBF )
-  for( Index i = 0 ; i < lbf->get_num_active_var() ; ++i )
-   if( auto y = static_cast< ColVariable * >( lbf->get_active_var( i ) ) )
-    cntr->emplace_back( y , y->get_value() );
+ auto cntr = std::make_shared< LagrangianChange::Center >( v_LBF.size() );
+ for( Index h = 0 ; h < v_LBF.size() ; ++h )
+  if( auto lbf = v_LBF[ h ] ) {
+   auto & values = ( *cntr )[ h ];
+   values.resize( lbf->get_num_active_var() );
+   for( Index i = 0 ; i < values.size() ; ++i )
+    if( auto y = static_cast< ColVariable * >( lbf->get_active_var( i ) ) )
+     values[ i ] = y->get_value();
+   }
  return( cntr );
 
  }  // end( LagrangianDualRelaxationSolver::center )
@@ -801,16 +805,14 @@ bool LagrangianDualRelaxationSolver::restore_center(
  if( par == Inf< idx_type >() )
   return( false );
 
- std::unordered_map< ColVariable * , double > value;
- for( auto lbf : v_LBF )
-  for( Index i = 0 ; i < lbf->get_num_active_var() ; ++i )
-   if( auto y = static_cast< ColVariable * >( lbf->get_active_var( i ) ) )
-    value[ y ] = 0;
- for( const auto & [ y , v ] : center )
-  if( auto it = value.find( y ) ; it != value.end() )
-   it->second = v;
- for( const auto & [ y , v ] : value )
-  y->set_value( v );
+ for( Index h = 0 ; h < v_LBF.size() ; ++h )
+  if( auto lbf = v_LBF[ h ] ) {
+   const auto values = h < center.size() ? &center[ h ] : nullptr;
+   for( Index i = 0 ; i < lbf->get_num_active_var() ; ++i )
+    if( auto y = static_cast< ColVariable * >( lbf->get_active_var( i ) ) )
+     y->set_value( ( values && ( i < values->size() ) ) ? ( *values )[ i ]
+		                                            : 0 );
+   }
 
  // the bundle is emptied and the algorithm restarts from the Variable, at
  // the next compute() only

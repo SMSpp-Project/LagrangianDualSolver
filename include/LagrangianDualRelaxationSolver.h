@@ -99,8 +99,13 @@ class LagrangianChange : public AbstractChange {
 
 /*--------------------------------------------------------------------------*/
  /// the multipliers of the node that branched, which a child may start from
+ /** The values of the active Variable of each LagBFunction, in the order of
+  * the LagBFunction and in that of their active Variable: by position
+  * rather than by the Variable, so that a LagrangianChange can be applied
+  * by any LagrangianDualRelaxationSolver of an identical copy of the Block
+  * [see LagrangianDualRelaxationSolver::restore_center()]. */
 
- using Center = std::vector< std::pair< ColVariable * , double > >;
+ using Center = std::vector< std::vector< double > >;
 
  /// set the multipliers of the node that branched [see get_center()]
 
@@ -705,10 +710,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
 /*--------------------------------------------------------------------------*/
  /// put back the multipliers of center, those added since then at 0
- /** Writes in the Lagrangian multipliers the values in center, and 0 in
-  * those that are not there, i.e., the multipliers of the dual pairs added
-  * since center was taken; a Variable of center that is no longer a
-  * multiplier is left alone. The inner Solver is asked, once, to restart
+ /** Writes in the Lagrangian multipliers the values in center, position by
+  * position [see LagrangianChange::Center], and 0 in those that are not
+  * there, i.e., the multipliers of the dual pairs added since center was
+  * taken. The inner Solver is asked, once, to restart
   * from them at its next compute(), emptying its bundle [see intRstAlg of
   * BundleSolver]; returns false, doing nothing, if it cannot be asked. */
 

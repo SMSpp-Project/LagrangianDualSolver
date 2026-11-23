@@ -66,6 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the relaxed constraints of a maximization problem, which it had the
   opposite of, a child then getting a bound below its optimum
 
+- the multipliers that a `LagrangianChange` carries for the child to start
+  from are by position, not by the Variable of the
+  `LagrangianDualRelaxationSolver` that branched, so that the solver of an
+  identical copy of the Block (say, a worker of the parallel exploration of
+  `BranchAndXSolver`) starts from them too, rather than from zero
+
 ## [0.7.0] - 2026-11-16
 
 ### Changed
