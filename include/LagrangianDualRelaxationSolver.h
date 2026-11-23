@@ -368,7 +368,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   none of these is fractional. Thus, say, "x[0]" followed by "x"
   *   branches upon the first variable of each sub-Block before the others,
   *   which is what to do when that variable decides all of them. An entry
-  *   that names no group of the sub-Blocks is an error. */
+  *   that has no variable (no group of the sub-Blocks has its name, or its
+  *   range is past the end of the group) is an error. */
 
  enum vstr_par_type_LDRS {
   vstrBranchGroups = vstrLastLDSlvPar ,  ///< the groups branched upon
@@ -703,7 +704,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /** One entry per variable, in the order of the Lagrangian solution: the
   * first entry of vstrBranchGroups that has it, Inf< Index >() if none
   * has, 0 for all if vstrBranchGroups is empty. Throws
-  * std::invalid_argument if an entry names no group of the sub-Blocks. */
+  * std::invalid_argument if an entry has no variable [see
+  * vstrBranchGroups]. */
 
  std::vector< Index > branchable( void ) const;
 

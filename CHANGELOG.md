@@ -89,8 +89,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Lagrangian Dual is and a feasible solution is within `dblRelAcc` of
   the bound, otherwise it can be neither branched nor fenced, and the status
   is that of the Lagrangian Dual, or `kLowPrecision` if that is `kOK`; an
-  entry of `vstrBranchGroups` that names no group of the sub-Blocks, which
-  left every variable out of the branching, is refused with an exception
+  entry of `vstrBranchGroups` that has no variable (no group of the
+  sub-Blocks has its name, or its range is past the end of the group),
+  which left its variables out of the branching, is refused with an
+  exception
 
 - the integral convexified solution that `PrimalProximalHeur` records has
   its binary Variable rounded before the rows of the Block are checked,

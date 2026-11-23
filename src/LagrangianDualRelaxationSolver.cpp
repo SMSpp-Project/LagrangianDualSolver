@@ -718,6 +718,7 @@ LagrangianDualRelaxationSolver::branchable( void ) const
  // the variables
  std::unordered_map< const ColVariable * , Index > first;
  std::vector< bool > named( entries.size() , false );
+ std::vector< bool > hit( entries.size() , false );
  for( const auto & sbi : f_Block->get_nested_Blocks() )
   for( const auto & group : sbi->get_static_variable_groups() ) {
    if( ! group )
@@ -730,20 +731,26 @@ LagrangianDualRelaxationSolver::branchable( void ) const
       if( ( entries[ h ].name == group->get_name() ) &&
 	  ( pos >= entries[ h ].lo ) && ( pos < entries[ h ].hi ) ) {
        first.try_emplace( & var , h );
-       break;
+       hit[ h ] = true;
        }
      ++pos;
      } );
    }
 
- // an entry that names no group branches upon nothing, which is a mistake
- // of the configuration rather than a node with nothing fractional
+ // an entry that has no variable of the sub-Blocks, its group having none
+ // in its range or no group having its name, branches upon nothing, which
+ // is a mistake of the configuration rather than a node with nothing
+ // fractional
  for( Index h = 0 ; h < entries.size() ; ++h )
-  if( ! named[ h ] )
+  if( ! hit[ h ] )
    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::"
 				 "branchable: entry " + f_branch_groups[ h ] +
-				 " of vstrBranchGroups names no group of the "
-				 "sub-Blocks" ) );
+				 " of vstrBranchGroups has no variable, " +
+				 ( named[ h ] ? "the range being past the "
+				                "end of the group"
+				              : "no group of the sub-Blocks "
+				                "being named " +
+				                entries[ h ].name ) ) );
 
  Index k = 0;
  for( const auto & sbv : idx_to_var_sbi1 )
