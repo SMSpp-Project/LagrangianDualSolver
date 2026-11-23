@@ -194,8 +194,10 @@ class LagrangianChange : public AbstractChange {
  *
  *
  * The LagrangianChange identify the variable by its AbstractPath relative
- * to the LagrangianDualBlock if the sub-Blocks are copied into it
- * (int_LDSlv_iBCopy), and to the Block being solved otherwise.
+ * to the Block being solved, whose sub-Blocks have the variables of the
+ * Lagrangian solution: the branching on a variable needs the sub-Blocks not
+ * to be copied into the Lagrangian Dual (int_LDSlv_iBCopy), which solves
+ * the copies.
  *
  * - eMaster: in the Lagrangian Dual, i.e., the bound of each child (x <=
  *   floor( v ) or x >= ceil( v )) becomes a new dual pair of the
@@ -652,16 +654,6 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 /*--------------------------- PRIVATE METHODS ------------------------------*/
 /*--------------------------------------------------------------------------*/
 
- /// the Block the paths of the LagrangianChange are relative to
- /** The variables of the sub-Blocks are in the LagrangianDualBlock when
-  * these are copied into it (int_LDSlv_iBCopy), and in the Block being
-  * solved otherwise. */
-
- Block * path_base( void ) const {
-  return( iBCopy ? static_cast< Block * >( LagrDual ) : f_Block );
-  }
-
-/*--------------------------------------------------------------------------*/
  /// the LagBFunction of the sub-Block the variable belongs to
 
  LagBFunction * LagBF_of( Variable * var ) const;

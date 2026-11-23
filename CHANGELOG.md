@@ -72,6 +72,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identical copy of the Block (say, a worker of the parallel exploration of
   `BranchAndXSolver`) starts from them too, rather than from zero
 
+- with `int_LDSlv_iBCopy` the branching of `LagrangianDualRelaxationSolver`
+  failed with "AbstractPath::build: Path not found", as it took the path of
+  the variable, which is one of the sub-Blocks of the Block being solved,
+  relative to the Lagrangian Dual, which has their copies: the paths are
+  relative to the Block, and the branching on a variable with the
+  sub-Blocks copied is refused with an exception that says why
+
 ## [0.7.0] - 2026-11-16
 
 ### Changed

@@ -746,7 +746,14 @@ LagrangianDualRelaxationSolver::branchable( void ) const
 std::vector< Change * > LagrangianDualRelaxationSolver::branchings(
 				      ColVariable * var , double value ) const
 {
- const std::vector< AbstractPath > path{ AbstractPath( var , path_base() ) };
+ // the variable is one of the sub-Blocks of f_Block [see the class notes],
+ // while the Lagrangian Dual solves their copies
+ if( iBCopy )
+  throw( std::invalid_argument( "LagrangianDualRelaxationSolver::branchings: "
+				"the branching on a variable needs the "
+				"sub-Blocks not to be copied, see "
+				"int_LDSlv_iBCopy" ) );
+ const std::vector< AbstractPath > path{ AbstractPath( var , f_Block ) };
  const double lo = std::floor( value );
  const double up = std::ceil( value );
  std::vector< Change * > changes;
@@ -878,7 +885,7 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
  if( c->get_paths().empty() )
   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::apply: "
 				"the LagrangianChange has no path" ) );
- auto pv = c->get_paths()[ 0 ].get_element< ColVariable >( path_base() );
+ auto pv = c->get_paths()[ 0 ].get_element< ColVariable >( f_Block );
  if( ! pv )
   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::apply: "
 				"the variable is not in the Block" ) );
