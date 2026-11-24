@@ -77,8 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `intHeurDepth` and `dblHeurGap` of `LagrangianDualRelaxationSolver`: the
   heuristic of `PrimalProximalHeur` runs also at the nodes down to a depth,
   and at those whose bound is within a share of the incumbent of the best
-  bound of the search (the value `str_BestBound` of the GlobalInformation,
-  or else the bound of the root), besides those of `intHeurFreq`; the depth
+  bound of the search (the value `GlobalInformation::str_BestBound`, or
+  else the bound of the root), besides those of `intHeurFreq`; the depth
   of a node is carried by its `LagrangianChange`
 
 - `intCutOffReread` of `LagrangianDualRelaxationSolver`: every k iterations

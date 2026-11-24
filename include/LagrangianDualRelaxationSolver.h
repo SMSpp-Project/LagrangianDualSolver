@@ -275,14 +275,6 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  static constexpr const char * str_PurgedColumns = "purgedColumns";
 
- /// key, in the Collection GlobalInformation::str_AtomicScalars, of the
- /// best bound of the open nodes of the search [see dblHeurGap]
- /** A finite value is the best (the smallest for a minimization problem)
-  * bound of the nodes that the search has still to explore, written by
-  * whoever drives it; absent or not finite when it is not known. */
-
- static constexpr const char * str_BestBound = "BestBound";
-
  /// the purged columns, by the variable whose fixing purged them
 
  using PurgedColumn = std::map< ColVariable * ,
@@ -421,10 +413,9 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   / \max \{ | \bar{z} | , 1 \} \leq \f$ dblHeurGap for a minimization
   *   problem (\f$ B - L \f$ for a maximization), \f$ \bar{z} \f$ being
   *   the incumbent; with no incumbent the heuristic is run. B is the value
-  *   of str_BestBound in the GlobalInformation, if finite, and otherwise
-  *   the bound of the last root node this Solver has solved, which is
-  *   never better than the best bound of the search, so that fewer nodes
-  *   pass. The test is made right after the Lagrangian Dual of the
+  *   of GlobalInformation::str_BestBound, if finite, and otherwise the
+  *   bound of the last root node this Solver has solved, which is never
+  *   better than the best bound of the search, so that fewer nodes pass. The test is made right after the Lagrangian Dual of the
   *   original objective is solved, which gives L; with a negative value
   *   it is not made. */
 

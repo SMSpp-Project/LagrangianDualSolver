@@ -1455,7 +1455,8 @@ bool LagrangianDualRelaxationSolver::close_to_best_bound( void )
  // heuristic is run
  const double zbar = global_incumbent();
  double best = f_root_bound;
- if( auto cell = atomic_cell( str_BestBound , f_bound_cell ) )
+ if( auto cell = atomic_cell( GlobalInformation::str_BestBound ,
+			      f_bound_cell ) )
   if( const double b = cell->load() ; std::isfinite( b ) )
    best = b;
  if( ( ! std::isfinite( zbar ) ) || ( ! std::isfinite( best ) ) ||
