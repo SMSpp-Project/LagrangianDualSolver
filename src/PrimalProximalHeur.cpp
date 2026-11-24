@@ -357,6 +357,7 @@ void PrimalProximalHeur::set_par( idx_type par , int value )
   case( intNoRecoveryIfFeasible ): NoRecIfFeas = ( value != 0 ); break;
   case( intWarmStartOnce ):     WarmOnce = ( value != 0 ); break;
   case( intPenaltyRecoveryFix ): PenRecFix = ( value != 0 ); break;
+  case( intRecoveryCutOff ):    RecCutOff = ( value != 0 ); break;
   case( intMaxThread ):  MaxThread = value; break;
   case( intLogVerb ):
    logVerb = value & 3;
@@ -779,8 +780,8 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  // the cutoffs of the inner Solver, which only bound the unpenalized
  // iteration and are given back to it at the end
- const double up_cutoff = InnerSolver->get_dbl_par( dblUpCutOff );
- const double lw_cutoff = InnerSolver->get_dbl_par( dblLwCutOff );
+ f_UpCutOff = InnerSolver->get_dbl_par( dblUpCutOff );
+ f_LwCutOff = InnerSolver->get_dbl_par( dblLwCutOff );
 
  // and its time limit, which each iteration caps by what is left to the
  // heuristic
@@ -848,9 +849,10 @@ int PrimalProximalHeur::compute( bool changedvars )
   // tries to record it in v_best_sol via the record_feasible() helper
 
   Index index_event = 0;
+  EventID id_event = 0;
 
   if( penalized )
-   LagrangianDualSolver::set_event_handler(
+   id_event = LagrangianDualSolver::set_event_handler(
     ThinComputeInterface::eEverykIteration ,
     [ this , &sol , &index_event , &record_feasible , &is_integer_solution ]
     () {
@@ -919,11 +921,26 @@ int PrimalProximalHeur::compute( bool changedvars )
   // original objective only, not that of the penalized one
   set_conditional_bound( ! penalized );
   InnerSolver->set_par( dblUpCutOff , penalized ? Inf< double >()
-		                                : up_cutoff );
+		                                : f_UpCutOff );
   InnerSolver->set_par( dblLwCutOff , penalized ? - Inf< double >()
-		                                : lw_cutoff );
+		                                : f_LwCutOff );
+  f_Penalized = penalized;
   const auto stat_t0 = std::chrono::steady_clock::now();
-  res = compute_inner_solver( changedvars );
+  {
+   // the event handler refers to the locals of this iteration, hence it
+   // goes with the solve, also on exceptions
+   struct ResetEvent {
+    PrimalProximalHeur * pph;
+    EventID id;
+    ~ResetEvent() {
+     if( pph->f_Penalized )
+      pph->reset_event_handler( ThinComputeInterface::eEverykIteration ,
+				id );
+     pph->f_Penalized = false;
+     }
+    } reset_event{ this , id_event };
+   res = compute_inner_solver( changedvars );
+   }
   const double stat_dual_time = std::chrono::duration< double >(
 				  std::chrono::steady_clock::now() - stat_t0 )
 				  .count();
@@ -938,6 +955,10 @@ int PrimalProximalHeur::compute( bool changedvars )
    valid_bound = f_max ? InnerSolver->get_ub() : InnerSolver->get_lb();
    other_bound = f_max ? InnerSolver->get_lb() : InnerSolver->get_ub();
    f_LagrInitStatus = res;
+
+   // a derived class may have tightened the cutoffs during the solve
+   f_UpCutOff = InnerSolver->get_dbl_par( dblUpCutOff );
+   f_LwCutOff = InnerSolver->get_dbl_par( dblLwCutOff );
 
    // the Lagrangian Dual of the original objective is unbounded (the
    // problem is infeasible) or infeasible, or beyond the cutoff: there is
@@ -1164,8 +1185,8 @@ int PrimalProximalHeur::compute( bool changedvars )
   }  // end( main loop )- - - - - - - - - - - - - - - - - - - - - - - - - - -
      //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- InnerSolver->set_par( dblUpCutOff , up_cutoff );
- InnerSolver->set_par( dblLwCutOff , lw_cutoff );
+ InnerSolver->set_par( dblUpCutOff , f_UpCutOff );
+ InnerSolver->set_par( dblLwCutOff , f_LwCutOff );
  InnerSolver->set_par( dblMaxTime , inner_time );
 
  // if the inner Block is not an R3B-copy, restore the original inner
@@ -1589,7 +1610,10 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 
  bool ok = solve_restricted( "full" );
 
- if( ! ok ) {
+ // an attempt that ends at the cutoff with no solution proves none better
+ // than the incumbent there: fixing fewer binaries is for an attempt found
+ // infeasible [see intRecoveryCutOff]
+ if( ( ! ok ) && ( ! f_RecAtCutOff ) ) {
   // the fully-fixed point admits no feasible completion: relax the
   // restriction one-sidedly, keeping only the binaries at 1 fixed, so
   // more can be activated (e.g. more units committed to cover a demand
@@ -1616,7 +1640,7 @@ bool PrimalProximalHeur::recover_primal( double & cost )
      dv.second->is_fixed( false , eNoMod );
   }
 
- if( ! ok )
+ if( ( ! ok ) && ( ! f_RecAtCutOff ) )
   // last resort: nothing fixed, i.e. the original problem within the
   // recovery Solver's own budget; whatever incumbent it finds is still
   // a valid bound, only no longer tied to the proximal point
@@ -1633,6 +1657,7 @@ bool PrimalProximalHeur::solve_restricted( const std::string & bsc ,
 					   const std::string & bcfg )
 {
  auto recovery = new_aux_solver( bsc );
+ f_RecAtCutOff = false;
 
  Index index = 0;
 
@@ -1736,6 +1761,17 @@ bool PrimalProximalHeur::solve_restricted( const std::string & bsc ,
 
  recovery->set_Block( blk );
 
+ // the incumbent as the cutoff, if tighter than that of the Solver [see
+ // intRecoveryCutOff]
+ if( RecCutOff ) {
+  const double zbar = incumbent();
+  const auto cpar = f_max ? dblLwCutOff : dblUpCutOff;
+  if( std::isfinite( zbar ) &&
+      ( f_max ? ( zbar > recovery->get_dbl_par( cpar ) )
+              : ( zbar < recovery->get_dbl_par( cpar ) ) ) )
+   recovery->set_par( cpar , zbar );
+  }
+
  // the best solution found so far is a feasible point of the original
  // problem: it is the MIP start of the recovery (of no use to a restriction
  // that fixes the binaries elsewhere, which the solver then ignores, but
@@ -1761,6 +1797,7 @@ bool PrimalProximalHeur::solve_restricted( const std::string & bsc ,
  const bool ok = ( rc >= kOK ) &&
                  ( ( rc < kError ) || ( rc == kLowPrecision ) ) &&
                  recovery->has_var_solution();
+ f_RecAtCutOff = RecCutOff && ( rc == kCutOff ) && ( ! ok );
  if( ok ) {
   recovery->get_var_solution();  // the completion into the Block Variables
   if( blk != f_Block )
@@ -1899,10 +1936,7 @@ bool PrimalProximalHeur::lagrangian_fixings(
 {
  fix.clear();
 
- // the incumbent: the best of the cutoff and of the best solution found
- const double cut = get_dbl_par( f_max ? dblLwCutOff : dblUpCutOff );
- const double zbar = f_max ? std::max( cut , double( best_bound ) )
-                           : std::min( cut , double( best_bound ) );
+ const double zbar = incumbent();
  if( f_max ? ( zbar == - Inf< double >() ) : ( zbar == Inf< double >() ) )
   return( false );
 

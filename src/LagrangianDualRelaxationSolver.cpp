@@ -29,6 +29,8 @@
 
 #include <cctype>
 
+#include <limits>
+
 #include <unordered_map>
 
 #include <unordered_set>
@@ -113,6 +115,52 @@ class RestartParameter
  int f_saved = 0;
  };
 
+// The cutoff of the inner Solver follows the incumbent of the cell during one
+// solve, which the events eEverykIteration read every k iterations; an inner
+// Solver that has no events is left as it is [see intCutOffReread].
+class CutOffReread
+{
+ public:
+ CutOffReread( CDASolver * solver , int k , std::atomic< double > * cell ,
+	       bool max ) : f_solver( solver ) {
+  if( ( k <= 0 ) || ( ! cell ) )
+   return;
+  const auto par = max ? Solver::dblLwCutOff : Solver::dblUpCutOff;
+  try {
+   f_id = solver->set_event_handler( ThinComputeInterface::eEverykIteration ,
+				     [ solver , cell , max , par ]() {
+    const double v = cell->load();
+    if( std::isfinite( v ) &&
+	( max ? ( v > solver->get_dbl_par( par ) )
+	      : ( v < solver->get_dbl_par( par ) ) ) )
+     solver->set_par( par , v );
+    return( ThinComputeInterface::eContinue );
+    } );
+   }
+  catch( std::logic_error & ) {
+   return;
+   }
+  f_on = true;
+  f_saved = solver->get_int_par( ThinComputeInterface::intEverykIt );
+  solver->set_par( ThinComputeInterface::intEverykIt , k );
+  }
+ CutOffReread( const CutOffReread & ) = delete;
+ CutOffReread & operator=( const CutOffReread & ) = delete;
+ ~CutOffReread() {
+  if( ! f_on )
+   return;
+  f_solver->set_par( ThinComputeInterface::intEverykIt , f_saved );
+  f_solver->reset_event_handler( ThinComputeInterface::eEverykIteration ,
+				 f_id );
+  }
+
+ private:
+ CDASolver * f_solver;
+ bool f_on = false;
+ ThinComputeInterface::EventID f_id = 0;
+ int f_saved = 0;
+ };
+
 }  // anonymous namespace
 
 /*--------------------------------------------------------------------------*/
@@ -137,6 +185,9 @@ void LagrangianDualRelaxationSolver::set_Block( Block * block )
  f_ncompute = 0;
  f_solved = false;
  f_NoHeur = false;
+ f_depth = 0;
+ f_root_bound = std::numeric_limits< double >::quiet_NaN();
+ f_heur_by_gap = false;
  PrimalProximalHeur::set_Block( block );
  f_bound_multipliers.clear();
  }
@@ -167,8 +218,31 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par , int value )
 				  "intLagFixing is neither 0 nor 1" ) );
    f_lag_fixing = value;
    break;
+  case( intHeurDepth ): f_heur_depth = value; break;
+  case( intKeepBundle ):
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::set_par: "
+				  "intKeepBundle is neither 0 nor 1" ) );
+   f_keep_bundle = value;
+   break;
+  case( intCutOffReread ):
+   if( value < 0 )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::set_par: "
+				  "intCutOffReread is negative" ) );
+   f_cutoff_reread = value;
+   break;
   default: PrimalProximalHeur::set_par( par , value );
   }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void LagrangianDualRelaxationSolver::set_par( idx_type par , double value )
+{
+ if( par == dblHeurGap )
+  f_heur_gap = value;
+ else
+  PrimalProximalHeur::set_par( par , value );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -182,6 +256,9 @@ int LagrangianDualRelaxationSolver::get_dflt_int_par( idx_type par ) const
   case( intBranchEstimate ): return( 0 );
   case( intHeurFreq ):       return( 1 );
   case( intLagFixing ):      return( 0 );
+  case( intHeurDepth ):      return( -1 );
+  case( intKeepBundle ):     return( 0 );
+  case( intCutOffReread ):   return( 0 );
   default: return( PrimalProximalHeur::get_dflt_int_par( par ) );
   }
  }
@@ -197,6 +274,9 @@ int LagrangianDualRelaxationSolver::get_int_par( idx_type par ) const
   case( intBranchEstimate ): return( f_branch_estimate );
   case( intHeurFreq ):       return( f_heur_freq );
   case( intLagFixing ):      return( f_lag_fixing );
+  case( intHeurDepth ):      return( f_heur_depth );
+  case( intKeepBundle ):     return( f_keep_bundle );
+  case( intCutOffReread ):   return( f_cutoff_reread );
   default: return( PrimalProximalHeur::get_int_par( par ) );
   }
  }
@@ -218,6 +298,12 @@ Solver::idx_type LagrangianDualRelaxationSolver::int_par_str2idx(
   return( intHeurFreq );
  if( name == "intLagFixing" )
   return( intLagFixing );
+ if( name == "intHeurDepth" )
+  return( intHeurDepth );
+ if( name == "intKeepBundle" )
+  return( intKeepBundle );
+ if( name == "intCutOffReread" )
+  return( intCutOffReread );
  return( PrimalProximalHeur::int_par_str2idx( name ) );
  }
 
@@ -232,6 +318,9 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
  static const std::string estimate = "intBranchEstimate";
  static const std::string heur = "intHeurFreq";
  static const std::string lagfix = "intLagFixing";
+ static const std::string hdepth = "intHeurDepth";
+ static const std::string keep = "intKeepBundle";
+ static const std::string reread = "intCutOffReread";
  switch( par ) {
   case( intApplyStrategy ):  return( apply );
   case( intBranchStrategy ): return( branch );
@@ -239,8 +328,50 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
   case( intBranchEstimate ): return( estimate );
   case( intHeurFreq ):       return( heur );
   case( intLagFixing ):      return( lagfix );
+  case( intHeurDepth ):      return( hdepth );
+  case( intKeepBundle ):     return( keep );
+  case( intCutOffReread ):   return( reread );
   default: return( PrimalProximalHeur::int_par_idx2str( par ) );
   }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double LagrangianDualRelaxationSolver::get_dflt_dbl_par( idx_type par ) const
+{
+ if( par == dblHeurGap )
+  return( -1 );
+ return( PrimalProximalHeur::get_dflt_dbl_par( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double LagrangianDualRelaxationSolver::get_dbl_par( idx_type par ) const
+{
+ if( par == dblHeurGap )
+  return( f_heur_gap );
+ return( PrimalProximalHeur::get_dbl_par( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Solver::idx_type LagrangianDualRelaxationSolver::dbl_par_str2idx(
+					      const std::string & name ) const
+{
+ if( name == "dblHeurGap" )
+  return( dblHeurGap );
+ return( PrimalProximalHeur::dbl_par_str2idx( name ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::string & LagrangianDualRelaxationSolver::dbl_par_idx2str(
+						     idx_type par ) const
+{
+ static const std::string gap = "dblHeurGap";
+ if( par == dblHeurGap )
+  return( gap );
+ return( PrimalProximalHeur::dbl_par_idx2str( par ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -381,6 +512,8 @@ void LagrangianDualRelaxationSolver::set_global_information(
 {
  ChangeSolver::set_global_information( gi );
  map_varToSol = nullptr;
+ f_scalars.reset();
+ f_inc_cell = f_bound_cell = nullptr;
  if( ! gi )
   return;
 
@@ -400,6 +533,12 @@ int LagrangianDualRelaxationSolver::compute_inner_solver( bool changedvars )
 {
  prepare_center();
  RestartParameter restart( InnerSolver , f_restart_pending );
+ // the incumbent is read again during the Lagrangian Dual of the original
+ // objective only, the penalized ones having no cutoff
+ const bool reread = f_cutoff_reread && ( ! f_Penalized );
+ CutOffReread cutoff( InnerSolver , reread ? f_cutoff_reread : 0 ,
+		      reread ? atomic_cell( GlobalInformation::str_Incumbent ,
+					    f_inc_cell ) : nullptr , f_max );
  return( PrimalProximalHeur::compute_inner_solver( changedvars ) );
  }
 
@@ -407,9 +546,18 @@ int LagrangianDualRelaxationSolver::compute_inner_solver( bool changedvars )
 
 int LagrangianDualRelaxationSolver::compute( bool changedvars )
 {
- // the heuristic runs at the first call and at one every f_heur_freq
- f_NoHeur = ( f_ncompute > 0 ) &&
-            ( ( f_heur_freq == 0 ) || ( f_ncompute % f_heur_freq != 0 ) );
+ // the heuristic runs at the first call and at one every f_heur_freq, at
+ // the nodes down to the depth f_heur_depth, and at those whose bound is
+ // close to the best one, which after_Lagrangian_dual() tells [see
+ // dblHeurGap]
+ const bool by_count = ( f_ncompute == 0 ) ||
+                       ( f_heur_freq && ( f_ncompute % f_heur_freq == 0 ) );
+ const bool by_depth = ( f_heur_depth >= 0 ) &&
+                       ( f_depth <= Index( f_heur_depth ) );
+ f_NoHeur = ! ( by_count || by_depth );
+ f_heur_by_gap = f_NoHeur && ( f_heur_gap >= 0 );
+ if( f_heur_by_gap )
+  f_NoHeur = false;
  ++f_ncompute;
  f_solved = false;
  f_lag_fix.clear();
@@ -420,6 +568,10 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
   // hook used by its proximal iterations.
   prepare_center();
   RestartParameter restart( InnerSolver , f_restart_pending );
+  CutOffReread cutoff( InnerSolver , f_cutoff_reread ,
+		       f_cutoff_reread ?
+		       atomic_cell( GlobalInformation::str_Incumbent ,
+				    f_inc_cell ) : nullptr , f_max );
   status = PrimalProximalHeur::compute( changedvars );
   }
  else
@@ -546,6 +698,7 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
     auto nc = new LagrangianChange( lc->get_type() , std::move( data ) ,
 				    std::move( paths ) );
     nc->set_center( lc->shared_center() );
+    nc->set_depth( lc->get_depth() );
     delete lc;
     ch = nc;
     }
@@ -957,8 +1110,10 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branchings(
  // Children share the multipliers of their parent, also across best-first
  // jumps to another branch.
  const auto cntr = f_requested_center ? f_requested_center : center();
- for( auto ch : changes )
+ for( auto ch : changes ) {
   static_cast< LagrangianChange * >( ch )->set_center( cntr );
+  static_cast< LagrangianChange * >( ch )->set_depth( f_depth + 1 );
+  }
  // After strong branching the parent centre is queued, not loaded yet.
  if( ! f_requested_center )
   f_fresh_center = cntr;
@@ -971,6 +1126,15 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branchings(
 
 void LagrangianDualRelaxationSolver::after_Lagrangian_dual( void )
 {
+ // the bound of the root, and whether the heuristic is run at this node
+ // [see dblHeurGap]
+ if( f_depth == 0 )
+  f_root_bound = valid_bound;
+ if( f_heur_by_gap ) {
+  f_heur_by_gap = false;
+  f_NoHeur = ! close_to_best_bound();
+  }
+
  // the penalties are read once, for the fixings, for ePenalties and for the
  // features of the candidates [see strBranchModel]
  const bool fixing = f_lag_fixing && ( f_apply_strategy == eSubproblem );
@@ -1040,8 +1204,9 @@ bool LagrangianDualRelaxationSolver::restore_center(
 
 void LagrangianDualRelaxationSolver::prepare_center( void )
 {
+ // with intKeepBundle the inner Solver starts from where it is
  if( f_requested_center ) {
-  if( f_requested_center != f_fresh_center )
+  if( ( ! f_keep_bundle ) && ( f_requested_center != f_fresh_center ) )
    restore_center( *f_requested_center );
   f_requested_center.reset();
   }
@@ -1086,6 +1251,12 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
  if( c->get_center() )
   f_requested_center = c->shared_center();
 
+ // the depth of the node the Change leads to, that of the node it leaves
+ // being the one of its undo [see intHeurDepth]
+ const Index depth = f_depth;
+ if( c->get_depth() < Inf< Index >() )
+  f_depth = c->get_depth();
+
  const auto type = c->get_type();
  if( ( type != AbstractChange::eChgLB ) &&
      ( type != AbstractChange::eChgUB ) &&
@@ -1106,8 +1277,10 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
   -> Change * {
   if( ! doUndo )
    return( nullptr );
-  return( new LagrangianChange( utype , std::move( data ) ,
-				c->get_paths() ) );
+  auto u = new LagrangianChange( utype , std::move( data ) ,
+				 c->get_paths() );
+  u->set_depth( depth );
+  return( u );
   };
 
  // the bounds, in the Lagrangian Dual: a new dual pair of the LagBFunction,
@@ -1236,13 +1409,65 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
   return( nullptr );
  if( undo_type == AbstractChange::eUnfixX )
   udata.clear();
- return( new LagrangianChange( undo_type , std::move( udata ) ,
-			       std::move( upaths ) ) );
+ auto u = new LagrangianChange( undo_type , std::move( udata ) ,
+				std::move( upaths ) );
+ u->set_depth( depth );
+ return( u );
 
  }  // end( LagrangianDualRelaxationSolver::apply )
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PRIVATE METHODS ------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+std::atomic< double > * LagrangianDualRelaxationSolver::atomic_cell(
+			      const char * key , std::atomic< double > * & cell )
+{
+ if( ( ! cell ) && f_global_information ) {
+  if( ! f_scalars )
+   f_scalars = f_global_information->get_from_Universe<
+     std::atomic< double > >( GlobalInformation::str_AtomicScalars );
+  if( f_scalars && f_scalars->contains( key ) )
+   cell = &( ( *f_scalars )[ key ] );
+  }
+ return( cell );
+
+ }  // end( LagrangianDualRelaxationSolver::atomic_cell )
+
+/*--------------------------------------------------------------------------*/
+
+double LagrangianDualRelaxationSolver::global_incumbent( void )
+{
+ double zbar = incumbent();
+ if( auto cell = atomic_cell( GlobalInformation::str_Incumbent ,
+			      f_inc_cell ) )
+  if( const double v = cell->load() ; std::isfinite( v ) )
+   zbar = f_max ? std::max( zbar , v ) : std::min( zbar , v );
+ return( zbar );
+
+ }  // end( LagrangianDualRelaxationSolver::global_incumbent )
+
+/*--------------------------------------------------------------------------*/
+
+bool LagrangianDualRelaxationSolver::close_to_best_bound( void )
+{
+ // with no incumbent, or no bound to measure the node against, the
+ // heuristic is run
+ const double zbar = global_incumbent();
+ double best = f_root_bound;
+ if( auto cell = atomic_cell( str_BestBound , f_bound_cell ) )
+  if( const double b = cell->load() ; std::isfinite( b ) )
+   best = b;
+ if( ( ! std::isfinite( zbar ) ) || ( ! std::isfinite( best ) ) ||
+     ( ! std::isfinite( valid_bound ) ) )
+  return( true );
+
+ const double gap = ( f_max ? best - valid_bound : valid_bound - best ) /
+                    std::max( std::abs( zbar ) , 1.0 );
+ return( gap <= f_heur_gap );
+
+ }  // end( LagrangianDualRelaxationSolver::close_to_best_bound )
+
 /*--------------------------------------------------------------------------*/
 
 LagBFunction * LagrangianDualRelaxationSolver::LagBF_of( Variable * var )

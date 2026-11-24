@@ -143,7 +143,7 @@ class LagrangianDualRelaxationSolverML :
   * - dblLearnRate [1e-2]: the step of Adam in the fitting. */
 
  enum dbl_par_type_LDRSML {
-  dblLearnRate = dblLastPPHPar ,    ///< step of the fitting
+  dblLearnRate = dblLastLDRSPar ,   ///< step of the fitting
   dblLastLDRSMLPar  ///< first allowed new double parameter
   };
 

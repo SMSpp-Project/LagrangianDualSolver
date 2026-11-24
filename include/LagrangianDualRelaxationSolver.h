@@ -35,6 +35,10 @@
 
 #include <array>
 
+#include <atomic>
+
+#include <limits>
+
 #include <map>
 #include <memory>
 #include <optional>
@@ -130,6 +134,19 @@ class LagrangianChange : public AbstractChange {
   }
 
 /*--------------------------------------------------------------------------*/
+ /// set the depth of the node that the LagrangianChange leads to
+
+ void set_depth( Block::Index depth ) { f_depth = depth; }
+
+ /// the depth of the node that the LagrangianChange leads to
+ /** The number of branchings from the root to the node in which applying
+  * the LagrangianChange leaves the Block: that of the child for one that
+  * branches, that of the parent for the one that undoes it; Inf< Index >()
+  * if not known [see LagrangianDualRelaxationSolver::intHeurDepth]. */
+
+ [[nodiscard]] Block::Index get_depth( void ) const { return( f_depth ); }
+
+/*--------------------------------------------------------------------------*/
  /// the branching that produced the LagrangianChange, as the pseudocosts
  /// need it [see LagrangianDualRelaxationSolver::intBranchEstimate]
 
@@ -173,6 +190,7 @@ class LagrangianChange : public AbstractChange {
 
  std::shared_ptr< const Center > f_center;  ///< see get_center()
  std::optional< Branching > f_branching;   ///< see get_branching()
+ Block::Index f_depth = Inf< Block::Index >();  ///< see get_depth()
 
  SMSpp_insert_in_factory_h;  // insert LagrangianChange in the factory
 
@@ -220,7 +238,9 @@ class LagrangianChange : public AbstractChange {
  * restored just before the next inner solve, with multipliers added since
  * the snapshot set to zero. The restart lasts for that solve only, also on
  * cutoff or exception. Strong branching uses the same parent snapshot for
- * both children and queues it again after the trials.
+ * both children and queues it again after the trials. With intKeepBundle
+ * the inner Solver rather keeps its bundle and its stability centre from
+ * one node to the next.
  *
  * As a BranchEstimator [see BranchingRule.h], it may also give the
  * estimates of the best value under the two children of each branch()
@@ -254,6 +274,14 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /// key, in that Collection, of the purged columns
 
  static constexpr const char * str_PurgedColumns = "purgedColumns";
+
+ /// key, in the Collection GlobalInformation::str_AtomicScalars, of the
+ /// best bound of the open nodes of the search [see dblHeurGap]
+ /** A finite value is the best (the smallest for a minimization problem)
+  * bound of the nodes that the search has still to explore, written by
+  * whoever drives it; absent or not finite when it is not known. */
+
+ static constexpr const char * str_BestBound = "BestBound";
 
  /// the purged columns, by the variable whose fixing purged them
 
@@ -322,7 +350,14 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   and then at one every intHeurFreq of them, 0 meaning at the first
   *   only; at the others only the Lagrangian Dual of the original
   *   objective is solved, which gives the bound and the convexified
-  *   solution the branching needs, and no solution is recorded;
+  *   solution the branching needs, and no solution is recorded, unless
+  *   intHeurDepth or dblHeurGap ask for the heuristic there;
+  *
+  * - intHeurDepth [-1]: the heuristic is also run at the nodes at depth at
+  *   most intHeurDepth, i.e., at most intHeurDepth branchings from the
+  *   root, which is at depth 0; with a negative value the depth does not
+  *   count. The depth is that which the LagrangianChange applied last say
+  *   [see LagrangianChange::get_depth()], 0 before any of them;
   *
   * - intLagFixing [0]: with 1, branch() fixes by Lagrangian reduced cost
   *   the binary variables that cannot take one of their values in a
@@ -333,7 +368,35 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   all the subtree of the node. The fixing needs intApplyStrategy ==
   *   eSubproblem and an inner Solver that evaluates the LagBFunction last
   *   at the multipliers it returns (as BundleSolver does with the bit 0 of
-  *   its intFrcLstSS), and fixes nothing otherwise. */
+  *   its intFrcLstSS), and fixes nothing otherwise;
+  *
+  * - intKeepBundle [0]: with 0, the inner Solver starts each node from the
+  *   multipliers of its parent with its bundle emptied [see the general
+  *   notes of the class], i.e., with the bits 1 and 2 of the intRstAlg of
+  *   BundleSolver for that solve; with 1 nothing is restored, and the inner
+  *   Solver starts from the bundle and the stability centre it ended the
+  *   previous solve with (that of the last node solved, the parent itself
+  *   when the search dives). The bound stays valid, as any multipliers
+  *   give one, and so does the bundle: the Modification of the branching
+  *   say which linearizations it makes invalid, the LagBFunction of a
+  *   fixing removing those of the columns the fixing excludes, those of an
+  *   unfixing staying valid in the larger region, and the value at the
+  *   stability centre, changed unpredictably, is computed again; with
+  *   eMaster, a dual pair of a bound that the node does not have keeps its
+  *   multiplier, which its Lagrangian Dual drives to zero;
+  *
+  * - intCutOffReread [0]: with a positive value k, while the inner Solver
+  *   solves the Lagrangian Dual of the original objective at a node, the
+  *   value of the incumbent in the GlobalInformation [see
+  *   set_global_information() and GlobalInformation::str_Incumbent] is read
+  *   every k iterations of the inner Solver, and becomes its cutoff
+  *   (dblUpCutOff for a minimization problem) when it is better than the
+  *   current one, so that a node is abandoned as soon as its bound reaches
+  *   an incumbent found meanwhile (by another thread of the search, say);
+  *   this takes the events eEverykIteration of the inner Solver [see
+  *   ThinComputeInterface], whose intEverykIt is k for that solve only, and
+  *   an inner Solver that has none is left as it is. With 0 the cutoff is
+  *   the one set before the node. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
@@ -342,7 +405,32 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   intBranchEstimate ,                 ///< the estimates of the children
   intHeurFreq ,                       ///< how often the heuristic runs
   intLagFixing ,                      ///< fixing by Lagrangian reduced cost
+  intHeurDepth ,                      ///< the heuristic down to this depth
+  intKeepBundle ,                     ///< the bundle kept between nodes
+  intCutOffReread ,                   ///< the incumbent read during a node
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
+  };
+
+ /// public enum for the double algorithmic parameters
+ /** Public enum describing the algorithmic parameters of double type that
+  * LagrangianDualRelaxationSolver has in addition to these of
+  * PrimalProximalHeur:
+  *
+  * - dblHeurGap [-1]: the heuristic is also run at a node whose bound L is
+  *   close to the best bound B of the search, i.e., such that \f$ ( L - B )
+  *   / \max \{ | \bar{z} | , 1 \} \leq \f$ dblHeurGap for a minimization
+  *   problem (\f$ B - L \f$ for a maximization), \f$ \bar{z} \f$ being
+  *   the incumbent; with no incumbent the heuristic is run. B is the value
+  *   of str_BestBound in the GlobalInformation, if finite, and otherwise
+  *   the bound of the last root node this Solver has solved, which is
+  *   never better than the best bound of the search, so that fewer nodes
+  *   pass. The test is made right after the Lagrangian Dual of the
+  *   original objective is solved, which gives L; with a negative value
+  *   it is not made. */
+
+ enum dbl_par_type_LDRS {
+  dblHeurGap = dblLastPPHPar ,  ///< the heuristic close to the best bound
+  dblLastLDRSPar      ///< first allowed new dbl parameter for derived classes
   };
 
  /// public enum for the string algorithmic parameters
@@ -445,12 +533,18 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  void set_par( idx_type par , int value ) override;
 
+ void set_par( idx_type par , double value ) override;
+
  void set_par( idx_type par , std::string && value ) override;
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
  [[nodiscard]] idx_type int_par_first_is( void ) const override {
   return( intLastLDRSPar );
+  }
+
+ [[nodiscard]] idx_type dbl_par_first_is( void ) const override {
+  return( dblLastLDRSPar );
   }
 
  [[nodiscard]] idx_type str_par_first_is( void ) const override {
@@ -469,6 +563,16 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   const override;
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type par )
+  const override;
+
+ [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override;
+
+ [[nodiscard]] double get_dbl_par( idx_type par ) const override;
+
+ [[nodiscard]] idx_type dbl_par_str2idx( const std::string & name )
+  const override;
+
+ [[nodiscard]] const std::string & dbl_par_idx2str( idx_type par )
   const override;
 
  [[nodiscard]] const std::string & get_dflt_str_par( idx_type par )
@@ -499,7 +603,9 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /// give the Solver the GlobalInformation of the search
  /** Besides recording it, makes sure that the GlobalInformation has the
   * Collection where the columns purged by the fixings are kept [see
-  * str_VarToSol and str_PurgedColumns]. */
+  * str_VarToSol and str_PurgedColumns]; the incumbent and the best bound of
+  * the search [see intCutOffReread and dblHeurGap] are looked for in it at
+  * their first use. */
 
  void set_global_information( GlobalInformation * gi ) override;
 
@@ -752,6 +858,24 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   const;
 
 /*--------------------------------------------------------------------------*/
+ /// the cell of the GlobalInformation with the given key in its
+ /// Collection GlobalInformation::str_AtomicScalars, nullptr if none
+ /** \p cell caches it once it is found. */
+
+ std::atomic< double > * atomic_cell( const char * key ,
+				      std::atomic< double > * & cell );
+
+ /// the incumbent: that of PrimalProximalHeur::incumbent(), or that of the
+ /// GlobalInformation if better
+
+ double global_incumbent( void );
+
+ /// whether the bound of the node just solved is close enough to the best
+ /// bound of the search to run the heuristic [see dblHeurGap]
+
+ bool close_to_best_bound( void );
+
+/*--------------------------------------------------------------------------*/
  /// the fraction of the binary static variables that are fixed
 
  double fixed_fraction( void ) const;
@@ -792,6 +916,21 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  int f_branch_estimate = 0;                ///< intBranchEstimate
  int f_heur_freq = 1;                      ///< intHeurFreq
  int f_lag_fixing = 0;                     ///< intLagFixing
+ int f_heur_depth = -1;                    ///< intHeurDepth
+ int f_keep_bundle = 0;                    ///< intKeepBundle
+ int f_cutoff_reread = 0;                  ///< intCutOffReread
+ double f_heur_gap = -1;                   ///< dblHeurGap
+ /// the depth of the node [see LagrangianChange::get_depth()]
+ Index f_depth = 0;
+ /// the bound of the last root node solved [see dblHeurGap]
+ double f_root_bound = std::numeric_limits< double >::quiet_NaN();
+ /// whether dblHeurGap decides on the heuristic after the Lagrangian Dual
+ bool f_heur_by_gap = false;
+ /// the Collection of the GlobalInformation with the incumbent and the
+ /// best bound, and their cells
+ std::shared_ptr< Collection< std::atomic< double > > > f_scalars;
+ std::atomic< double > * f_inc_cell = nullptr;    ///< see f_scalars
+ std::atomic< double > * f_bound_cell = nullptr;  ///< see f_scalars
  Index f_n_lag_fixed = 0;                  ///< the variables it has fixed
  /// the fixings by reduced cost of the last compute() [see intLagFixing]
  std::vector< std::pair< ColVariable * , double > > f_lag_fix;

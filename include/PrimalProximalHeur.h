@@ -169,7 +169,19 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * than the incumbent. When the test cannot be made (no incumbent yet, say)
    * the share dblPenaltyRecoveryFrac is used. Off by default. */
 
-  intLastPPHPar   ///< first allowed new int parameter for derived classes
+  intRecoveryCutOff ,
+  ///< give the restricted problems the incumbent as their cutoff
+  /**< If nonzero, each restricted problem of the primal recovery and of
+   * strPenaltyRecoveryBSC gets the incumbent [see incumbent()] as its
+   * cutoff (dblUpCutOff for a minimization, dblLwCutOff for a
+   * maximization), unless its Solver has a tighter one already, so that a
+   * Solver that honours it (as MILPSolver does) stops as soon as it proves
+   * that no solution better than the incumbent is there; the primal
+   * recovery then stops at the first attempt whose Solver ends at the
+   * cutoff with no solution, the next attempts, which fix fewer binaries,
+   * being only for an attempt found infeasible. Off by default. */
+
+  intLastPPHPar  ///< first allowed new int parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of int algorithmic parameters. */
 
@@ -722,6 +734,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
    case( intNoRecoveryIfFeasible ): return( 0 );
    case( intWarmStartOnce ):     return( 0 );
    case( intPenaltyRecoveryFix ): return( 0 );
+   case( intRecoveryCutOff ):    return( 0 );
    case( intLogVerb ):          return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_int_par( par ) );
@@ -772,6 +785,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
    case( intNoRecoveryIfFeasible ): return( NoRecIfFeas ? 1 : 0 );
    case( intWarmStartOnce ):     return( WarmOnce ? 1 : 0 );
    case( intPenaltyRecoveryFix ): return( PenRecFix ? 1 : 0 );
+   case( intRecoveryCutOff ):    return( RecCutOff ? 1 : 0 );
    case( intMaxThread ):        return( MaxThread );
    }
   return( LagrangianDualSolver::get_int_par( par ) );
@@ -806,6 +820,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( intWarmStartOnce );
   if( name == "intPenaltyRecoveryFix" )
    return( intPenaltyRecoveryFix );
+  if( name == "intRecoveryCutOff" )
+   return( intRecoveryCutOff );
   return( LagrangianDualSolver::int_par_str2idx( name ) );
   }
 
@@ -832,6 +848,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   static const std::string _nrf = "intNoRecoveryIfFeasible";
   static const std::string _wso = "intWarmStartOnce";
   static const std::string _prx = "intPenaltyRecoveryFix";
+  static const std::string _rco = "intRecoveryCutOff";
   if( idx == intUseWarmStartPSol )
    return( _ws );
   if( idx == intRecoveryMIPStart )
@@ -844,6 +861,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( _wso );
   if( idx == intPenaltyRecoveryFix )
    return( _prx );
+  if( idx == intRecoveryCutOff )
+   return( _rco );
   return( LagrangianDualSolver::int_par_idx2str( idx ) );
   }
 
@@ -1009,6 +1028,17 @@ class PrimalProximalHeur : public LagrangianDualSolver
   }
 
 /*--------------------------------------------------------------------------*/
+ /// the incumbent: the best of the cutoff and of the best solution found
+ /** The cutoff is that of the Lagrangian Dual of the original objective in
+  * the current compute() [see dblUpCutOff], the larger one for a
+  * maximization problem; + / - infinity if there is neither. */
+
+ double incumbent( void ) const {
+  return( f_max ? std::max( f_LwCutOff , best_bound )
+	        : std::min( f_UpCutOff , best_bound ) );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// true if the Solution a is worse than b in the optimization sense
  /** The comparator of the heap v_best_sol, whose top is therefore the best
   * Solution: the one with the largest value if f_max, the smallest
@@ -1079,10 +1109,23 @@ class PrimalProximalHeur : public LagrangianDualSolver
  std::string RecBCfg;    ///< the same for the primal recovery
  double PenRecFrac = 0;  ///< share of the binaries it keeps free
  bool PenRecFix = false;  ///< intPenaltyRecoveryFix
+ bool RecCutOff = false;  ///< intRecoveryCutOff
  double LagFixTol = 0;    ///< dblLagFixingTol
  ///< BlockSolverConfig of the primal recovery
 
  // working state - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ /// the cutoffs of the inner Solver for the Lagrangian Dual of the original
+ /// objective in the current compute(), given back to it at the end
+ double f_UpCutOff = Inf< double >();
+ double f_LwCutOff = - Inf< double >();  ///< see f_UpCutOff
+
+ bool f_Penalized = false;  ///< the current solve of the inner Solver is a
+                            ///< penalized one
+
+ bool f_RecAtCutOff = false;  ///< the last restricted problem ended at the
+                              ///< cutoff with no solution [see
+                              ///< intRecoveryCutOff]
 
  double penalty  = 0;  ///< current value of the quadratic penalty term
 

@@ -68,6 +68,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   satisfies the rows of the Block by its true cost, which closes the gap of
   a node that it solves
 
+- `intKeepBundle` of `LagrangianDualRelaxationSolver`: the inner Solver
+  starts each node from the bundle and the stability centre it ended the
+  previous solve with, rather than from the multipliers of the parent with
+  its bundle emptied, the linearizations that a branching makes invalid
+  being removed by the Modification of its LagBFunction
+
+- `intHeurDepth` and `dblHeurGap` of `LagrangianDualRelaxationSolver`: the
+  heuristic of `PrimalProximalHeur` runs also at the nodes down to a depth,
+  and at those whose bound is within a share of the incumbent of the best
+  bound of the search (the value `str_BestBound` of the GlobalInformation,
+  or else the bound of the root), besides those of `intHeurFreq`; the depth
+  of a node is carried by its `LagrangianChange`
+
+- `intCutOffReread` of `LagrangianDualRelaxationSolver`: every k iterations
+  of the inner Solver on the Lagrangian Dual of a node, the incumbent of the
+  GlobalInformation becomes its cutoff when better, so that the node is
+  abandoned as soon as its bound reaches an incumbent found meanwhile
+
+- `intRecoveryCutOff` of `PrimalProximalHeur`: the restricted problems of
+  the primal recovery and of `strPenaltyRecoveryBSC` get the incumbent as
+  their cutoff, and the primal recovery stops at an attempt that ends at
+  the cutoff with no solution
+
 ### Changed
 
 - the primal recovery of `PrimalProximalHeur` takes the solution of a
@@ -113,6 +136,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - strong branching starts both children from the same parent multipliers,
   queues that centre again afterwards, and undoes each trial branch also
   when its solve throws
+
+- `PrimalProximalHeur` removes the event handler of each penalized
+  iteration from the inner Solver when its solve ends, rather than leaving
+  it there, with references to the locals of the iteration, for the solves
+  that follow
 
 - with `eMaster`, the Solver owns the added bound multipliers until the
   dual is dismantled, and rebuilding it clears the node-specific state
