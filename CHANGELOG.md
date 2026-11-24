@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `intHeurFreq` of `LagrangianDualRelaxationSolver`: the heuristic of
+  `PrimalProximalHeur` runs at the first `compute()` and then at one every
+  `intHeurFreq` of them, 0 meaning at the first only, the others solving
+  only the Lagrangian Dual of the original objective, which gives the bound
+  and the convexified solution the branching needs
+
+- an entry of `vstrBranchGroups` may be "name[i]" or "name[i:j]", some of
+  the variables of the group, and the order of the entries is a priority:
+  the candidates are those of the first entry that has a fractional
+  variable
+
+- `PrimalProximalHeur` records an integral convexified solution that
+  satisfies the rows of the Block by its true cost, which closes the gap of
+  a node that it solves
+
 ### Changed
+
+- the makefiles give the shared library of the module by default, a DLL on
+  Windows, as CMake does, and its objects with `SMSppSTATIC` [see
+  `lib/makefile-shared` of SMS++]
 
 - the "meta" Configuration of `get_var_solution()` and
   `get_dual_solution()` follows the format that `Solver::get_var_solution()`
@@ -44,10 +65,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   queues that centre again afterwards, and undoes each trial branch also
   when its solve throws
 
-- with `eMaster`, branching bounds have the correct sign also for a
-  maximization with nonnegative multipliers; the Solver owns their added
-  multipliers until the dual is dismantled, and rebuilding it clears the
-  node-specific state
+- with `eMaster`, the Solver owns the added bound multipliers until the
+  dual is dismantled, and rebuilding it clears the node-specific state
+
+- `PrimalProximalHeur` threw out of `compute()` when the convexified
+  solution gave a Variable fixed by a branching another value than the one
+  it is fixed at, as a solve stopped by the time limit may still weigh a
+  linearization taken before the fixing: there is then no convexified
+  solution, as when a component has no linearization to combine
+
+- with `intApplyStrategy` `eMaster`, the bound that
+  `LagrangianDualRelaxationSolver` relaxes in a branching has the sign of
+  the relaxed constraints of a maximization problem, which it had the
+  opposite of, a child then getting a bound below its optimum
+
+- the multipliers that a `LagrangianChange` carries for the child to start
+  from are by position, not by the Variable of the
+  `LagrangianDualRelaxationSolver` that branched, so that the solver of an
+  identical copy of the Block (say, a worker of the parallel exploration of
+  `BranchAndXSolver`) starts from them too, rather than from zero
+
+- with `int_LDSlv_iBCopy` the branching of `LagrangianDualRelaxationSolver`
+  failed with "AbstractPath::build: Path not found", as it took the path of
+  the variable, which is one of the sub-Blocks of the Block being solved,
+  relative to the Lagrangian Dual, which has their copies: the paths are
+  relative to the Block, and the branching on a variable with the
+  sub-Blocks copied is refused with an exception that says why
+
+- the time and the number of the recovery MIPs that `PrimalProximalHeur`
+  prints with `SFDCR_STATS` are its own, not shared by all the instances,
+  whose `compute()` run in different threads raced on them
+
+- `LagrangianDualRelaxationSolver` said `kOK` of a node where no variable
+  branched upon was fractional, and `branch()` then threw out of
+  `candidates()`: such a node is solved, `kOK` with no branching Change, if
+  the Lagrangian Dual is and a feasible solution is within `dblRelAcc` of
+  the bound, otherwise it can be neither branched nor fenced, and the status
+  is that of the Lagrangian Dual, or `kLowPrecision` if that is `kOK`; an
+  entry of `vstrBranchGroups` that has no variable (no group of the
+  sub-Blocks has its name, or its range is past the end of the group),
+  which left its variables out of the branching, is refused with an
+  exception
+
+- the integral convexified solution that `PrimalProximalHeur` records has
+  its binary Variable rounded before the rows of the Block are checked,
+  which summing many values integral to within 1e-6 only saw a violation
+  that is not there
 
 ## [0.7.0] - 2026-11-16
 

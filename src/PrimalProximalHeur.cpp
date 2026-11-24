@@ -74,8 +74,6 @@
 // the primal recovery, printed on std::cout
 namespace {
  const bool pph_stats = ( std::getenv( "SFDCR_STATS" ) != nullptr );
- double pph_rec_time = 0;   ///< cumulative time in the recovery MIPs
- int    pph_rec_calls = 0;  ///< and number of MIPs solved
  }
 
 #include <exception>
@@ -716,8 +714,8 @@ int PrimalProximalHeur::compute( bool changedvars )
  // main loop - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- pph_rec_time = 0;
- pph_rec_calls = 0;
+ f_rec_time = 0;
+ f_rec_calls = 0;
  Index iters = 0;
  bool is_the_same = false;
  bool is_integer  = false;
@@ -960,14 +958,23 @@ int PrimalProximalHeur::compute( bool changedvars )
   #endif
 
   // try to record the current solution if it is feasible (and integer in
-  // BIN_VARS mode) and we are past the first iteration
+  // BIN_VARS mode) and we are past the first iteration, or at the first one
+  // if it is the only one [see f_NoHeur], which then records the point by
+  // its true cost alone, with no recovery: otherwise a feasible Lagrangian
+  // solution would be lost, and a node that it solves would be left open
   #ifdef BIN_VARS
-  const bool can_record =
-    f_Block->is_feasible() && is_integer && ( iters >= 1 );
+  const bool can_record = f_Block->is_feasible() && is_integer &&
+                          ( ( iters >= 1 ) || f_NoHeur );
   #else
-   const bool can_record = f_Block->is_feasible() && ( iters >= 1 );
+   const bool can_record = f_Block->is_feasible() &&
+                           ( ( iters >= 1 ) || f_NoHeur );
   #endif
-  if( can_record ) {
+  if( can_record && f_NoHeur ) {
+   if( const double value = solution_value() ;
+       is_recovered_feasible( value ) )
+    record_feasible( value );
+   }
+  else if( can_record ) {
    LOG_VERB( 2 )
     *f_log << "  IS_FEASIBLE_SOL" << std::endl;
    double rec_cost;
@@ -988,9 +995,13 @@ int PrimalProximalHeur::compute( bool changedvars )
   // the last LagrangianDualSolver::compute(); and even after a solve that
   // ended well a component may have no linearization to combine (say, its
   // master problem failed and the Bundle went on without it), which only
-  // get_var_solution() finds out, by throwing: then there is no convexified
-  // solution, and the binary variables it may have written are given back
-  // their values all the same
+  // get_var_solution() finds out, by throwing; so does a convexified
+  // solution that gives a fixed Variable another value than the one it is
+  // fixed at [see ColVariable::set_value()], as a solve stopped before its
+  // end (say, by the time limit) may still weigh a linearization taken
+  // before the fixing: then there is no convexified solution, and the
+  // binary variables it may have written are given back their values all
+  // the same
   if( f_save_conv_sol && ( ! penalized ) ) {
    v_LagrConvSol.clear();
    if( ( res >= kOK ) && ( ( res < kError ) || ( res == kLowPrecision ) ) &&
@@ -1002,8 +1013,29 @@ int PrimalProximalHeur::compute( bool changedvars )
     catch( std::invalid_argument & ) {
      conv = false;
      }
+    catch( std::domain_error & ) {
+     conv = false;
+     }
     if( conv )
      v_LagrConvSol.resize( NumStatVar );
+    // an integral convexified solution that satisfies the rows of the Block
+    // is a solution worth the bound (up to the accuracy of the Lagrangian
+    // Dual), which closes the gap: it is recorded by its true cost. Its
+    // binary Variable are integral to within 1e-6 only, and the rows of a
+    // Block summing many of them would see a violation that is not there,
+    // hence they are rounded before the rows are checked
+    if( conv && is_integer_solution() ) {
+     const auto n_sub = f_Block->get_number_nested_Blocks();
+     for( Index index = 0 ; index < n_sub ; ++index )
+      for( Index ivar = 0 ; ivar < pos_id_sbi[ index ] ; ++ivar ) {
+       const auto var = idx_to_var_sbi1[ index ][ ivar ].second;
+       var->set_value( std::round( var->get_value() ) );
+       }
+     if( f_Block->is_feasible() )
+      if( const double value = solution_value() ;
+	  is_recovered_feasible( value ) )
+       record_feasible( value );
+     }
     const auto n_sub = f_Block->get_number_nested_Blocks();
     Index kvar = 0;
     for( Index index = 0 ; index < n_sub ; ++index )
@@ -1024,8 +1056,8 @@ int PrimalProximalHeur::compute( bool changedvars )
              << " dual_time " << stat_dual_time << " inner_iters "
              << InnerSolver->get_elapsed_iterations() << " status " << res
              << " inner_lb " << InnerSolver->get_lb() << " inner_ub "
-             << InnerSolver->get_ub() << " rec_time_cum " << pph_rec_time
-             << " rec_calls_cum " << pph_rec_calls << " elapsed " << elapsed()
+             << InnerSolver->get_ub() << " rec_time_cum " << f_rec_time
+             << " rec_calls_cum " << f_rec_calls << " elapsed " << elapsed()
              << " best " << ( f_max ? get_lb() : get_ub() ) << std::endl;
 
   // the accuracy required of the heuristic has been reached: the best
@@ -1035,7 +1067,7 @@ int PrimalProximalHeur::compute( bool changedvars )
   if( gap_closed() )
    break;
 
-  if( is_the_same || ( iters >= maxIter ) )
+  if( is_the_same || ( iters >= maxIter ) || f_NoHeur )
    break;
 
   if( time_left() <= 0 ) {
@@ -1087,7 +1119,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  if( pph_stats )
   std::cout << "PPHSTAT loop_end iters " << iters << " rec_time_cum "
-	    << pph_rec_time << " rec_calls_cum " << pph_rec_calls
+	    << f_rec_time << " rec_calls_cum " << f_rec_calls
 	    << " elapsed " << elapsed() << std::endl;
 
  // final primal recovery: a Lagrangian point in general violates the
@@ -1098,8 +1130,10 @@ int PrimalProximalHeur::compute( bool changedvars )
  // with its true primal cost, hence a valid bound. This is done
  // unconditionally: value_FUNCTION is the Lagrangian value of the point (a
  // lower bound), never a valid upper bound. If the restricted problem is
- // infeasible the point is discarded.
- {
+ // infeasible the point is discarded. A derived class that asked for the
+ // Lagrangian Dual of the original objective only [see f_NoHeur] gets no
+ // recovery either.
+ if( ! f_NoHeur ) {
   double rec_cost;
   if( direct_feasible( rec_cost ) ||
           ( recover_primal( rec_cost ) && is_recovered_feasible( rec_cost ) ) )
@@ -1108,7 +1142,7 @@ int PrimalProximalHeur::compute( bool changedvars )
 
  if( pph_stats )
   std::cout << "PPHSTAT end converged " << is_the_same << " rec_time_cum "
-	    << pph_rec_time << " rec_calls_cum " << pph_rec_calls
+	    << f_rec_time << " rec_calls_cum " << f_rec_calls
 	    << " elapsed " << elapsed() << std::endl;
 
  LOG_VERB( 2 )
@@ -1471,10 +1505,10 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 
   const auto rec_t0 = std::chrono::steady_clock::now();
   const auto rc = recovery->compute( true );
-  pph_rec_time += std::chrono::duration< double >(
+  f_rec_time += std::chrono::duration< double >(
 		    std::chrono::steady_clock::now() - rec_t0 )
 		    .count();
-  ++pph_rec_calls;
+  ++f_rec_calls;
   const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
                   recovery->has_var_solution();
   if( ok ) {

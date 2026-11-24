@@ -99,8 +99,13 @@ class LagrangianChange : public AbstractChange {
 
 /*--------------------------------------------------------------------------*/
  /// the multipliers of the node that branched, used to start its children
+ /** The values of the active Variable of each LagBFunction, in the order of
+  * the LagBFunction and in that of their active Variable: by position
+  * rather than by the Variable, so that a LagrangianChange can be applied
+  * by any LagrangianDualRelaxationSolver of an identical copy of the Block
+  * [see LagrangianDualRelaxationSolver::restore_center()]. */
 
- using Center = std::vector< std::pair< ColVariable * , double > >;
+ using Center = std::vector< std::vector< double > >;
 
  /// set the multipliers of the node that branched [see get_center()]
 
@@ -194,8 +199,10 @@ class LagrangianChange : public AbstractChange {
  *
  *
  * The LagrangianChange identify the variable by its AbstractPath relative
- * to the LagrangianDualBlock if the sub-Blocks are copied into it
- * (int_LDSlv_iBCopy), and to the Block being solved otherwise.
+ * to the Block being solved, whose sub-Blocks have the variables of the
+ * Lagrangian solution: the branching on a variable needs the sub-Blocks not
+ * to be copied into the Lagrangian Dual (int_LDSlv_iBCopy), which solves
+ * the copies.
  *
  * - eMaster: in the Lagrangian Dual, i.e., the bound of each child (x <=
  *   floor( v ) or x >= ceil( v )) becomes a new dual pair of the
@@ -294,13 +301,21 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   * - intBranchEstimate [0]: whether branch_estimates() gives the estimates
   *   of the children of each branch() [see PseudoCosts]: 0 gives none, so
   *   that a best-estimate search orders the nodes by their bounds, and 1
-  *   gives those of the pseudocosts, which are then learned. */
+  *   gives those of the pseudocosts, which are then learned;
+  *
+  * - intHeurFreq [1]: the heuristic of PrimalProximalHeur (its penalized
+  *   iterations and the primal recovery) is run at the first compute()
+  *   and then at one every intHeurFreq of them, 0 meaning at the first
+  *   only; at the others only the Lagrangian Dual of the original
+  *   objective is solved, which gives the bound and the convexified
+  *   solution the branching needs, and no solution is recorded. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
   intBranchStrategy ,                 ///< how the branching variable is chosen
   intStrongCands ,                    ///< candidates of strong branching
   intBranchEstimate ,                 ///< the estimates of the children
+  intHeurFreq ,                       ///< how often the heuristic runs
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
   };
 
@@ -357,7 +372,16 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   whose variables are determined by these of the others (say, start-up
   *   variables by the commitment ones) need not be branched upon, and
   *   leaving it out also spares the Solver of the sub-Block fixings it may
-  *   not support. */
+  *   not support. An entry may also be "name[i]", the i-th variable of
+  *   the group, or "name[i:j]", those from the i-th to the j-th, j
+  *   excluded, and the order of the entries is a priority: the candidates
+  *   are those of the first entry that has a fractional variable, the
+  *   most fractional first, those of the next entries coming only when
+  *   none of these is fractional. Thus, say, "x[0]" followed by "x"
+  *   branches upon the first variable of each sub-Block before the others,
+  *   which is what to do when that variable decides all of them. An entry
+  *   that has no variable (no group of the sub-Blocks has its name, or its
+  *   range is past the end of the group) is an error. */
 
  enum vstr_par_type_LDRS {
   vstrBranchGroups = vstrLastLDSlvPar ,  ///< the groups branched upon
@@ -458,7 +482,15 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   * branch() only needs that; when it is not there, the status is that of
   * the Lagrangian Dual, or kError if that is kOK. kCutOff, i.e., the
   * Lagrangian Dual beyond the cutoff [see dblUpCutOff], is returned as it
-  * is, the node being then fenced. */
+  * is, the node being then fenced. A Lagrangian solution where no variable
+  * branched upon [see vstrBranchGroups] is fractional leaves nothing to
+  * branch upon: if the Lagrangian Dual is solved and the best feasible
+  * solution found is within dblRelAcc of the bound [see
+  * PrimalProximalHeur::gap_closed()], which it is when the Lagrangian
+  * solution is integral and feasible, the node is solved, the status is kOK
+  * and branch() returns no Change; otherwise the node can be neither
+  * branched nor fenced, and the status is that of the Lagrangian Dual, or
+  * kLowPrecision if that is kOK. */
 
  int compute( bool changedvars = true ) override;
 
@@ -529,6 +561,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 /*--------------------------------------------------------------------------*/
 
  /// branch on a fractional variable [see intBranchStrategy]
+ /** No Change if the last compute() has solved the node with nothing to
+  * branch upon [see compute()]. */
 
  std::vector< Change * > branch( void ) override;
 
@@ -564,6 +598,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   Index sb;           ///< its sub-Block
   Index pos;          ///< its position among those of the sub-Block
   double cost;        ///< its cost in the objective of the sub-Block
+  Index rank;         ///< the entry of vstrBranchGroups it comes from
   };
 
  /// the number of the features of a candidate [see strBranchModel]
@@ -651,16 +686,6 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 /*--------------------------- PRIVATE METHODS ------------------------------*/
 /*--------------------------------------------------------------------------*/
 
- /// the Block the paths of the LagrangianChange are relative to
- /** The variables of the sub-Blocks are in the LagrangianDualBlock when
-  * these are copied into it (int_LDSlv_iBCopy), and in the Block being
-  * solved otherwise. */
-
- Block * path_base( void ) const {
-  return( iBCopy ? static_cast< Block * >( LagrDual ) : f_Block );
-  }
-
-/*--------------------------------------------------------------------------*/
  /// the LagBFunction of the sub-Block the variable belongs to
 
  LagBFunction * LagBF_of( Variable * var ) const;
@@ -696,18 +721,23 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
 /*--------------------------------------------------------------------------*/
  /// the binary static variables that may be branched upon
- /** One flag per variable, in the order of the Lagrangian solution [see
+ /** One entry per variable, in the order of the Lagrangian solution: the
+  * first entry of vstrBranchGroups that has it, Inf< Index >() if none
+  * has, 0 for all if vstrBranchGroups is empty. Throws
+  * std::invalid_argument if an entry has no variable [see
   * vstrBranchGroups]. */
 
- std::vector< bool > branchable( void ) const;
+ std::vector< Index > branchable( void ) const;
 
 /*--------------------------------------------------------------------------*/
  /// the Lagrangian multipliers, i.e., the active Variable of the LagBFunction
 
  std::shared_ptr< const LagrangianChange::Center > center( void ) const;
 
+/*--------------------------------------------------------------------------*/
  /// restore the parent multipliers and request one restart of the inner Solver
- /** Coordinates added after the snapshot start at zero. Returns false,
+ /** Writes the values position by position [see LagrangianChange::Center],
+  * setting coordinates added since the snapshot to zero. Returns false,
   * leaving the multipliers unchanged, if the inner Solver has no intRstAlg. */
  bool restore_center( const LagrangianChange::Center & cntr );
 
@@ -723,6 +753,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  std::string f_branch_model;               ///< strBranchModel
  std::vector< std::string > f_branch_groups; ///< vstrBranchGroups
  int f_branch_estimate = 0;                ///< intBranchEstimate
+ int f_heur_freq = 1;                      ///< intHeurFreq
+ Index f_ncompute = 0;                     ///< the calls to compute()
  std::string f_estimate_model;             ///< strEstimateModel
 
  /// the model of eLearned, read from strBranchModel at its first use
@@ -742,6 +774,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  /// the estimates of the children of the last branch()
  std::vector< double > f_estimates;
+
+ /// whether the last compute() has solved the node with nothing to branch
+ /// upon [see compute()], so that branch() returns no Change
+ bool f_solved = false;
 
  /// last snapshot requested while navigating; no multiplier is written
  /// until an inner compute() actually starts

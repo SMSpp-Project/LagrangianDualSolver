@@ -841,6 +841,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
  bool RecMIPStart = false;  ///< give the primal recovery a MIP start
  bool PenConstrBins = false;  ///< penalize the binaries only in Constraint
  bool NoRecIfFeas = false;    ///< skip the recovery if the point is feasible
+ bool f_NoHeur = false;  ///< only the Lagrangian Dual of the original one
  bool f_PenConstr = false;    ///< some binary only in Constraint is penalized
  bool f_Seeded = false;  ///< add_solution() seeded the pool since compute()
 
@@ -890,6 +891,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
  ///< true if the penalty terms have been changed since the last clear
 
  Index NumStatVar;    ///< (current) number of binary static Variables
+
+ double f_rec_time = 0;  ///< time in the recovery MIPs of this compute()
+ int f_rec_calls = 0;    ///< and number of MIPs solved
 
  Index pos_id;        ///< running counter of binary static Variables per
                       ///< sub-Block (working variable during initialize())
