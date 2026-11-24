@@ -25,8 +25,7 @@
 #           $(LgDSLVH)     = the .h files to include                         #
 #           $(LgDSLVINC)   = the -I$( source directory )                     #
 #                                                                            #
-#                              Antonio Frangioni                             #
-#                               Enrico Gorgone                               #
+#                             Antonio Frangioni                              #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #

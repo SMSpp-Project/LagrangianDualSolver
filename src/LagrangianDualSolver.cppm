@@ -19,15 +19,11 @@
  * The headers LagrangianDualRelaxationSolverML.h are not in this module: they
  * need a library of their own, or only a source includes them.
  *
- * \author Antonio Frangioni \n
+ * \author Donato Meoli \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \author Enrico Gorgone \n
- *         Dipartimento di Matematica ed Informatica \n
- *         Universita' di Cagliari \n
- *
- * \copyright &copy; by Antonio Frangioni, Enrico Gorgone
+ * \copyright &copy; by Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*------------------------- GLOBAL MODULE FRAGMENT -------------------------*/
