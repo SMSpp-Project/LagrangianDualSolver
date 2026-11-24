@@ -1577,7 +1577,10 @@ bool PrimalProximalHeur::recover_primal( double & cost )
 		    std::chrono::steady_clock::now() - rec_t0 )
 		    .count();
   ++f_rec_calls;
-  const bool ok = ( rc >= kOK ) && ( rc < kError ) &&
+  // kLowPrecision is a heuristic that has found a solution, which is what
+  // a recovery is asked for
+  const bool ok = ( rc >= kOK ) &&
+                  ( ( rc < kError ) || ( rc == kLowPrecision ) ) &&
                   recovery->has_var_solution();
   if( ok ) {
    recovery->get_var_solution();  // the completion into the Block Variables
@@ -1735,7 +1738,8 @@ bool PrimalProximalHeur::consensus_recovery( double & cost )
    }
   recovery->set_Block( sbs[ k ] );
   const auto rc = recovery->compute( true );
-  if( ( rc >= kOK ) && ( rc < kError ) && recovery->has_var_solution() ) {
+  if( ( rc >= kOK ) && ( ( rc < kError ) || ( rc == kLowPrecision ) ) &&
+      recovery->has_var_solution() ) {
    recovery->get_var_solution();
    value[ k ] = recovery->get_ub();
    solved[ k ] = 1;
