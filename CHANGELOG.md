@@ -34,6 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only the Lagrangian Dual of the original objective, which gives the bound
   and the convexified solution the branching needs
 
+- `intLagFixing` of `LagrangianDualRelaxationSolver`, which fixes by
+  Lagrangian reduced cost, in both children of a node, the binaries that
+  cannot take one of their values in a solution better than the incumbent,
+  by the penalties of `Block::get_fixing_penalties()` of SMS++ read right
+  after the Lagrangian Dual of the original objective [see
+  `PrimalProximalHeur::lagrangian_fixings()`]
+
+- `intPenaltyRecoveryFix` of `PrimalProximalHeur`, with which the
+  restricted problem of `strPenaltyRecoveryBSC` fixes exactly the binaries
+  that the Lagrangian reduced cost fixes and frees all the others, and
+  `dblLagFixingTol`, the tolerance of that test and of `intLagFixing`
+
 - an entry of `vstrBranchGroups` may be "name[i]" or "name[i:j]", some of
   the variables of the group, and the order of the entries is a priority:
   the candidates are those of the first entry that has a fractional
