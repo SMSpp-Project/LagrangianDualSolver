@@ -156,6 +156,17 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * after the root are solved from the multipliers of their father. If
    * zero (the default), it is run at each call to compute(). */
 
+  intPenaltyRecoveryFix ,
+  ///< the restricted problem of the penalties frees what cannot be fixed
+  /**< If nonzero, the restricted problem of strPenaltyRecoveryBSC fixes
+   * exactly the binary Variable that the Lagrangian reduced cost proves
+   * they cannot take their other value in a solution better than the
+   * incumbent [see lagrangian_fixings()], and keeps all the others free,
+   * rather than the share dblPenaltyRecoveryFrac of them; solved to
+   * optimality, it then gives the best solution there is, if any is better
+   * than the incumbent. When the test cannot be made (no incumbent yet, say)
+   * the share dblPenaltyRecoveryFrac is used. Off by default. */
+
   intLastPPHPar   ///< first allowed new int parameter for derived classes
                   /**< Convenience value for easily allow derived classes
                    * to extend the set of int algorithmic parameters. */
@@ -179,6 +190,14 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * restricted problem of strPenaltyRecoveryBSC keeps free: those of
    * smallest penalty at 1 [see Block::get_fixing_penalties()], the others
    * being fixed to 0. With 0, the default, there is no such problem. */
+
+  dblLagFixingTol ,
+  ///< the tolerance of the fixing by Lagrangian reduced cost
+  /**< The \f$ \epsilon \f$ of the test of lagrangian_fixings(): with 0, the
+   * default, a variable is fixed when its other value cannot give a
+   * solution strictly better than the incumbent, and with integer costs
+   * any value below 1 (say, 0.999999) fixes also when it cannot give one
+   * better by at least 1. */
 
   dblLastPPHPar   ///< first allowed new double parameter for derived classes
                   /**< Convenience value for easily allow derived classes
@@ -699,6 +718,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
    case( intPenConstrBins ):     return( 0 );
    case( intNoRecoveryIfFeasible ): return( 0 );
    case( intWarmStartOnce ):     return( 0 );
+   case( intPenaltyRecoveryFix ): return( 0 );
    case( intLogVerb ):          return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_int_par( par ) );
@@ -710,6 +730,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   switch( par ) {
    case( dbl_penaltyFactor ): return( 0 );
    case( dblPenaltyRecoveryFrac ): return( 0 );
+   case( dblLagFixingTol ):   return( 0 );
    }
   return( LagrangianDualSolver::get_dflt_dbl_par( par ) );
   }
@@ -747,6 +768,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
    case( intPenConstrBins ):     return( PenConstrBins ? 1 : 0 );
    case( intNoRecoveryIfFeasible ): return( NoRecIfFeas ? 1 : 0 );
    case( intWarmStartOnce ):     return( WarmOnce ? 1 : 0 );
+   case( intPenaltyRecoveryFix ): return( PenRecFix ? 1 : 0 );
    case( intMaxThread ):        return( MaxThread );
    }
   return( LagrangianDualSolver::get_int_par( par ) );
@@ -758,6 +780,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   switch( par ) {
    case( dbl_penaltyFactor ): return( R );
    case( dblPenaltyRecoveryFrac ): return( PenRecFrac );
+   case( dblLagFixingTol ):   return( LagFixTol );
    case( dblRelAcc ):         return( RelAcc );
    case( dblMaxTime ):        return( MaxTime );
    }
@@ -778,6 +801,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( intNoRecoveryIfFeasible );
   if( name == "intWarmStartOnce" )
    return( intWarmStartOnce );
+  if( name == "intPenaltyRecoveryFix" )
+   return( intPenaltyRecoveryFix );
   return( LagrangianDualSolver::int_par_str2idx( name ) );
   }
 
@@ -789,6 +814,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( dbl_penaltyFactor );
   if( name == "dblPenaltyRecoveryFrac" )
    return( dblPenaltyRecoveryFrac );
+  if( name == "dblLagFixingTol" )
+   return( dblLagFixingTol );
   return( LagrangianDualSolver::dbl_par_str2idx( name ) );
   }
 
@@ -801,6 +828,7 @@ class PrimalProximalHeur : public LagrangianDualSolver
   static const std::string _pcb = "intPenConstrBins";
   static const std::string _nrf = "intNoRecoveryIfFeasible";
   static const std::string _wso = "intWarmStartOnce";
+  static const std::string _prx = "intPenaltyRecoveryFix";
   if( idx == intUseWarmStartPSol )
    return( _ws );
   if( idx == intRecoveryMIPStart )
@@ -811,6 +839,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
    return( _nrf );
   if( idx == intWarmStartOnce )
    return( _wso );
+  if( idx == intPenaltyRecoveryFix )
+   return( _prx );
   return( LagrangianDualSolver::int_par_idx2str( idx ) );
   }
 
@@ -820,10 +850,13 @@ class PrimalProximalHeur : public LagrangianDualSolver
   const override {
   static const std::string _pf = "dbl_penaltyFactor";
   static const std::string _prf = "dblPenaltyRecoveryFrac";
+  static const std::string _lft = "dblLagFixingTol";
   if( idx == dbl_penaltyFactor )
    return( _pf );
   if( idx == dblPenaltyRecoveryFrac )
    return( _prf );
+  if( idx == dblLagFixingTol )
+   return( _lft );
   return( LagrangianDualSolver::dbl_par_idx2str( idx ) );
   }
 
@@ -898,6 +931,45 @@ class PrimalProximalHeur : public LagrangianDualSolver
  using double_var = std::pair< double , ColVariable * >;
 
  using var_col_int = std::tuple< ColVariable * , Index , Index >;
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- PROTECTED METHODS -----------------------------*/
+/*--------------------------------------------------------------------------*/
+ /// called right after the Lagrangian Dual of the original objective
+ /** Called by compute() right after the Lagrangian Dual of the original
+  * objective is solved (valid_bound being set), and before any penalized
+  * iteration, when the Objective of each sub-Block still holds the
+  * Lagrangian costs of the last evaluation of its LagBFunction; a derived
+  * class may read there what depends on them. Not called when that solve
+  * proves the problem infeasible, unbounded or beyond the cutoff. */
+
+ virtual void after_Lagrangian_dual( void ) {}
+
+/*--------------------------------------------------------------------------*/
+ /// the fixings by Lagrangian reduced cost at the multipliers of the dual
+ /** Fills \p fix with the binary Variable of the components that cannot
+  * take one of their values in a solution better than the incumbent, each
+  * with the other value. With L the value of the Lagrangian function at
+  * the multipliers of the solution of the Lagrangian Dual of the original
+  * objective, a variable whose fixing to v makes the optimal value of its
+  * component worse by p [see Block::get_fixing_penalties()] with
+  * \f$ L + p \geq \bar{z} - \epsilon \f$ (\f$ L - p \leq \bar{z} +
+  * \epsilon \f$ for a maximization) is fixed to the other value, where
+  * \f$ \bar{z} \f$ is the best of the cutoff [see dblUpCutOff] and of the
+  * best solution found, and \f$ \epsilon \f$ = dblLagFixingTol.
+  *
+  * It is to be called when the LagBFunction, and the Objective of their
+  * components, are those of these multipliers, i.e., right after that
+  * solve [see after_Lagrangian_dual()] with an inner Solver that evaluates
+  * them last at the multipliers it returns (as BundleSolver does with the
+  * bit 0 of its intFrcLstSS). Returns false, and leaves \p fix empty, if
+  * the test cannot be made: no incumbent, an inner Solver that does not
+  * say so, an inexact value of a LagBFunction; a component that gives no
+  * penalties, or whose Objective or LagBFunction has a weight other than
+  * 1, only fixes nothing. */
+
+ bool lagrangian_fixings(
+		  std::vector< std::pair< ColVariable * , double > > & fix );
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PROTECTED METHODS ----------------------------*/
@@ -978,6 +1050,8 @@ class PrimalProximalHeur : public LagrangianDualSolver
  std::string PenRecBCfg; ///< BlockConfig of the copy it is solved on
  std::string RecBCfg;    ///< the same for the primal recovery
  double PenRecFrac = 0;  ///< share of the binaries it keeps free
+ bool PenRecFix = false;  ///< intPenaltyRecoveryFix
+ double LagFixTol = 0;    ///< dblLagFixingTol
  ///< BlockSolverConfig of the primal recovery
 
  // working state - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

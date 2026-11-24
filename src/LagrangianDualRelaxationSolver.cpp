@@ -161,6 +161,12 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par , int value )
 				  "intHeurFreq is negative" ) );
    f_heur_freq = value;
    break;
+  case( intLagFixing ):
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::set_par: "
+				  "intLagFixing is neither 0 nor 1" ) );
+   f_lag_fixing = value;
+   break;
   default: PrimalProximalHeur::set_par( par , value );
   }
  }
@@ -175,6 +181,7 @@ int LagrangianDualRelaxationSolver::get_dflt_int_par( idx_type par ) const
   case( intStrongCands ):    return( 10 );
   case( intBranchEstimate ): return( 0 );
   case( intHeurFreq ):       return( 1 );
+  case( intLagFixing ):      return( 0 );
   default: return( PrimalProximalHeur::get_dflt_int_par( par ) );
   }
  }
@@ -189,6 +196,7 @@ int LagrangianDualRelaxationSolver::get_int_par( idx_type par ) const
   case( intStrongCands ):    return( f_strong_cands );
   case( intBranchEstimate ): return( f_branch_estimate );
   case( intHeurFreq ):       return( f_heur_freq );
+  case( intLagFixing ):      return( f_lag_fixing );
   default: return( PrimalProximalHeur::get_int_par( par ) );
   }
  }
@@ -208,6 +216,8 @@ Solver::idx_type LagrangianDualRelaxationSolver::int_par_str2idx(
   return( intBranchEstimate );
  if( name == "intHeurFreq" )
   return( intHeurFreq );
+ if( name == "intLagFixing" )
+  return( intLagFixing );
  return( PrimalProximalHeur::int_par_str2idx( name ) );
  }
 
@@ -221,12 +231,14 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
  static const std::string cands = "intStrongCands";
  static const std::string estimate = "intBranchEstimate";
  static const std::string heur = "intHeurFreq";
+ static const std::string lagfix = "intLagFixing";
  switch( par ) {
   case( intApplyStrategy ):  return( apply );
   case( intBranchStrategy ): return( branch );
   case( intStrongCands ):    return( cands );
   case( intBranchEstimate ): return( estimate );
   case( intHeurFreq ):       return( heur );
+  case( intLagFixing ):      return( lagfix );
   default: return( PrimalProximalHeur::int_par_idx2str( par ) );
   }
  }
@@ -400,6 +412,7 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
             ( ( f_heur_freq == 0 ) || ( f_ncompute % f_heur_freq != 0 ) );
  ++f_ncompute;
  f_solved = false;
+ f_lag_fix.clear();
  int status;
  if( NumStatVar == 0 ) {
   // PPH delegates this single solve to LagrangianDualSolver, bypassing the
@@ -511,6 +524,36 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
  const auto all = f_branch_estimate ? cands : std::vector< Cand >();
  const Index c = choose( cands );   // it may shorten cands
  auto changes = branchings( cands[ c ].var , cands[ c ].value );
+
+ // the fixings by reduced cost go to both children, the branching variable
+ // apart [see intLagFixing]
+ if( f_lag_fixing && ( f_apply_strategy == eSubproblem ) ) {
+  auto fix = std::move( f_lag_fix );
+  f_lag_fix.clear();
+  std::erase_if( fix , [ & ]( const auto & f ) {
+   return( f.first == cands[ c ].var ); } );
+  if( ! fix.empty() ) {
+   f_n_lag_fixed += fix.size();
+   for( auto & ch : changes ) {
+    auto lc = static_cast< LagrangianChange * >( ch );
+    auto paths = lc->get_paths();
+    auto data = lc->get_data();
+    for( const auto & f : fix ) {
+     paths.emplace_back( f.first , f_Block );
+     data.push_back( f.second );
+     }
+    auto nc = new LagrangianChange( lc->get_type() , std::move( data ) ,
+				    std::move( paths ) );
+    nc->set_center( lc->shared_center() );
+    delete lc;
+    ch = nc;
+    }
+   }
+  if( f_log && ( logVerb >= 1 ) )
+   *f_log << "  branch " << f_n_branch << ": " << fix.size()
+          << " fixed by reduced cost, " << f_n_lag_fixed << " so far"
+          << std::endl;
+  }
  if( f_branch_estimate ) {
   // the children record what their bound will tell of the pseudocosts,
   // the "down" one first [see branchings()]
@@ -895,6 +938,18 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branchings(
 
 /*--------------------------------------------------------------------------*/
 
+void LagrangianDualRelaxationSolver::after_Lagrangian_dual( void )
+{
+ if( f_lag_fixing && ( f_apply_strategy == eSubproblem ) )
+  lagrangian_fixings( f_lag_fix );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+
+
+/*--------------------------------------------------------------------------*/
+
 std::shared_ptr< const LagrangianChange::Center >
                        LagrangianDualRelaxationSolver::center( void ) const
 {
@@ -1063,45 +1118,80 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
   throw( std::logic_error( "LagrangianDualRelaxationSolver::apply: no "
 			   "Collection of the purged columns" ) );
 
- if( type == AbstractChange::eFixX ) {
-  if( c->get_data().empty() )
-   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::apply: "
-				 "the fixing Change has no data" ) );
-  Change * ret = pv->is_fixed() ? undo( AbstractChange::eFixX ,
-					{ pv->get_value() } )
-	                        : undo( AbstractChange::eUnfixX , {} );
+ // one variable per path, the data holding the value each is fixed to; with
+ // more than one, those already fixed are left as they are (and out of the
+ // undo), as the fixings by reduced cost [see intLagFixing] only add to the
+ // branching [see branch()]
+ const auto & paths = c->get_paths();
+ const bool many = ( paths.size() > 1 );
+ if( ( type == AbstractChange::eFixX ) &&
+     ( c->get_data().size() < paths.size() ) )
+  throw( std::invalid_argument( "LagrangianDualRelaxationSolver::apply: "
+				"the fixing Change has fewer data than "
+				"paths" ) );
 
-  // the columns that the fixing purges from the global pool are kept, by
-  // the variable, in the GlobalInformation: the handler is in place while
-  // the fixing is done, as the LagBFunction purges them right then
-  auto mvts = map_varToSol;
-  const auto id = lbf->set_event_handler( LagBFunction::eColumnPurged ,
-					  [ lbf , pv , mvts ]( void ) -> int {
-   auto el = lbf->release_current_purged_solution();
-   if( el.sol )
-    mvts->write_with( str_PurgedColumns , [ & ]( PurgedColumn & pc ) {
-     pc[ pv ].push_back( std::move( el ) );
-     } );
-   return( eContinue );
+ std::vector< AbstractPath > upaths;
+ std::vector< double > udata;
+ int undo_type = AbstractChange::eUnfixX;
+
+ for( Index i = 0 ; i < paths.size() ; ++i ) {
+  auto v = i ? paths[ i ].get_element< ColVariable >( f_Block ) : pv;
+  if( ! v )
+   throw( std::invalid_argument( "LagrangianDualRelaxationSolver::apply: "
+				 "the variable is not in the Block" ) );
+  auto vlbf = i ? LagBF_of( v ) : lbf;
+
+  if( type == AbstractChange::eFixX ) {
+   if( v->is_fixed() ) {
+    if( many )
+     continue;
+    undo_type = AbstractChange::eFixX;  // the undo gives back its value
+    udata.push_back( v->get_value() );
+    }
+   upaths.push_back( paths[ i ] );
+
+   // the columns that the fixing purges from the global pool are kept, by
+   // the variable, in the GlobalInformation: the handler is in place while
+   // the fixing is done, as the LagBFunction purges them right then
+   auto mvts = map_varToSol;
+   const auto id = vlbf->set_event_handler( LagBFunction::eColumnPurged ,
+					    [ vlbf , v , mvts ]( void ) -> int {
+    auto el = vlbf->release_current_purged_solution();
+    if( el.sol )
+     mvts->write_with( str_PurgedColumns , [ & ]( PurgedColumn & pc ) {
+      pc[ v ].push_back( std::move( el ) );
+      } );
+    return( eContinue );
+    } );
+   v->set_value( c->get_data()[ i ] );
+   v->is_fixed( true );
+   vlbf->reset_event_handler( LagBFunction::eColumnPurged , id );
+   continue;
+   }
+
+  // eUnfixX: the columns purged by the fixing of the variable go back
+  if( many && ( ! v->is_fixed() ) )
+   continue;
+  undo_type = AbstractChange::eFixX;
+  upaths.push_back( paths[ i ] );
+  udata.push_back( v->get_value() );
+  v->is_fixed( false );
+  std::vector< LagBFunction::gpool_el > purged;
+  map_varToSol->write_with( str_PurgedColumns , [ & ]( PurgedColumn & pc ) {
+   if( auto it = pc.find( v ) ; it != pc.end() ) {
+    purged = std::move( it->second );
+    pc.erase( it );
+    }
    } );
-  pv->set_value( c->get_data()[ 0 ] );
-  pv->is_fixed( true );
-  lbf->reset_event_handler( LagBFunction::eColumnPurged , id );
-  return( ret );
+  vlbf->restore_purged_solutions( std::move( purged ) );
   }
 
- // eUnfixX: the columns purged by the fixing of the variable go back
- Change * ret = undo( AbstractChange::eFixX , { pv->get_value() } );
- pv->is_fixed( false );
- std::vector< LagBFunction::gpool_el > purged;
- map_varToSol->write_with( str_PurgedColumns , [ & ]( PurgedColumn & pc ) {
-  if( auto it = pc.find( pv ) ; it != pc.end() ) {
-   purged = std::move( it->second );
-   pc.erase( it );
-   }
-  } );
- lbf->restore_purged_solutions( std::move( purged ) );
- return( ret );
+ if( ( ! doUndo ) || upaths.empty() )
+  return( nullptr );
+ if( undo_type == AbstractChange::eUnfixX )
+  udata.clear();
+ return( new LagrangianChange( undo_type , std::move( udata ) ,
+			       std::move( upaths ) ) );
 
  }  // end( LagrangianDualRelaxationSolver::apply )
 

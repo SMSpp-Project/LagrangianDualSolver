@@ -308,7 +308,18 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   and then at one every intHeurFreq of them, 0 meaning at the first
   *   only; at the others only the Lagrangian Dual of the original
   *   objective is solved, which gives the bound and the convexified
-  *   solution the branching needs, and no solution is recorded. */
+  *   solution the branching needs, and no solution is recorded;
+  *
+  * - intLagFixing [0]: with 1, branch() fixes by Lagrangian reduced cost
+  *   the binary variables that cannot take one of their values in a
+  *   solution better than the incumbent [see
+  *   PrimalProximalHeur::lagrangian_fixings() and dblLagFixingTol], read
+  *   right after the Lagrangian Dual of the original objective is solved:
+  *   each is fixed to its other value in both children, and therefore in
+  *   all the subtree of the node. The fixing needs intApplyStrategy ==
+  *   eSubproblem and an inner Solver that evaluates the LagBFunction last
+  *   at the multipliers it returns (as BundleSolver does with the bit 0 of
+  *   its intFrcLstSS), and fixes nothing otherwise. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
@@ -316,6 +327,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   intStrongCands ,                    ///< candidates of strong branching
   intBranchEstimate ,                 ///< the estimates of the children
   intHeurFreq ,                       ///< how often the heuristic runs
+  intLagFixing ,                      ///< fixing by Lagrangian reduced cost
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
   };
 
@@ -698,6 +710,11 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  std::vector< Change * > branchings( ColVariable * var , double value ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// the fixings by Lagrangian reduced cost of this node [see intLagFixing]
+
+ void after_Lagrangian_dual( void ) override;
+
+/*--------------------------------------------------------------------------*/
  /// the bound of the node with the LagrangianChange applied
  /** Applies the Change, solves the Lagrangian Dual alone (not the
   * heuristic), and undoes the Change; returns the bound on the side of the
@@ -754,6 +771,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  std::vector< std::string > f_branch_groups; ///< vstrBranchGroups
  int f_branch_estimate = 0;                ///< intBranchEstimate
  int f_heur_freq = 1;                      ///< intHeurFreq
+ int f_lag_fixing = 0;                     ///< intLagFixing
+ Index f_n_lag_fixed = 0;                  ///< the variables it has fixed
+ /// the fixings by reduced cost of the last compute() [see intLagFixing]
+ std::vector< std::pair< ColVariable * , double > > f_lag_fix;
  Index f_ncompute = 0;                     ///< the calls to compute()
  std::string f_estimate_model;             ///< strEstimateModel
 

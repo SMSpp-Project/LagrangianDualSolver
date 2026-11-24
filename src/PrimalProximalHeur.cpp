@@ -356,6 +356,7 @@ void PrimalProximalHeur::set_par( idx_type par , int value )
   case( intPenConstrBins ):     PenConstrBins = ( value != 0 ); break;
   case( intNoRecoveryIfFeasible ): NoRecIfFeas = ( value != 0 ); break;
   case( intWarmStartOnce ):     WarmOnce = ( value != 0 ); break;
+  case( intPenaltyRecoveryFix ): PenRecFix = ( value != 0 ); break;
   case( intMaxThread ):  MaxThread = value; break;
   case( intLogVerb ):
    logVerb = value & 3;
@@ -373,6 +374,12 @@ void PrimalProximalHeur::set_par( idx_type par , double value )
  switch( par ) {
   case( dbl_penaltyFactor ): R = value; break;
   case( dblPenaltyRecoveryFrac ): PenRecFrac = value; break;
+  case( dblLagFixingTol ):
+   if( value < 0 )
+    throw( std::invalid_argument( "PrimalProximalHeur::set_par: "
+				  "dblLagFixingTol is negative" ) );
+   LagFixTol = value;
+   break;
 
   // the accuracy required of the heuristic, and the time it is given, are
   // those of this algorithm; the accuracy the inner Solver solves the
@@ -937,6 +944,7 @@ int PrimalProximalHeur::compute( bool changedvars )
    // nothing to recover, and no proximal term to strip yet
    if( ( res == kUnbounded ) || ( res == kInfeasible ) || ( res == kCutOff ) )
     break;
+   after_Lagrangian_dual();
    }
 
   // read back the current sub-Block Variable values - - - - - - - - - - - -
@@ -1779,7 +1787,30 @@ bool PrimalProximalHeur::solve_restricted( const std::string & bsc ,
 
 bool PrimalProximalHeur::penalty_recovery( double & cost )
 {
- if( PenRecBSC.empty() || ( PenRecFrac <= 0 ) )
+ if( PenRecBSC.empty() || ( ( PenRecFrac <= 0 ) && ( ! PenRecFix ) ) )
+  return( false );
+
+ // with intPenaltyRecoveryFix, the binaries that the Lagrangian reduced cost
+ // fixes are fixed, all the others free; when that test cannot be made, the
+ // share PenRecFrac is used as usual
+ std::vector< std::pair< ColVariable * , double > > lfix;
+ if( PenRecFix && lagrangian_fixings( lfix ) ) {
+  std::vector< ColVariable * > fixed;
+  for( const auto & [ v , val ] : lfix ) {
+   v->set_value( val );
+   v->is_fixed( true , eNoMod );
+   fixed.push_back( v );
+   }
+  LOG_VERB( 2 )
+   *f_log << "  penalty_recovery: " << lfix.size()
+          << " binaries fixed by reduced cost" << std::endl;
+  const bool ok = solve_restricted( PenRecBSC , "penalty" , cost ,
+                                    PenRecBCfg );
+  for( auto v : fixed )
+   v->is_fixed( false , eNoMod );
+  return( ok );
+  }
+ if( PenRecFrac <= 0 )
   return( false );
 
  // the penalties of the binaries of the components at the current
@@ -1826,6 +1857,81 @@ bool PrimalProximalHeur::penalty_recovery( double & cost )
  return( ok );
 
  }  // end( PrimalProximalHeur::penalty_recovery )
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::lagrangian_fixings(
+		   std::vector< std::pair< ColVariable * , double > > & fix )
+{
+ fix.clear();
+
+ // the incumbent: the best of the cutoff and of the best solution found
+ const double cut = get_dbl_par( f_max ? dblLwCutOff : dblUpCutOff );
+ const double zbar = f_max ? std::max( cut , double( best_bound ) )
+                           : std::min( cut , double( best_bound ) );
+ if( f_max ? ( zbar == - Inf< double >() ) : ( zbar == Inf< double >() ) )
+  return( false );
+
+ // the LagBFunction, and the Objective of their sub-Block, have to be those
+ // of the multipliers of the solution, which the inner Solver guarantees
+ // with the bit 0 of intFrcLstSS: computing them here would change their
+ // state behind its back
+ const auto frc = InnerSolver->int_par_str2idx( "intFrcLstSS" );
+ if( ( frc == Inf< idx_type >() ) || ( ! ( InnerSolver->get_int_par( frc )
+                                           & 1 ) ) )
+  return( false );
+
+ // L at those multipliers: the linear part of the Objective of the
+ // Lagrangian Dual plus each LagBFunction, whose value has to be exact, as
+ // the penalties are those of an optimal solution of its sub-Block
+ auto fro = dynamic_cast< FRealObjective * >( LagrDual->get_objective() );
+ auto lf = fro ? dynamic_cast< LinearFunction * >( fro->get_function() )
+               : nullptr;
+ if( ! lf )
+  return( false );
+ lf->compute( true );
+ double L = lf->get_value();
+ for( auto lbf : v_LBF ) {
+  if( ! lbf )
+   return( false );
+  const double lo = lbf->get_lower_estimate();
+  const double up = lbf->get_upper_estimate();
+  if( std::abs( up - lo ) > 1e-9 * std::max( 1.0 , std::abs( lo ) ) )
+   return( false );
+  L += lbf->get_value();
+  }
+
+ // a value whose penalty p makes L no better than the incumbent cannot
+ // give a better solution, and the variable takes the other one
+ const auto beaten = [ & ]( double p ) {
+  if( p == Inf< double >() )
+   return( true );
+  return( f_max ? ( L - p <= zbar + LagFixTol )
+                : ( L + p >= zbar - LagFixTol ) );
+  };
+
+ std::vector< std::tuple< ColVariable * , double , double > > pen;
+ for( auto lbf : v_LBF ) {
+  auto sbi = lbf->get_inner_block();
+  if( ( lbf->get_objective_weight() != 1 ) ||
+      ( sbi->get_objective_weight() != 1 ) )
+   continue;
+  pen.clear();
+  if( ! sbi->get_fixing_penalties( pen ) )
+   continue;
+  for( const auto & [ v , p0 , p1 ] : pen )
+   if( ! v->is_fixed() ) {
+    if( beaten( p0 ) )
+     fix.emplace_back( v , 1 );
+    else
+     if( beaten( p1 ) )
+      fix.emplace_back( v , 0 );
+    }
+  }
+
+ return( true );
+
+ }  // end( PrimalProximalHeur::lagrangian_fixings )
 
 /*--------------------------------------------------------------------------*/
 
