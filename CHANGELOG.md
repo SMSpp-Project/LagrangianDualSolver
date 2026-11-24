@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `intBranchBound` of `LagrangianDualRelaxationSolver`, by which it is a
+  `BranchBounder` of SMS++ whose bound of each child of a branching is the
+  value of the Lagrangian function at the multipliers of the node worsened
+  by the penalty of fixing the variable branched upon, which a
+  `BranchAndXSolver` uses to prune the child before evaluating it
+
+- `PrimalProximalHeur::lagrangian_value()`, the value of the Lagrangian
+  function at the multipliers of the solution of the Lagrangian Dual, which
+  the fixing by reduced cost and the bounds of the children compare with
+  the penalties
+
 - `intReliability` of `LagrangianDualRelaxationSolver`, by which
   `eStrongBranching` and `ePenalties` become a reliability branching: a
   candidate whose pseudocosts have at least `intReliability` observations in

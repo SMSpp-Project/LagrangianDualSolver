@@ -180,6 +180,8 @@ void LagrangianDualRelaxationSolver::set_Block( Block * block )
  f_fresh_center.reset();
  f_pending.reset();
  f_estimates.clear();
+ f_bounds.clear();
+ f_pen_L = std::numeric_limits< double >::quiet_NaN();
  f_pc = PseudoCosts();
  f_n_branch = 0;
  f_ncompute = 0;
@@ -237,6 +239,12 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par , int value )
 				  "intReliability is negative" ) );
    f_reliability = value;
    break;
+  case( intBranchBound ):
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::set_par: "
+				  "intBranchBound is neither 0 nor 1" ) );
+   f_branch_bound = value;
+   break;
   default: PrimalProximalHeur::set_par( par , value );
   }
  }
@@ -266,6 +274,7 @@ int LagrangianDualRelaxationSolver::get_dflt_int_par( idx_type par ) const
   case( intKeepBundle ):     return( 0 );
   case( intCutOffReread ):   return( 0 );
   case( intReliability ):    return( 0 );
+  case( intBranchBound ):    return( 0 );
   default: return( PrimalProximalHeur::get_dflt_int_par( par ) );
   }
  }
@@ -285,6 +294,7 @@ int LagrangianDualRelaxationSolver::get_int_par( idx_type par ) const
   case( intKeepBundle ):     return( f_keep_bundle );
   case( intCutOffReread ):   return( f_cutoff_reread );
   case( intReliability ):    return( f_reliability );
+  case( intBranchBound ):    return( f_branch_bound );
   default: return( PrimalProximalHeur::get_int_par( par ) );
   }
  }
@@ -314,6 +324,8 @@ Solver::idx_type LagrangianDualRelaxationSolver::int_par_str2idx(
   return( intCutOffReread );
  if( name == "intReliability" )
   return( intReliability );
+ if( name == "intBranchBound" )
+  return( intBranchBound );
  return( PrimalProximalHeur::int_par_str2idx( name ) );
  }
 
@@ -332,6 +344,7 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
  static const std::string keep = "intKeepBundle";
  static const std::string reread = "intCutOffReread";
  static const std::string reliab = "intReliability";
+ static const std::string bbound = "intBranchBound";
  switch( par ) {
   case( intApplyStrategy ):  return( apply );
   case( intBranchStrategy ): return( branch );
@@ -343,6 +356,7 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
   case( intKeepBundle ):     return( keep );
   case( intCutOffReread ):   return( reread );
   case( intReliability ):    return( reliab );
+  case( intBranchBound ):    return( bbound );
   default: return( PrimalProximalHeur::int_par_idx2str( par ) );
   }
  }
@@ -574,6 +588,7 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
  f_solved = false;
  f_lag_fix.clear();
  f_lag_pen.clear();
+ f_pen_L = std::numeric_limits< double >::quiet_NaN();
  int status;
  if( NumStatVar == 0 ) {
   // PPH delegates this single solve to LagrangianDualSolver, bypassing the
@@ -681,11 +696,12 @@ Solution * LagrangianDualRelaxationSolver::get_true_solution(
 
 std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
 {
+ f_estimates.clear();
+ f_bounds.clear();
  if( f_solved )
   return( std::vector< Change * >() );
  auto cands = candidates();
  ++f_n_branch;
- f_estimates.clear();
  const auto all = f_branch_estimate ? cands : std::vector< Cand >();
  const Index c = choose( cands );   // it may shorten cands
  auto changes = branchings( cands[ c ].var , cands[ c ].value );
@@ -731,6 +747,15 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
   if( f_branch_estimate )
    f_estimates = estimates( all , cb.k );
   }
+
+ // the bounds of the children by the penalties of fixing the variable,
+ // the "down" one first [see intBranchBound]
+ if( f_branch_bound && ( ! std::isnan( f_pen_L ) ) )
+  if( const auto it = f_lag_pen.find( cands[ c ].var ) ;
+      it != f_lag_pen.end() )
+   for( int d = 0 ; d < 2 ; ++d )
+    f_bounds.push_back( f_max ? f_pen_L - it->second[ d ]
+		              : f_pen_L + it->second[ d ] );
  return( changes );
 
  }  // end( LagrangianDualRelaxationSolver::branch )
@@ -1216,10 +1241,12 @@ void LagrangianDualRelaxationSolver::after_Lagrangian_dual( void )
   f_NoHeur = ! close_to_best_bound();
   }
 
- // the penalties are read once, for the fixings, for ePenalties and for the
- // features of the candidates [see strBranchModel]
+ // the penalties are read once, for the fixings, for ePenalties, for the
+ // bounds of the children [see intBranchBound] and for the features of the
+ // candidates [see strBranchModel]
  const bool fixing = f_lag_fixing && ( f_apply_strategy == eSubproblem );
- const bool scoring = ( f_branch_strategy == ePenalties ) ||
+ const bool scoring = f_branch_bound ||
+                      ( f_branch_strategy == ePenalties ) ||
                       ( f_branch_strategy == eLearned ) ||
                       ( f_branch_strategy == eOnline ) ||
                       ( ( f_branch_strategy == eStrongBranching ) &&
@@ -1233,6 +1260,11 @@ void LagrangianDualRelaxationSolver::after_Lagrangian_dual( void )
   f_lag_pen[ v ] = { p0 , p1 };
  if( fixing )
   lagrangian_fixings( f_lag_fix , & pen );
+ if( f_branch_bound && ( ! pen.empty() ) ) {
+  double L;
+  if( lagrangian_value( L ) )
+   f_pen_L = L;
+  }
  }
 
 /*--------------------------------------------------------------------------*/

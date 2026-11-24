@@ -1940,34 +1940,10 @@ bool PrimalProximalHeur::lagrangian_fixings(
  if( f_max ? ( zbar == - Inf< double >() ) : ( zbar == Inf< double >() ) )
   return( false );
 
- // the LagBFunction, and the Objective of their sub-Block, have to be those
- // of the multipliers of the solution, which the inner Solver guarantees
- // with the bit 0 of intFrcLstSS: computing them here would change their
- // state behind its back
- const auto frc = InnerSolver->int_par_str2idx( "intFrcLstSS" );
- if( ( frc == Inf< idx_type >() ) || ( ! ( InnerSolver->get_int_par( frc )
-                                           & 1 ) ) )
+ // L at the multipliers of the solution
+ double L;
+ if( ! lagrangian_value( L ) )
   return( false );
-
- // L at those multipliers: the linear part of the Objective of the
- // Lagrangian Dual plus each LagBFunction, whose value has to be exact, as
- // the penalties are those of an optimal solution of its sub-Block
- auto fro = dynamic_cast< FRealObjective * >( LagrDual->get_objective() );
- auto lf = fro ? dynamic_cast< LinearFunction * >( fro->get_function() )
-               : nullptr;
- if( ! lf )
-  return( false );
- lf->compute( true );
- double L = lf->get_value();
- for( auto lbf : v_LBF ) {
-  if( ! lbf )
-   return( false );
-  const double lo = lbf->get_lower_estimate();
-  const double up = lbf->get_upper_estimate();
-  if( std::abs( up - lo ) > 1e-9 * std::max( 1.0 , std::abs( lo ) ) )
-   return( false );
-  L += lbf->get_value();
-  }
 
  // a value whose penalty p makes L no better than the incumbent cannot
  // give a better solution, and the variable takes the other one
@@ -1995,6 +1971,43 @@ bool PrimalProximalHeur::lagrangian_fixings(
  return( true );
 
  }  // end( PrimalProximalHeur::lagrangian_fixings )
+
+/*--------------------------------------------------------------------------*/
+
+bool PrimalProximalHeur::lagrangian_value( double & L )
+{
+ // the LagBFunction, and the Objective of their sub-Block, have to be those
+ // of the multipliers of the solution, which the inner Solver guarantees
+ // with the bit 0 of intFrcLstSS: computing them here would change their
+ // state behind its back
+ const auto frc = InnerSolver->int_par_str2idx( "intFrcLstSS" );
+ if( ( frc == Inf< idx_type >() ) || ( ! ( InnerSolver->get_int_par( frc )
+                                           & 1 ) ) )
+  return( false );
+
+ // the linear part of the Objective of the Lagrangian Dual plus each
+ // LagBFunction, whose value has to be exact, as the penalties are those of
+ // an optimal solution of its sub-Block
+ auto fro = dynamic_cast< FRealObjective * >( LagrDual->get_objective() );
+ auto lf = fro ? dynamic_cast< LinearFunction * >( fro->get_function() )
+               : nullptr;
+ if( ! lf )
+  return( false );
+ lf->compute( true );
+ double val = lf->get_value();
+ for( auto lbf : v_LBF ) {
+  if( ! lbf )
+   return( false );
+  const double lo = lbf->get_lower_estimate();
+  const double up = lbf->get_upper_estimate();
+  if( std::abs( up - lo ) > 1e-9 * std::max( 1.0 , std::abs( lo ) ) )
+   return( false );
+  val += lbf->get_value();
+  }
+ L = val;
+ return( true );
+
+ }  // end( PrimalProximalHeur::lagrangian_value )
 
 /*--------------------------------------------------------------------------*/
 

@@ -1019,6 +1019,20 @@ class PrimalProximalHeur : public LagrangianDualSolver
 		  const penalties * pen = nullptr );
 
 /*--------------------------------------------------------------------------*/
+ /// the value of the Lagrangian function at the multipliers of the dual
+ /** Writes in \p L the value of the Lagrangian function at the multipliers
+  * of the solution of the Lagrangian Dual of the original objective, i.e.,
+  * the linear part of the Objective of the Lagrangian Dual plus the value
+  * of each LagBFunction, which is the bound that the penalties [see
+  * lagrangian_penalties()] worsen. It is to be called when the penalties
+  * are, and returns false, leaving \p L as it is, if the value is not
+  * known exactly: an inner Solver that does not evaluate the LagBFunction
+  * last at the multipliers it returns, an Objective of the Lagrangian Dual
+  * that is not linear, an inexact value of a LagBFunction. */
+
+ bool lagrangian_value( double & L );
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------- PROTECTED METHODS ----------------------------*/
 /*--------------------------------------------------------------------------*/
  /// solve one dual iteration; derived classes may prepare the inner Solver

@@ -249,11 +249,14 @@ class LagrangianChange : public AbstractChange {
  * branched, and from the bounds of the children that strong branching
  * computes, while a variable never branched upon takes the prior that a
  * model read from a file gives [see strEstimateModel], or the mean of the
- * others. */
+ * others. As a BranchBounder, it may give a valid bound of each child that
+ * it knows without solving it, by the penalties of fixing the variable
+ * branched upon at the multipliers of the node [see intBranchBound]. */
 
 class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 				       public PrimalProximalHeur ,
-				       public BranchEstimator {
+				       public BranchEstimator ,
+				       public BranchBounder {
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
@@ -410,7 +413,20 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   pseudocosts are learned, whatever intBranchEstimate, from the bound of
   *   each child solved after its parent branched and from the bounds that
   *   strong branching computes. With 0 the branching is that of
-  *   intBranchStrategy alone. */
+  *   intBranchStrategy alone;
+  *
+  * - intBranchBound [0]: with 1, branch_bounds() gives the bounds of the
+  *   two children of each branch() that the penalties \f$ p^0_v \f$ and
+  *   \f$ p^1_v \f$ of fixing the variable v branched upon to 0 and to 1
+  *   [see ePenalties] give, i.e., \f$ L + p^0_v \f$ and \f$ L + p^1_v \f$
+  *   (\f$ L - p^0_v \f$ and \f$ L - p^1_v \f$ for a maximization), L
+  *   being the value of the Lagrangian function at the multipliers of the
+  *   node [see PrimalProximalHeur::lagrangian_value()]: any solution in the
+  *   region of a child has v fixed, and hence a value no better than that
+  *   of the Lagrangian function with v fixed at those multipliers, which is
+  *   what the bound is, whatever intApplyStrategy. The penalties are read
+  *   as for ePenalties, and a child gets no bound (NaN) where they or L are
+  *   not known; with 0 branch_bounds() gives none. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
@@ -423,6 +439,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   intKeepBundle ,                     ///< the bundle kept between nodes
   intCutOffReread ,                   ///< the incumbent read during a node
   intReliability ,                    ///< observations of a reliable variable
+  intBranchBound ,                    ///< the bounds of the children
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
   };
 
@@ -725,6 +742,13 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   return( f_estimates );
   }
 
+ /// the bounds of the two children of the last branch() [see
+ /// intBranchBound], none if intBranchBound == 0
+
+ std::vector< double > branch_bounds( void ) override {
+  return( f_bounds );
+  }
+
  /// apply a LagrangianChange [see intApplyStrategy]
 
  Change * apply( Change * change , bool doUndo = false ) override;
@@ -949,6 +973,12 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  int f_keep_bundle = 0;                    ///< intKeepBundle
  int f_cutoff_reread = 0;                  ///< intCutOffReread
  int f_reliability = 0;                    ///< intReliability
+ int f_branch_bound = 0;                   ///< intBranchBound
+ /// the value of the Lagrangian function at the multipliers of the last
+ /// compute(), NaN if not known [see intBranchBound]
+ double f_pen_L = std::numeric_limits< double >::quiet_NaN();
+ /// the bounds of the children of the last branch() [see intBranchBound]
+ std::vector< double > f_bounds;
  double f_heur_gap = -1;                   ///< dblHeurGap
  /// the depth of the node [see LagrangianChange::get_depth()]
  Index f_depth = 0;
