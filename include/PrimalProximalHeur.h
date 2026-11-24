@@ -242,10 +242,11 @@ class PrimalProximalHeur : public LagrangianDualSolver
    * point into a feasible solution of the original problem; a Solver that
    * returns kLowPrecision with a solution, as a heuristic does, has
    * recovered one. With the empty string there is no primal recovery, and
-   * the only solutions recorded are those the iterations happen to hit. A relative name is looked for
-   * after the filename prefix of the Configuration, then among the data
-   * the module installs (share/LagrangianDualSolver, where the default
-   * RecoveryCfg.txt is), then in the source tree of the module. */
+   * the only solutions recorded are those the iterations happen to hit. A
+   * relative name is looked for after the filename prefix of the
+   * Configuration, then among the data the module installs
+   * (share/LagrangianDualSolver, where the default RecoveryCfg.txt is),
+   * then in the source tree of the module. */
 
   strPenaltyRecoveryBSC ,
   ///< filename of the BlockSolverConfig of the restricted problem of the
