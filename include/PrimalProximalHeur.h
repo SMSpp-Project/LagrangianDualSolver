@@ -12,15 +12,15 @@
  *   A. Daniilidis, C. Lemarechal "On a primal-proximal heuristic in
  *   discrete optimization" Mathematical Programming 104, 105-128, 2005
  *
- * \author Luca Mencarelli \n
- *         Dipartimento di Informatica \n
- *         Universita' di Pisa \n
- *
  * \author Antonio Frangioni \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \copyright &copy; by Luca Mencarelli, Antonio Frangioni
+ * \author Luca Mencarelli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; by Antonio Frangioni, Luca Mencarelli
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/

@@ -6,15 +6,15 @@
  * CDASolver interface within the SMS++ framework as a Lagrangian-based
  * primal-proximal heuristic for binary optimization problems.
  *
- * \author Luca Mencarelli \n
- *         Dipartimento di Informatica \n
- *         Universita' di Pisa \n
- *
  * \author Antonio Frangioni \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \copyright &copy; by Luca Mencarelli, Antonio Frangioni
+ * \author Luca Mencarelli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; by Antonio Frangioni, Luca Mencarelli
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
