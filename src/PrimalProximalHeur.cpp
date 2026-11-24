@@ -1860,8 +1860,39 @@ bool PrimalProximalHeur::penalty_recovery( double & cost )
 
 /*--------------------------------------------------------------------------*/
 
+bool PrimalProximalHeur::lagrangian_penalties( penalties & pen )
+{
+ pen.clear();
+
+ // the Objective of the sub-Blocks have to be those of the multipliers of
+ // the solution, which the inner Solver guarantees with the bit 0 of
+ // intFrcLstSS
+ const auto frc = InnerSolver->int_par_str2idx( "intFrcLstSS" );
+ if( ( frc == Inf< idx_type >() ) || ( ! ( InnerSolver->get_int_par( frc )
+                                           & 1 ) ) )
+  return( false );
+
+ for( auto lbf : v_LBF ) {
+  if( ! lbf )
+   continue;
+  auto sbi = lbf->get_inner_block();
+  if( ( lbf->get_objective_weight() != 1 ) ||
+      ( sbi->get_objective_weight() != 1 ) )
+   continue;
+  const auto n = pen.size();
+  if( ! sbi->get_fixing_penalties( pen ) )
+   pen.resize( n );  // what a component that gives none has put
+  }
+
+ return( true );
+
+ }  // end( PrimalProximalHeur::lagrangian_penalties )
+
+/*--------------------------------------------------------------------------*/
+
 bool PrimalProximalHeur::lagrangian_fixings(
-		   std::vector< std::pair< ColVariable * , double > > & fix )
+		   std::vector< std::pair< ColVariable * , double > > & fix ,
+		   const penalties * pen )
 {
  fix.clear();
 
@@ -1910,24 +1941,19 @@ bool PrimalProximalHeur::lagrangian_fixings(
                 : ( L + p >= zbar - LagFixTol ) );
   };
 
- std::vector< std::tuple< ColVariable * , double , double > > pen;
- for( auto lbf : v_LBF ) {
-  auto sbi = lbf->get_inner_block();
-  if( ( lbf->get_objective_weight() != 1 ) ||
-      ( sbi->get_objective_weight() != 1 ) )
-   continue;
-  pen.clear();
-  if( ! sbi->get_fixing_penalties( pen ) )
-   continue;
-  for( const auto & [ v , p0 , p1 ] : pen )
-   if( ! v->is_fixed() ) {
-    if( beaten( p0 ) )
-     fix.emplace_back( v , 1 );
-    else
-     if( beaten( p1 ) )
-      fix.emplace_back( v , 0 );
-    }
+ penalties own;
+ if( ! pen ) {
+  lagrangian_penalties( own );
+  pen = & own;
   }
+ for( const auto & [ v , p0 , p1 ] : *pen )
+  if( ! v->is_fixed() ) {
+   if( beaten( p0 ) )
+    fix.emplace_back( v , 1 );
+   else
+    if( beaten( p1 ) )
+     fix.emplace_back( v , 0 );
+   }
 
  return( true );
 

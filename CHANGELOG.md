@@ -46,6 +46,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that the Lagrangian reduced cost fixes and frees all the others, and
   `dblLagFixingTol`, the tolerance of that test and of `intLagFixing`
 
+- `ePenalties` of the `intBranchStrategy` of
+  `LagrangianDualRelaxationSolver`, which branches on the candidate with the
+  largest product of the penalties of fixing it to 0 and to 1 at the
+  multipliers of the node, i.e., a strong branching that solves nothing,
+  the penalties being read once with those of `intLagFixing` [see
+  `PrimalProximalHeur::lagrangian_penalties()`]
+
+- the penalties of fixing a candidate to 0 and to 1, over the largest finite
+  one of the candidates, are its features 9 and 10 for `eLearned`,
+  `eOnline` and `strStrongLog` [see `BranchingFeatures` of SMS++]; a model
+  of `strBranchModel` or `strEstimateModel` of the first 8 features is
+  still read, and scored on them
+
 - an entry of `vstrBranchGroups` may be "name[i]" or "name[i:j]", some of
   the variables of the group, and the order of the entries is a priority:
   the candidates are those of the first entry that has a fractional

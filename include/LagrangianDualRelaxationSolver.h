@@ -266,7 +266,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   eMostFractional = 0 ,  ///< the variable with the most fractional value
   eStrongBranching = 1 , ///< the best of intStrongCands by strong branching
   eLearned = 2 ,         ///< the best of intStrongCands by strBranchModel
-  eOnline = 3            ///< strong branching, then a model learned online
+  eOnline = 3 ,          ///< strong branching, then a model learned online
+  ePenalties = 4         ///< the best product of the fixing penalties
   };
 
  /// the possible values of intApplyStrategy
@@ -290,7 +291,20 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   Lagrangian Dual of both children is solved (without the heuristic),
   *   the chosen one being that with the largest product of the bound
   *   improvements of its children over the node, a child found infeasible
-  *   counting as an infinite improvement;
+  *   counting as an infinite improvement; with ePenalties all the
+  *   candidates are scored by the same product, of the penalties
+  *   \f$ p^0_v \f$ and \f$ p^1_v \f$ of fixing the variable to 0 and to 1 in
+  *   place of the improvements, i.e., by \f$ \max \{ p^0_v , \delta \}
+  *   \cdot \max \{ p^1_v , \delta \} \f$ with \f$ \delta = 10^{-6} \max
+  *   \{ | L | , 1 \} \f$ for the bound L of the node, which is a strong
+  *   branching at the multipliers of the node at the price of no solve
+  *   [see PrimalProximalHeur::lagrangian_penalties()]: the penalties are
+  *   read once, right after the Lagrangian Dual of the original objective
+  *   is solved, together with the fixings of intLagFixing, a variable that
+  *   intLagFixing fixes is no candidate, and ties (say, when no sub-Block
+  *   gives its penalties, or the inner Solver does not evaluate the
+  *   LagBFunction last at the multipliers it returns, as BundleSolver does
+  *   with the bit 0 of its intFrcLstSS) go to the most fractional one;
   *
   * - intStrongCands [10]: the number of candidates of eStrongBranching and
   *   of eLearned, which picks the one a model learned from the data of
@@ -343,9 +357,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   the rank of the candidate, the index of its sub-Block and its position
   *   in it (in [0, 1]), its value in the convexified and in the Lagrangian
   *   solution, its fractionality, its cost in the objective of the sub-Block,
-  *   the bounds of the two children, the score, and 1 for the chosen one; a
-  *   header line is written when the file is created, and with the empty
-  *   string nothing is written;
+  *   its features 9 and 10 [see strBranchModel], the bounds of the two
+  *   children, the score, and 1 for the chosen one; a header line is
+  *   written when the file is created, and with the empty string nothing is
+  *   written;
   *
   * - strBranchModel [""]: the file of the model of eLearned, a perceptron
   *   with one tanh hidden layer that gives a score to each candidate out of
@@ -354,9 +369,13 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   the two, its cost over the largest absolute cost of the candidates, its
   *   position in its sub-Block, the fraction of the binary variables that
   *   are fixed, its rank by fractionality over the number of candidates
-  *   less one), written as the line "LBRModel <nin> <nhid>", the nhid rows
-  *   of nin weights of the hidden layer, its nhid biases, the nhid weights
-  *   of the output and its bias;
+  *   less one, and the penalties of fixing it to 0 and to 1 over the largest
+  *   finite one of the candidates, an infinite one counting as 1 and one
+  *   not known as 0 [see ePenalties]), written as the line "LBRModel <nin>
+  *   <nhid>", the nhid rows of nin weights of the hidden layer, its nhid
+  *   biases, the nhid weights of the output and its bias; a model with nin
+  *   less than 10 reads the first nin features only, so that one of the
+  *   first 8 is scored on them [see LearnedBranching];
   *
   * - strEstimateModel [""]: the file of the priors of the pseudocosts with
   *   intBranchEstimate == 1, i.e., the pseudocosts that a variable never
@@ -710,7 +729,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  std::vector< Change * > branchings( ColVariable * var , double value ) const;
 
 /*--------------------------------------------------------------------------*/
- /// the fixings by Lagrangian reduced cost of this node [see intLagFixing]
+ /// the penalties of this node [see ePenalties] and its fixings by
+ /// Lagrangian reduced cost [see intLagFixing]
 
  void after_Lagrangian_dual( void ) override;
 
@@ -775,6 +795,9 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  Index f_n_lag_fixed = 0;                  ///< the variables it has fixed
  /// the fixings by reduced cost of the last compute() [see intLagFixing]
  std::vector< std::pair< ColVariable * , double > > f_lag_fix;
+ /// the penalties of fixing each binary to 0 and to 1 of the last compute(),
+ /// read with f_lag_fix [see ePenalties]
+ std::unordered_map< ColVariable * , std::array< double , 2 > > f_lag_pen;
  Index f_ncompute = 0;                     ///< the calls to compute()
  std::string f_estimate_model;             ///< strEstimateModel
 

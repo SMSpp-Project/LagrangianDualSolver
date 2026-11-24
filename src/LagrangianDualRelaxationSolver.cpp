@@ -413,6 +413,7 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
  ++f_ncompute;
  f_solved = false;
  f_lag_fix.clear();
+ f_lag_pen.clear();
  int status;
  if( NumStatVar == 0 ) {
   // PPH delegates this single solve to LagrangianDualSolver, bypassing the
@@ -626,6 +627,10 @@ LagrangianDualRelaxationSolver::describe( const std::vector< Cand > & cands )
 		  cd.k < lagr.size() ? lagr[ cd.k ] : cd.value , cd.cost ,
 		  n_sb > 1 ? double( cd.pos ) / ( n_sb - 1 ) : 0.0 ,
 		  static_cast< unsigned int >( cd.sb ) } );
+  if( const auto it = f_lag_pen.find( cd.var ) ; it != f_lag_pen.end() ) {
+   bc.back().down = it->second[ 0 ];
+   bc.back().up = it->second[ 1 ];
+   }
   }
  return( bc );
 
@@ -764,6 +769,32 @@ LagrangianDualRelaxationSolver::choose( std::vector< Cand > & cands )
 {
  if( f_branch_strategy == eMostFractional )
   return( 0 );
+
+ if( f_branch_strategy == ePenalties ) {
+  // the product of the penalties, each at least delta, a variable that
+  // intLagFixing fixes being no candidate; ties to the most fractional
+  std::unordered_set< ColVariable * > fixed;
+  for( const auto & f : f_lag_fix )
+   fixed.insert( f.first );
+  const double delta = 1e-6 * std::max( std::abs( valid_bound ) , 1.0 );
+  auto at_least = [ delta ]( double p ) {
+   return( std::isnan( p ) ? delta : std::max( p , delta ) );
+   };
+  Index best_c = 0;
+  double best_s = - 1;
+  for( Index c = 0 ; c < cands.size() ; ++c ) {
+   if( fixed.contains( cands[ c ].var ) )
+    continue;
+   const auto it = f_lag_pen.find( cands[ c ].var );
+   const double s = it == f_lag_pen.end() ? delta * delta :
+                    at_least( it->second[ 0 ] ) * at_least( it->second[ 1 ] );
+   if( s > best_s ) {
+    best_s = s;
+    best_c = c;
+    }
+   }
+  return( best_c );
+  }
 
  if( ( f_branch_strategy != eStrongBranching ) &&
      ( f_branch_strategy != eLearned ) ) {
@@ -940,8 +971,23 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branchings(
 
 void LagrangianDualRelaxationSolver::after_Lagrangian_dual( void )
 {
- if( f_lag_fixing && ( f_apply_strategy == eSubproblem ) )
-  lagrangian_fixings( f_lag_fix );
+ // the penalties are read once, for the fixings, for ePenalties and for the
+ // features of the candidates [see strBranchModel]
+ const bool fixing = f_lag_fixing && ( f_apply_strategy == eSubproblem );
+ const bool scoring = ( f_branch_strategy == ePenalties ) ||
+                      ( f_branch_strategy == eLearned ) ||
+                      ( f_branch_strategy == eOnline ) ||
+                      ( ( f_branch_strategy == eStrongBranching ) &&
+			( ! f_strong_log.empty() ) );
+ if( ! ( fixing || scoring ) )
+  return;
+
+ penalties pen;
+ lagrangian_penalties( pen );
+ for( const auto & [ v , p0 , p1 ] : pen )
+  f_lag_pen[ v ] = { p0 , p1 };
+ if( fixing )
+  lagrangian_fixings( f_lag_fix , & pen );
  }
 
 /*--------------------------------------------------------------------------*/

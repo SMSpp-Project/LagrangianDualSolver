@@ -44,6 +44,8 @@
 
 #include <queue>
 
+#include <tuple>
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -946,6 +948,28 @@ class PrimalProximalHeur : public LagrangianDualSolver
  virtual void after_Lagrangian_dual( void ) {}
 
 /*--------------------------------------------------------------------------*/
+ /// the penalties of the binaries of the components, as
+ /// Block::get_fixing_penalties() gives them
+
+ using penalties =
+  std::vector< std::tuple< ColVariable * , double , double > >;
+
+ /// the penalties of fixing the binaries at the multipliers of the dual
+ /** Fills \p pen with the binary Variable of the components, each with by
+  * how much fixing it to 0 and to 1 makes the optimal value of its
+  * component worse [see Block::get_fixing_penalties()], at the multipliers
+  * of the solution of the Lagrangian Dual of the original objective; these
+  * also bound by how much the Lagrangian function gets worse at them, i.e.,
+  * they are a strong branching at fixed multipliers. It is to be called
+  * when the Objective of the components are those of these multipliers, as
+  * lagrangian_fixings() is. Returns false, and leaves \p pen empty, if the
+  * inner Solver does not say so; a component that gives no penalties, or
+  * whose Objective or LagBFunction has a weight other than 1, is left
+  * out. */
+
+ bool lagrangian_penalties( penalties & pen );
+
+/*--------------------------------------------------------------------------*/
  /// the fixings by Lagrangian reduced cost at the multipliers of the dual
  /** Fills \p fix with the binary Variable of the components that cannot
   * take one of their values in a solution better than the incumbent, each
@@ -966,10 +990,13 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * the test cannot be made: no incumbent, an inner Solver that does not
   * say so, an inexact value of a LagBFunction; a component that gives no
   * penalties, or whose Objective or LagBFunction has a weight other than
-  * 1, only fixes nothing. */
+  * 1, only fixes nothing. If \p pen is not nullptr, the penalties are
+  * those it points to, as lagrangian_penalties() gave them at these
+  * multipliers, rather than asked again to the components. */
 
  bool lagrangian_fixings(
-		  std::vector< std::pair< ColVariable * , double > > & fix );
+		  std::vector< std::pair< ColVariable * , double > > & fix ,
+		  const penalties * pen = nullptr );
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PROTECTED METHODS ----------------------------*/
