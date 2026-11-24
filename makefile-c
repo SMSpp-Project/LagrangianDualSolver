@@ -20,8 +20,7 @@
 #           $(LgDSLVH)   = the .h files to include for LagrangianDualSolver  #
 #           $(LgDSLVINC) = the -I$( LagrangianDualSolver directory )         #
 #                                                                            #
-#                              Antonio Frangioni                             #
-#                               Enrico Gorgone                               #
+#                             Antonio Frangioni                              #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #
