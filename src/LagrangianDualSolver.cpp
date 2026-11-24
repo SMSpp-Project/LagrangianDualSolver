@@ -34,6 +34,8 @@
 
 #include "LinearFunction.h"
 
+#include "OneVarConstraint.h"
+
 #include "RBlockConfig.h"
 
 #include "RowConstraintSolution.h"
@@ -955,9 +957,9 @@ void LagrangianDualSolver::set_par( idx_type par , int value )
   case( intRowScaling ):
    if( LagrDual )
     throw( std::logic_error( "changing RowScaling with registered Block" ) );
-   if( ( value < 0 ) || ( value > 1 ) )
+   if( ( value < 0 ) || ( value > 3 ) )
     throw( std::invalid_argument( "LagrangianDualSolver::set_par: "
-				  "intRowScaling must be 0 or 1" ) );
+				  "intRowScaling must be in 0 ... 3" ) );
    RowScaling = value;
    break;
   default:
@@ -1877,6 +1879,11 @@ void LagrangianDualSolver::compute_row_scales( void )
   return( dynamic_cast< const LinearFunction * >( con.get_function() ) );
   };
 
+ if( RowScaling >= 2 ) {
+  curvature_row_scales( rows , linear );
+  return;
+  }
+
  // the finite side of a row of larger absolute value
  const auto side = []( const FRowConstraint & con ) {
   double b = 0;
@@ -1976,6 +1983,163 @@ void LagrangianDualSolver::compute_row_scales( void )
    v_row_scale[ i ] = best[ g ];
   }
  }  // end( LagrangianDualSolver::compute_row_scales )
+
+/*--------------------------------------------------------------------------*/
+
+template< class L >
+void LagrangianDualSolver::curvature_row_scales(
+			  const std::vector< const FRowConstraint * > & rows ,
+			  const L & linear )
+{
+ // the abstract representation of the components, where the costs and the
+ // bounds of their Variable are read
+ const auto generate = []( auto & self , Block * blck ) -> void {
+  blck->generate_abstract_variables();
+  blck->generate_abstract_constraints();
+  blck->generate_objective();
+  for( auto sb : blck->get_nested_Blocks() )
+   self( self , sb );
+  };
+ for( auto cb : v_component )
+  generate( generate , cb );
+
+ // the cost and the bounds of each Variable met, starting from its type
+ struct VarInfo {
+  double c = 0;
+  double lb = -Inf< double >();
+  double ub = Inf< double >();
+  };
+ std::unordered_map< const Variable * , VarInfo > info;
+ const auto get = [ & info ]( const ColVariable * var ) -> VarInfo & {
+  auto [ it , added ] = info.try_emplace( var );
+  if( added ) {
+   it->second.lb = var->get_lb();
+   it->second.ub = var->get_ub();
+   }
+  return( it->second );
+  };
+ for( auto con : rows )
+  if( const auto lf = linear( *con ) )
+   for( const auto & el : lf->get_v_var() )
+    get( el.first );
+
+ // walks the tree of each component, calling f() on each Block
+ const auto walk = [ & ]( auto f ) {
+  const auto visit = [ & ]( auto & self , Block * blck ) -> void {
+   f( blck );
+   for( auto sb : blck->get_nested_Blocks() )
+    self( self , sb );
+   };
+  for( auto cb : v_component )
+   visit( visit , cb );
+  };
+ const auto each_row = [ & ]( Block * blck , auto f ) {
+  for( const auto & group : blck->get_static_constraint_groups() )
+   if( group )
+    group->for_each_as< FRowConstraint >( f );
+  for( const auto & group : blck->get_dynamic_constraint_groups() )
+   if( group )
+    group->for_each_as< FRowConstraint >( f );
+  };
+
+ // the bounds of the OneVarConstraint, and the costs of the Objective
+ walk( [ & ]( Block * blck ) {
+  const auto bound = [ & ]( OneVarConstraint & con ) {
+   const auto var = static_cast< const ColVariable * >(
+					   con.get_active_var( 0 ) );
+   auto & vi = get( var );
+   vi.lb = std::max( vi.lb , double( con.get_lhs() ) );
+   vi.ub = std::min( vi.ub , double( con.get_rhs() ) );
+   };
+  for( const auto & group : blck->get_static_constraint_groups() )
+   if( group )
+    group->for_each_as< OneVarConstraint >( bound );
+  for( const auto & group : blck->get_dynamic_constraint_groups() )
+   if( group )
+    group->for_each_as< OneVarConstraint >( bound );
+  if( const auto obj = dynamic_cast< FRealObjective * >(
+					     blck->get_objective() ) )
+   if( const auto lf = dynamic_cast< const LinearFunction * >(
+					     obj->get_function() ) )
+    for( const auto & el : lf->get_v_var() )
+     if( const auto it = info.find( el.first ) ; it != info.end() )
+      it->second.c += el.second;
+  } );
+
+ // the upper bounds implied by the rows with a finite right-hand side,
+ // nonnegative Variable and positive coefficients: a_j x_j <= b
+ const auto implied = [ & ]( const FRowConstraint & con ) {
+  const auto lf = dynamic_cast< const LinearFunction * >(
+					     con.get_function() );
+  const double b = con.get_rhs();
+  if( ( ! lf ) || ( b >= INFshift ) )
+   return;
+  for( const auto & el : lf->get_v_var() )
+   if( ( el.second <= 0 ) || ( get( el.first ).lb < 0 ) )
+    return;
+  for( const auto & el : lf->get_v_var() ) {
+   auto & vi = get( el.first );
+   vi.ub = std::min( vi.ub , b / el.second );
+   }
+  };
+ for( auto con : rows )
+  implied( *con );
+ walk( [ & ]( Block * blck ) {
+  each_row( blck , [ & ]( FRowConstraint & con ) {
+   if( ! con.is_relaxed() )
+    implied( con );
+   } );
+  } );
+
+ // the range R_i of the subgradient of row i and the spread t_i of its
+ // breakpoints c_j / a_ij; s_i = sqrt( t_i / R_i ) with 2 and 1 / R_i with
+ // 3, a row with no finite range or no spread being left out
+ std::vector< double > s( rows.size() , 0 );
+ for( Index i = 0 ; i < rows.size() ; ++i ) {
+  const auto lf = linear( *rows[ i ] );
+  if( ! lf )
+   continue;
+  double R = 0;
+  double bmin = Inf< double >();
+  double bmax = -Inf< double >();
+  for( const auto & el : lf->get_v_var() ) {
+   if( el.second == 0 )
+    continue;
+   const auto & vi = info.find( el.first )->second;
+   if( const double r = vi.ub - vi.lb ; r < Inf< double >() )
+    R += std::abs( el.second ) * r;
+   const double bp = vi.c / el.second;
+   bmin = std::min( bmin , bp );
+   bmax = std::max( bmax , bp );
+   }
+  if( R <= 0 )
+   continue;
+  if( RowScaling == 3 ) {
+   s[ i ] = 1 / R;
+   continue;
+   }
+  double t = bmax - bmin;
+  if( t <= 0 )
+   t = std::max( std::abs( bmin ) , std::abs( bmax ) );
+  if( t > 0 )
+   s[ i ] = std::sqrt( t / R );
+  }
+
+ // normalized to geometric mean 1, the rows left out having 1
+ double lg = 0;
+ Index n = 0;
+ for( const auto si : s )
+  if( si > 0 ) {
+   lg += std::log( si );
+   ++n;
+   }
+ if( ! n )
+  return;
+ const double gm = std::exp( lg / n );
+ for( Index i = 0 ; i < rows.size() ; ++i )
+  if( s[ i ] > 0 )
+   v_row_scale[ i ] = s[ i ] / gm;
+ }  // end( LagrangianDualSolver::curvature_row_scales )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3457,9 +3621,9 @@ void LagrangianDualSolver::reweight_components( void )
 
  /* Each coefficient of the Lagrangian term of a component is the one of its
   * Variable in the relaxed row times the weight of the Variable, with the
-  * sign and the scale of the row [see split_constraint()]: it is read again from the row,
-  * with the current weight, for each Variable of the term, all the terms of
-  * a component in one channel. */
+  * sign and the scale of the row [see split_constraint()]: it is read again
+  * from the row, with the current weight, for each Variable of the term,
+  * all the terms of a component in one channel. */
 
  for( Index h = 0 ; h < f_nsb ; ++h ) {
   if( ( h >= which.size() ) || ( ! which[ h ] ) || ( ! v_LBF[ h ] ) )

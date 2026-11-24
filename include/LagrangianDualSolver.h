@@ -495,6 +495,29 @@ public:
   *   have when set_Block() is called, the bounds of the Variable
   *   (OneVarConstraint) are not counted.
   *
+  * - 2: curvature scaling. For each relaxed constraint i,
+  *   \f$ R_i = \sum_j |a_{ij}| ( u_j - l_j ) \f$ is the range of the
+  *   i-th component of the subgradient and \f$ t_i \f$ the spread
+  *   \f$ \max_j - \min_j \f$ of the breakpoints \f$ c_j / a_{ij} \f$ of
+  *   the dual function along \f$ \lambda_i \f$, \f$ c_j \f$ being the
+  *   coefficient of \f$ x_j \f$ in the Objective of the sub-Blocks (the
+  *   largest \f$ |c_j / a_{ij}| \f$ if all the breakpoints coincide); then
+  *   \f$ \alpha_i = \sqrt{ t_i / R_i } \f$, i.e., the inverse square root
+  *   of the average curvature \f$ R_i / t_i \f$ along \f$ \lambda_i \f$.
+  *   The bounds \f$ l_j \f$, \f$ u_j \f$ are the tightest among those
+  *   of the type of the ColVariable, of the OneVarConstraint of the
+  *   sub-Blocks, and those implied by any linear constraint with finite
+  *   right-hand side, positive coefficients and nonnegative Variable; a
+  *   Variable with an infinite range adds nothing to \f$ R_i \f$.
+  *
+  * - 3: range scaling, \f$ \alpha_i = 1 / R_i \f$, with \f$ R_i \f$ as
+  *   in 2.
+  *
+  * With 2 and 3 the abstract representation of the sub-Blocks is
+  * generated, the factors are normalized to have geometric mean 1, and a
+  * constraint whose \f$ R_i \f$ or \f$ t_i \f$ is zero, or that is not
+  * linear, has \f$ \alpha_i = 1 \f$.
+  *
   * The factors are computed in set_Block(), and a relaxed constraint added
   * later has \f$ \alpha_i = 1 \f$. Default 0. */
 
@@ -2470,6 +2493,16 @@ FRowConstraint * constraint_with_index( Index i ) {
  * the multipliers, according to intRowScaling. */
 
  void compute_row_scales( void );
+
+/*--------------------------------------------------------------------------*/
+/* The part of compute_row_scales() for intRowScaling 2 and 3: rows are the
+ * relaxed constraints in the order of the multipliers, linear( con ) their
+ * LinearFunction or nullptr. */
+
+ template< class L >
+ void curvature_row_scales(
+			  const std::vector< const FRowConstraint * > & rows ,
+			  const L & linear );
 
 /*--------------------------------------------------------------------------*/
 /** The sum of the constant terms of the Objective of the Block whose

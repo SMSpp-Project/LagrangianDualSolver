@@ -54,6 +54,10 @@
  *   multiplier have to be those without scaling times the factor of its
  *   row, the multiplier the dual of the row divided by it, and the duals
  *   written back by get_dual_solution() the ones it was made from.
+ * - intRowScaling 2 and 3 (BSPar-scale.txt), with Variable whose bounds
+ *   come from a BoxConstraint, from a relaxed row and from nothing, with
+ *   which the factors have to be sqrt( t_i / R_i ) and 1 / R_i normalized
+ *   to geometric mean 1, and 1 for a row with R_i = 0.
  *
  * The test needs nothing but the core SMS++ and this module; the
  * Configuration files are read from the working directory.
@@ -848,7 +852,8 @@ static void test_box_bound_constant( bool max )
 /*--------------------------------------------------------------------------*/
 /*---------------------------------- MAIN ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-/// with intRowScaling 1 (the second Solver of BSPar-scale.txt) the
+/// with intRowScaling 1 (the second of the four Solver of BSPar-scale.txt,
+/// which have intRowScaling 0 ... 3) the
 /// coefficient of each multiplier in the Objective and in the Lagrangian
 /// terms is the one without scaling (the first Solver) times the factor of
 /// the row, and the multiplier is the dual of the row divided by it. The
@@ -929,15 +934,15 @@ static void test_row_scaling( void )
   rec.push_back( Records.back() );
   }
 
- check( ( rec.size() == 2 ) && ( rec[ 0 ].size() == alpha.size() ) &&
+ check( ( rec.size() == 4 ) && ( rec[ 0 ].size() == alpha.size() ) &&
 	( rec[ 1 ].size() == alpha.size() ) ,
-	"row scaling: not two Solver with 5 multipliers each" );
+	"row scaling: not four Solver with 5 multipliers each" );
 
  const auto near = []( double x , double y ) {
   return( std::abs( x - y ) <= 1e-12 * std::max( 1.0 , std::abs( y ) ) );
   };
 
- for( Index i = 0 ; ( rec.size() == 2 ) && ( i < rec[ 0 ].size() ) &&
+ for( Index i = 0 ; ( rec.size() == 4 ) && ( i < rec[ 0 ].size() ) &&
 		    ( i < rec[ 1 ].size() ) ; ++i ) {
   const auto & u = rec[ 0 ][ i ];
   const auto & sc = rec[ 1 ][ i ];
@@ -972,6 +977,116 @@ static void test_row_scaling( void )
  }
 
 /*--------------------------------------------------------------------------*/
+/// with intRowScaling 2 and 3 (the third and fourth Solver of
+/// BSPar-scale.txt) the factor of row i is sqrt( t_i / R_i ) and 1 / R_i,
+/// normalized to geometric mean 1 over the rows that have one. The
+/// components have one Variable each: x1 in [ 0 , 2 ] of cost 1, x2 in
+/// [ 0 , 1 ] of cost 3, x3 in [ 0 , 4 ] of cost 2 and x4 free of cost 5;
+/// the relaxed rows are
+///   x1 + x2 = 1, 2 x1 - x3 <= 0, x2 + x4 >= 0, x3 - x4 = 0, x4 <= 10
+/// and the first one implies x1 <= 1. So R is 2, 6, 1, 4 (x4 adds nothing)
+/// and t is 2, 5 / 2, 2, 7, the spreads of the breakpoints { 1 , 3 },
+/// { 1 / 2 , -2 }, { 3 , 5 } and { 2 , -5 }; the last row has R = 0, and 1
+
+static void test_curvature_scaling( void )
+{
+ const std::vector< double > R = { 2 , 6 , 1 , 4 , 0 };
+ const std::vector< double > t = { 2 , 2.5 , 2 , 7 , 0 };
+
+ const auto normalized = []( std::vector< double > v ) {
+  double lg = 0;
+  Index n = 0;
+  for( const auto x : v )
+   if( x > 0 ) {
+    lg += std::log( x );
+    ++n;
+    }
+  const double gm = std::exp( lg / n );
+  for( auto & x : v )
+   x = ( x > 0 ) ? x / gm : 1;
+  return( v );
+  };
+ std::vector< double > a2( R.size() , 0 ) , a3( R.size() , 0 );
+ for( Index i = 0 ; i < R.size() ; ++i )
+  if( R[ i ] > 0 ) {
+   a2[ i ] = std::sqrt( t[ i ] / R[ i ] );
+   a3[ i ] = 1 / R[ i ];
+   }
+ const std::vector< std::vector< double > > alpha = { normalized( a2 ) ,
+						      normalized( a3 ) };
+
+ auto b = new AbstractBlock();
+ b->add_nested_Block( box_component( 1 , false , 2 , 0 ) );
+ b->add_nested_Block( box_component( 3 , false , 1 , 0 ) );
+ b->add_nested_Block( box_component( 2 , false , 4 , 0 ) );
+ b->add_nested_Block( box_component( 5 , false , INF , 0 ) );
+ std::vector< ColVariable * > x;
+ for( Index h = 0 ; h < 4 ; ++h )
+  x.push_back( var_of( b->get_nested_Block( h ) ) );
+
+ struct LRow { Index j , k; double aj , ak , lhs , rhs; };
+ const std::vector< LRow > rows = {
+  { 0 , 1 , 1 , 1 , 1 , 1 } , { 0 , 2 , 2 , -1 , -INF , 0 } ,
+  { 1 , 3 , 1 , 1 , 0 , INF } , { 2 , 3 , 1 , -1 , 0 , 0 } ,
+  { 3 , 3 , 1 , 0 , -INF , 10 } };
+
+ auto lnk = new std::vector< FRowConstraint >( rows.size() );
+ for( Index i = 0 ; i < rows.size() ; ++i ) {
+  const auto & d = rows[ i ];
+  LinearFunction::v_coeff_pair vp = { { x[ d.j ] , d.aj } };
+  if( d.ak != 0 )
+   vp.push_back( { x[ d.k ] , d.ak } );
+  auto & r = ( *lnk )[ i ];
+  r.set_function( new LinearFunction( std::move( vp ) ) , eNoMod );
+  r.set_lhs( d.lhs , eNoMod );
+  r.set_rhs( d.rhs , eNoMod );
+  r.set_dual( double( i + 1 ) );
+  }
+ static_cast< AbstractBlock * >( b )->add_static_constraint( *lnk ,
+							      "link" );
+ empty_objective( b , false );
+
+ auto bsc = attach( b , "BSPar-scale.txt" );
+ std::vector< std::vector< Multiplier > > rec;
+ for( auto s : b->get_registered_solvers() ) {
+  s->compute();
+  rec.push_back( Records.back() );
+  }
+
+ check( ( rec.size() == 4 ) && ( rec[ 0 ].size() == rows.size() ) &&
+	( rec[ 2 ].size() == rows.size() ) &&
+	( rec[ 3 ].size() == rows.size() ) ,
+	"curvature scaling: not four Solver with 5 multipliers each" );
+
+ const auto near = []( double y , double z ) {
+  return( std::abs( y - z ) <= 1e-12 * std::max( 1.0 , std::abs( z ) ) );
+  };
+
+ for( Index m = 0 ; ( rec.size() == 4 ) && ( m < 2 ) ; ++m )
+  for( Index i = 0 ; ( i < rows.size() ) && ( i < rec[ 0 ].size() ) &&
+		     ( i < rec[ m + 2 ].size() ) ; ++i ) {
+   const auto & u = rec[ 0 ][ i ];
+   const auto & sc = rec[ m + 2 ][ i ];
+   const double al = alpha[ m ][ i ];
+   const std::string w = "intRowScaling " + std::to_string( m + 2 ) +
+			 ": multiplier " + std::to_string( i );
+   check( near( sc.coef , al * u.coef ) ,
+	  w + " has coefficient " + std::to_string( sc.coef ) +
+	  " instead of " + std::to_string( al * u.coef ) );
+   for( Index h = 0 ; h < u.terms.size() ; ++h )
+    check( near( sc.terms[ h ] , al * u.terms[ h ] ) ,
+	   w + " has term " + std::to_string( sc.terms[ h ] ) +
+	   " in component " + std::to_string( h ) + " instead of " +
+	   std::to_string( al * u.terms[ h ] ) );
+   check( near( al * sc.value , u.value ) ,
+	  w + " has value " + std::to_string( sc.value ) + " instead of " +
+	  std::to_string( u.value / al ) );
+   }
+
+ detach( b , bsc );
+ }
+
+/*--------------------------------------------------------------------------*/
 
 int main( void )
 {
@@ -989,6 +1104,7 @@ int main( void )
   test_box_bound_constant( true );
   test_push_cost();
   test_row_scaling();
+  test_curvature_scaling();
   }
  catch( const std::exception & e ) {
   std::cout << "FAILED: exception " << e.what() << std::endl;

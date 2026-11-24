@@ -17,7 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   side taking the largest factor of their group), so that families of
   constraints of very different size give multipliers of similar size;
   the dual bound is the same, the duals written back are those of the
-  original constraints
+  original constraints; with 2 the factor is the inverse square root of
+  the average curvature of the dual function along the multiplier (the
+  spread of its breakpoints over the range of its subgradient, read from
+  the costs and the bounds of the Variable of the row), with 3 the inverse
+  of the range alone, both normalized to geometric mean 1
 
 - `intHeurFreq` of `LagrangianDualRelaxationSolver`: the heuristic of
   `PrimalProximalHeur` runs at the first `compute()` and then at one every
