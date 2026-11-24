@@ -325,6 +325,8 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   gives its penalties, or the inner Solver does not evaluate the
   *   LagBFunction last at the multipliers it returns, as BundleSolver does
   *   with the bit 0 of its intFrcLstSS) go to the most fractional one;
+  *   either of the two may become a reliability branching [see
+  *   intReliability];
   *
   * - intStrongCands [10]: the number of candidates of eStrongBranching and
   *   of eLearned, which picks the one a model learned from the data of
@@ -388,7 +390,27 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   this takes the events eEverykIteration of the inner Solver [see
   *   ThinComputeInterface], whose intEverykIt is k for that solve only, and
   *   an inner Solver that has none is left as it is. With 0 the cutoff is
-  *   the one set before the node. */
+  *   the one set before the node;
+  *
+  * - intReliability [0]: with a positive value \f$ \eta \f$ and
+  *   intBranchStrategy eStrongBranching or ePenalties, the branching is the
+  *   reliability branching of Achterberg, Koch and Martin (2005): all the
+  *   candidates are scored by the product of the improvements of their two
+  *   children, as in eStrongBranching, but a candidate whose pseudocosts
+  *   [see PseudoCosts] have at least \f$ \eta \f$ observations in both
+  *   directions is reliable, and its improvements are those its
+  *   pseudocosts predict, i.e., \f$ \Psi^0_v ( x_v - \lfloor x_v \rfloor )
+  *   \f$ and \f$ \Psi^1_v ( \lceil x_v \rceil - x_v ) \f$, while those
+  *   of one that is not reliable are its penalties [see ePenalties] when
+  *   they are known, and otherwise, with eStrongBranching, the bounds of
+  *   its children found by strong branching, for at most intStrongCands of
+  *   them, the most fractional first; the others, and with ePenalties all
+  *   those whose penalties are not known, are scored by their pseudocosts,
+  *   the mean of the others in a direction where they have none. The
+  *   pseudocosts are learned, whatever intBranchEstimate, from the bound of
+  *   each child solved after its parent branched and from the bounds that
+  *   strong branching computes. With 0 the branching is that of
+  *   intBranchStrategy alone. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
@@ -400,6 +422,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   intHeurDepth ,                      ///< the heuristic down to this depth
   intKeepBundle ,                     ///< the bundle kept between nodes
   intCutOffReread ,                   ///< the incumbent read during a node
+  intReliability ,                    ///< observations of a reliable variable
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
   };
 
@@ -415,9 +438,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   the incumbent; with no incumbent the heuristic is run. B is the value
   *   of GlobalInformation::str_BestBound, if finite, and otherwise the
   *   bound of the last root node this Solver has solved, which is never
-  *   better than the best bound of the search, so that fewer nodes pass. The test is made right after the Lagrangian Dual of the
-  *   original objective is solved, which gives L; with a negative value
-  *   it is not made. */
+  *   better than the best bound of the search, so that fewer nodes pass.
+  *   The test is made right after the Lagrangian Dual of the original
+  *   objective is solved, which gives L; with a negative value it is not
+  *   made. */
 
  enum dbl_par_type_LDRS {
   dblHeurGap = dblLastPPHPar ,  ///< the heuristic close to the best bound
@@ -783,6 +807,12 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 			Index chosen );
 
 /*--------------------------------------------------------------------------*/
+ /// the candidate to branch upon by reliability branching [see
+ /// intReliability], as choose() does
+
+ Index reliability_branching( std::vector< Cand > & cands );
+
+/*--------------------------------------------------------------------------*/
  /// the candidate to branch upon, by intBranchStrategy
  /** Returns the index in \p cands of the chosen candidate; \p cands may be
   * shortened (say, to the intStrongCands most fractional ones). A derived
@@ -867,6 +897,14 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  bool close_to_best_bound( void );
 
 /*--------------------------------------------------------------------------*/
+ /// whether the pseudocosts are learned [see intBranchEstimate and
+ /// intReliability]
+
+ bool learn_pseudocosts( void ) const {
+  return( f_branch_estimate || f_reliability );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// the fraction of the binary static variables that are fixed
 
  double fixed_fraction( void ) const;
@@ -910,6 +948,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  int f_heur_depth = -1;                    ///< intHeurDepth
  int f_keep_bundle = 0;                    ///< intKeepBundle
  int f_cutoff_reread = 0;                  ///< intCutOffReread
+ int f_reliability = 0;                    ///< intReliability
  double f_heur_gap = -1;                   ///< dblHeurGap
  /// the depth of the node [see LagrangianChange::get_depth()]
  Index f_depth = 0;

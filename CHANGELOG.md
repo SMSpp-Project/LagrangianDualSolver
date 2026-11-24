@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `intReliability` of `LagrangianDualRelaxationSolver`, by which
+  `eStrongBranching` and `ePenalties` become a reliability branching: a
+  candidate whose pseudocosts have at least `intReliability` observations in
+  both directions is scored by them, and one that has fewer by its fixing
+  penalties if known, or else by strong branching
+
 - `strPenaltyRecoveryBSC` and `dblPenaltyRecoveryFrac` of
   `PrimalProximalHeur`: after the Lagrangian Dual of the original objective,
   the restricted problem where only the share `dblPenaltyRecoveryFrac` of

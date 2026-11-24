@@ -231,6 +231,12 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par , int value )
 				  "intCutOffReread is negative" ) );
    f_cutoff_reread = value;
    break;
+  case( intReliability ):
+   if( value < 0 )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::set_par: "
+				  "intReliability is negative" ) );
+   f_reliability = value;
+   break;
   default: PrimalProximalHeur::set_par( par , value );
   }
  }
@@ -259,6 +265,7 @@ int LagrangianDualRelaxationSolver::get_dflt_int_par( idx_type par ) const
   case( intHeurDepth ):      return( -1 );
   case( intKeepBundle ):     return( 0 );
   case( intCutOffReread ):   return( 0 );
+  case( intReliability ):    return( 0 );
   default: return( PrimalProximalHeur::get_dflt_int_par( par ) );
   }
  }
@@ -277,6 +284,7 @@ int LagrangianDualRelaxationSolver::get_int_par( idx_type par ) const
   case( intHeurDepth ):      return( f_heur_depth );
   case( intKeepBundle ):     return( f_keep_bundle );
   case( intCutOffReread ):   return( f_cutoff_reread );
+  case( intReliability ):    return( f_reliability );
   default: return( PrimalProximalHeur::get_int_par( par ) );
   }
  }
@@ -304,6 +312,8 @@ Solver::idx_type LagrangianDualRelaxationSolver::int_par_str2idx(
   return( intKeepBundle );
  if( name == "intCutOffReread" )
   return( intCutOffReread );
+ if( name == "intReliability" )
+  return( intReliability );
  return( PrimalProximalHeur::int_par_str2idx( name ) );
  }
 
@@ -321,6 +331,7 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
  static const std::string hdepth = "intHeurDepth";
  static const std::string keep = "intKeepBundle";
  static const std::string reread = "intCutOffReread";
+ static const std::string reliab = "intReliability";
  switch( par ) {
   case( intApplyStrategy ):  return( apply );
   case( intBranchStrategy ): return( branch );
@@ -331,6 +342,7 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
   case( intHeurDepth ):      return( hdepth );
   case( intKeepBundle ):     return( keep );
   case( intCutOffReread ):   return( reread );
+  case( intReliability ):    return( reliab );
   default: return( PrimalProximalHeur::int_par_idx2str( par ) );
   }
  }
@@ -708,7 +720,7 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
           << " fixed by reduced cost, " << f_n_lag_fixed << " so far"
           << std::endl;
   }
- if( f_branch_estimate ) {
+ if( learn_pseudocosts() ) {
   // the children record what their bound will tell of the pseudocosts,
   // the "down" one first [see branchings()]
   const Cand & cb = cands[ c ];
@@ -716,7 +728,8 @@ std::vector< Change * > LagrangianDualRelaxationSolver::branch( void )
 		 { cb.k , 0 , cb.value - std::floor( cb.value ) , valid_bound } );
   static_cast< LagrangianChange * >( changes[ 1 ] )->set_branching(
 		 { cb.k , 1 , std::ceil( cb.value ) - cb.value , valid_bound } );
-  f_estimates = estimates( all , cb.k );
+  if( f_branch_estimate )
+   f_estimates = estimates( all , cb.k );
   }
  return( changes );
 
@@ -886,7 +899,7 @@ LagrangianDualRelaxationSolver::strong_branching(
 					 f_log : nullptr );
 
  // the bounds of the children are observations of the pseudocosts too
- if( f_branch_estimate )
+ if( learn_pseudocosts() )
   for( std::size_t i = 0 ; i < cands.size() ; ++i ) {
    const double v = cands[ i ].value;
    for( int d = 0 ; d < 2 ; ++d )
@@ -918,10 +931,78 @@ void LagrangianDualRelaxationSolver::write_strong_log(
 /*--------------------------------------------------------------------------*/
 
 LagrangianDualRelaxationSolver::Index
+LagrangianDualRelaxationSolver::reliability_branching(
+						 std::vector< Cand > & cands )
+{
+ // the product of the improvements of the two children, each at least
+ // delta, a variable that intLagFixing fixes being no candidate
+ std::unordered_set< ColVariable * > fixed;
+ for( const auto & f : f_lag_fix )
+  fixed.insert( f.first );
+ const double delta = 1e-6 * std::max( std::abs( valid_bound ) , 1.0 );
+ auto at_least = [ delta ]( double p ) {
+  return( std::isnan( p ) ? delta : std::max( p , delta ) );
+  };
+ const auto eta = static_cast< unsigned long >( f_reliability );
+ const double NaN = std::numeric_limits< double >::quiet_NaN();
+
+ // a reliable candidate is scored by its pseudocosts, one that is not by
+ // its penalties if known, or else (with eStrongBranching) by strong
+ // branching, for at most intStrongCands of them, the most fractional
+ // first, and by its pseudocosts if it gets neither
+ std::vector< double > score( cands.size() , -1 );
+ std::vector< Cand > strong;
+ std::vector< Index > strong_c;
+ for( Index c = 0 ; c < cands.size() ; ++c ) {
+  const Cand & cd = cands[ c ];
+  if( fixed.contains( cd.var ) )
+   continue;
+  if( ( f_pc.observations( cd.k , 0 ) < eta ) ||
+      ( f_pc.observations( cd.k , 1 ) < eta ) ) {
+   if( const auto it = f_lag_pen.find( cd.var ) ;
+       ( it != f_lag_pen.end() ) && ( ! std::isnan( it->second[ 0 ] ) ) &&
+       ( ! std::isnan( it->second[ 1 ] ) ) ) {
+    score[ c ] = at_least( it->second[ 0 ] ) * at_least( it->second[ 1 ] );
+    continue;
+    }
+   if( ( f_branch_strategy == eStrongBranching ) &&
+       ( strong.size() < Index( std::max( f_strong_cands , 0 ) ) ) ) {
+    strong.push_back( cd );
+    strong_c.push_back( c );
+    continue;
+    }
+   }
+  score[ c ] = at_least( f_pc.get( cd.k , 0 , NaN ) *
+			 ( cd.value - std::floor( cd.value ) ) ) *
+               at_least( f_pc.get( cd.k , 1 , NaN ) *
+			 ( std::ceil( cd.value ) - cd.value ) );
+  }
+ if( ! strong.empty() ) {
+  const auto evals = strong_branching( strong );
+  for( Index i = 0 ; i < strong.size() ; ++i )
+   score[ strong_c[ i ] ] = evals[ i ][ 2 ];
+  }
+
+ // the best score, ties to the most fractional
+ Index best_c = 0;
+ for( Index c = 1 ; c < cands.size() ; ++c )
+  if( score[ c ] > score[ best_c ] )
+   best_c = c;
+ return( best_c );
+
+ }  // end( LagrangianDualRelaxationSolver::reliability_branching )
+
+/*--------------------------------------------------------------------------*/
+
+LagrangianDualRelaxationSolver::Index
 LagrangianDualRelaxationSolver::choose( std::vector< Cand > & cands )
 {
  if( f_branch_strategy == eMostFractional )
   return( 0 );
+
+ if( f_reliability && ( ( f_branch_strategy == eStrongBranching ) ||
+			( f_branch_strategy == ePenalties ) ) )
+  return( reliability_branching( cands ) );
 
  if( f_branch_strategy == ePenalties ) {
   // the product of the penalties, each at least delta, a variable that
@@ -1142,7 +1223,7 @@ void LagrangianDualRelaxationSolver::after_Lagrangian_dual( void )
                       ( f_branch_strategy == eLearned ) ||
                       ( f_branch_strategy == eOnline ) ||
                       ( ( f_branch_strategy == eStrongBranching ) &&
-			( ! f_strong_log.empty() ) );
+			( ( ! f_strong_log.empty() ) || f_reliability ) );
  if( ! ( fixing || scoring ) )
   return;
 
@@ -1242,7 +1323,7 @@ Change * LagrangianDualRelaxationSolver::apply( Change * change ,
  // the next compute() solves the child of this branching, if any, as the
  // Changes of the path to a node are applied from the root down
  f_pending.reset();
- if( f_branch_estimate )
+ if( learn_pseudocosts() )
   f_pending = c->get_branching();
 
  // Navigation only replaces a shared pointer. The last forward Change
