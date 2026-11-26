@@ -607,8 +607,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /// solve the Lagrangian Dual of the node, with the primal recovery
  /** As PrimalProximalHeur::compute(), but a status between kOK and kError
   * (or kLowPrecision) is kOK when the Lagrangian solution is there, as
-  * branch() only needs that; when it is not there, the status is that of
-  * the Lagrangian Dual, or kError if that is kOK. kCutOff, i.e., the
+  * branch() only needs that; when it is not there, the status is
+  * kLowPrecision if that of the Lagrangian Dual is between kOK and kError
+  * (stopped by a budget, say), kError if it is kOK, and that of the
+  * Lagrangian Dual otherwise. kCutOff, i.e., the
   * Lagrangian Dual beyond the cutoff [see dblUpCutOff], is returned as it
   * is, the node being then fenced. A Lagrangian solution where no variable
   * branched upon [see vstrBranchGroups] is fractional leaves nothing to
@@ -617,8 +619,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   * PrimalProximalHeur::gap_closed()], which it is when the Lagrangian
   * solution is integral and feasible, the node is solved, the status is kOK
   * and branch() returns no Change; otherwise the node can be neither
-  * branched nor fenced, and the status is that of the Lagrangian Dual, or
-  * kLowPrecision if that is kOK. */
+  * branched nor fenced, and the status is kLowPrecision, or that of the
+  * Lagrangian Dual if it is kError or beyond. A node that cannot be branched
+  * never gets a status between kOK and kError, which a caller may take as a
+  * partial result that it can branch. */
 
  int compute( bool changedvars = true ) override;
 

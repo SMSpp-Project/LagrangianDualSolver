@@ -597,14 +597,21 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
  if( ! done )
   return( status );
 
- // without the convexified solution (say, the master problem of the inner
- // Solver failed, leaving no linearization to combine) the node cannot be
- // branched: what the inner Solver returned is said, or kError if it said
- // kOK
+ // a node that can be neither branched nor fenced says kLowPrecision when
+ // the Lagrangian Dual has stopped short of its accuracy (by a budget, say):
+ // a status in ( kOK , kError ) would let a caller that branches on partial
+ // results branch it, and branch() has nothing to branch upon
  const int ld_status = get_Lagrangian_initial_status();
+ const int partial = ( ld_status > kOK ) && ( ld_status < kError ) ?
+                     int( kLowPrecision ) : ld_status;
+
+ // without the convexified solution (say, the master problem of the inner
+ // Solver failed, leaving no linearization to combine, or the time ran out
+ // before it was formed) the node cannot be branched: what the inner Solver
+ // returned is said, as above, or kError if it said kOK
  const auto & sol = get_Lagrangian_convexified_solution();
  if( sol.size() != NumStatVar )
-  return( ld_status == kOK ? int( kError ) : ld_status );
+  return( ld_status == kOK ? int( kError ) : partial );
 
  // the node is branched on a variable fractional in the convexified
  // solution, among those branched upon, as candidates() does
@@ -620,11 +627,10 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
  // solution is within the accuracy of its bound (the convexified solution
  // itself, if integral and feasible [see PrimalProximalHeur::compute()]),
  // and branch() gives no Change; otherwise it can be neither branched nor
- // fenced, and the status is that of the Lagrangian Dual (stopped by a
- // budget, say), or kLowPrecision if it is solved but a variable not
- // branched upon is fractional, or the integral solution is not feasible
+ // fenced, and the status is kLowPrecision, as above, or that of the
+ // Lagrangian Dual if it has failed
  if( ld_status != kOK )
-  return( ld_status );
+  return( partial );
  if( ! gap_closed() )
   return( kLowPrecision );
  f_solved = true;
