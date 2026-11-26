@@ -150,6 +150,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `intRstAlg` lasts for that solve only, including cutoff and error exits
   and the inner iterations of `PrimalProximalHeur`
 
+- strong branching gives the solves of the children what is left of
+  `dblMaxTime` of the node, and solves no more of them once it is over, a
+  child not solved counting as no improvement and as no observation of the
+  pseudocosts
+
 - strong branching starts both children from the same parent multipliers,
   queues that centre again afterwards, and undoes each trial branch also
   when its solve throws

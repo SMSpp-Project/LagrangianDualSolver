@@ -1029,7 +1029,13 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * are, and returns false, leaving \p L as it is, if the value is not
   * known exactly: an inner Solver that does not evaluate the LagBFunction
   * last at the multipliers it returns, an Objective of the Lagrangian Dual
-  * that is not linear, an inexact value of a LagBFunction. */
+  * that is not linear, an inexact value of a LagBFunction, or a value that
+  * differs from the bound of the Lagrangian Dual (valid_bound) by more than
+  * \f$ 10^{-7} \max \{ | \mathrm{valid\_bound} | , 1 \} \f$, which tells
+  * that the LagBFunction were last evaluated elsewhere than at the
+  * multipliers returned (say, the inner Solver stopped by a limit before
+  * the final evaluation), and therefore that the penalties are not those
+  * of these multipliers either. */
 
  bool lagrangian_value( double & L );
 
@@ -1041,6 +1047,21 @@ class PrimalProximalHeur : public LagrangianDualSolver
  virtual int compute_inner_solver( bool changedvars ) {
   return( InnerSolver->compute( changedvars ) );
   }
+
+/*--------------------------------------------------------------------------*/
+ /// the time left to the current compute() of dblMaxTime
+ /** What is left of MaxTime since f_start, Inf< double >() if there is no
+  * time limit; it may be negative. The reserve f_reserve left to the
+  * final recovery is not counted as left. */
+
+ double time_left( void ) const;
+
+ /// gives a Solver the time left to the heuristic, if any is
+ /** Sets the dblMaxTime of \p slvr to the minimum between its own and
+  * time_left(); returns false, having changed nothing, if no time is left,
+  * in which case the Solver is not to be compute()-d. */
+
+ bool give_time_left( Solver * slvr ) const;
 
 /*--------------------------------------------------------------------------*/
  /// the incumbent: the best of the cutoff and of the best solution found
@@ -1277,20 +1298,6 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * already attached to f_Block); the caller owns it and must delete it. */
 
  CDASolver * new_aux_solver( const std::string & cfgname );
-
- /// the time left to the current compute() of dblMaxTime
- /** What is left of MaxTime since f_start, Inf< double >() if there is no
-  * time limit; it may be negative. The reserve f_reserve left to the
-  * final recovery is not counted as left. */
-
- double time_left( void ) const;
-
- /// gives a Solver the time left to the heuristic, if any is
- /** Sets the dblMaxTime of \p slvr to the minimum between its own and
-  * time_left(); returns false, having changed nothing, if no time is left,
-  * in which case the Solver is not to be compute()-d. */
-
- bool give_time_left( Solver * slvr ) const;
 
  /// the time kept for the final recovery out of MaxTime [see dblMaxTime]
 

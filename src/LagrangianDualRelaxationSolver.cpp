@@ -904,7 +904,9 @@ LagrangianDualRelaxationSolver::strong_branching(
    [ & ]() noexcept { f_requested_center = parent_center; } );
 
  // the children of a candidate: its two LagrangianChange, each applied,
- // solved and undone
+ // solved and undone, within the time left to the node [see dblMaxTime]
+ std::vector< std::array< bool , 2 > > tried( cands.size() ,
+					      { false , false } );
  auto children = [ & ]( const BranchCandidate & bc ) {
   const auto & cd = cands[ bc.id ];
   auto changes = branchings( cd.var , cd.value );
@@ -914,8 +916,19 @@ LagrangianDualRelaxationSolver::strong_branching(
    };
   for( const auto & ch : owned )
    static_cast< LagrangianChange * >( ch.get() )->set_center( parent_center );
-  return( std::array< double , 2 >{ child_bound( owned[ 0 ].get() ) ,
-				    child_bound( owned[ 1 ].get() ) } );
+  std::array< double , 2 > bounds{ valid_bound , valid_bound };
+  for( int d = 0 ; d < 2 ; ++d ) {
+   // the trials are given what is left of dblMaxTime, a child not tried
+   // counting as no improvement, and as no observation of the pseudocosts
+   const double inner_time = InnerSolver->get_dbl_par( Solver::dblMaxTime );
+   ScopeExit restore_time( [ & ]() {
+    InnerSolver->set_par( Solver::dblMaxTime , inner_time ); } );
+   if( ! give_time_left( InnerSolver ) )
+    break;
+   bounds[ d ] = child_bound( owned[ d ].get() );
+   tried[ bc.id ][ d ] = true;
+   }
+  return( bounds );
   };
 
  auto evals = StrongBranching::evaluate( describe( cands ) , children ,
@@ -928,10 +941,11 @@ LagrangianDualRelaxationSolver::strong_branching(
   for( std::size_t i = 0 ; i < cands.size() ; ++i ) {
    const double v = cands[ i ].value;
    for( int d = 0 ; d < 2 ; ++d )
-    f_pc.record( cands[ i ].k , d , d ? std::ceil( v ) - v
-		                       : v - std::floor( v ) ,
-		 f_max ? valid_bound - evals[ i ][ d ]
-		       : evals[ i ][ d ] - valid_bound );
+    if( tried[ i ][ d ] )
+     f_pc.record( cands[ i ].k , d , d ? std::ceil( v ) - v
+		                        : v - std::floor( v ) ,
+		  f_max ? valid_bound - evals[ i ][ d ]
+		        : evals[ i ][ d ] - valid_bound );
    }
  return( evals );
 

@@ -2004,6 +2004,13 @@ bool PrimalProximalHeur::lagrangian_value( double & L )
    return( false );
   val += lbf->get_value();
   }
+
+ // the value at the multipliers returned is the bound of the Lagrangian
+ // Dual: one that is not comes from another point
+ if( std::abs( val - valid_bound ) >
+     1e-7 * std::max( std::abs( valid_bound ) , 1.0 ) )
+  return( false );
+
  L = val;
  return( true );
 
