@@ -567,6 +567,9 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
   f_ncompute;
  const bool by_count = ( calls == 0 ) ||
                        ( f_heur_freq && ( calls % f_heur_freq == 0 ) );
+ // nor is the warm start of intWarmStartOnce run but at the first call
+ if( calls > 0 )
+  f_Warmed = true;
  const bool by_depth = ( f_heur_depth >= 0 ) &&
                        ( f_depth <= Index( f_heur_depth ) );
  f_NoHeur = ! ( by_count || by_depth );

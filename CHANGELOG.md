@@ -24,9 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restricted problems of the primal recovery of `strRecoveryBSC`
 
 - `intWarmStartOnce` of `PrimalProximalHeur`, which runs the warm start of
-  `strWarmStartBSC` once, in `set_Block()`, before the Lagrangian Dual is
-  formed, so that in a branch-and-bound the continuous relaxation is solved
-  at the root and not at every node
+  `strWarmStartBSC` once, at the first `compute()` after `set_Block()`, so
+  that in a branch-and-bound the continuous relaxation is solved at the root
+  and not at every node; in `LagrangianDualRelaxationSolver` the first
+  `compute()` is that of all the Solver sharing the GlobalInformation [see
+  `intHeurFreq`], so that the copies of the workers of a parallel
+  branch-and-bound do not solve it again
 
 - `intHeurFreq` of `LagrangianDualRelaxationSolver`: the heuristic of
   `PrimalProximalHeur` runs at the first `compute()` and then at one every

@@ -365,8 +365,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
   *                 start is the proximal center of the first iteration.
   *
   * - intWarmStartOnce [0]: whether the warm start of strWarmStartBSC is run
-  *                 once, in set_Block(), as the root of a branch-and-bound
-  *                 wants, rather than at each call to compute().
+  *                 once, at the first call to compute() after set_Block(),
+  *                 as the root of a branch-and-bound wants, rather than at
+  *                 each call to compute().
   *
   * - intRecoveryMIPStart [0]: whether the restricted problems of the primal
   *                 recovery are given the best solution found so far as a MIP
@@ -1081,8 +1082,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
  bool PenConstrBins = false;  ///< penalize the binaries only in Constraint
  bool NoRecIfFeas = false;    ///< skip the recovery if the point is feasible
  bool WarmOnce = false;       ///< the warm start at the first compute() only
- bool f_Warmed = false;       ///< the warm start ran since set_Block()
- bool f_WarmAtSet = false;    ///< set_Block() did it, compute() not yet run
+ /// the warm start ran since set_Block(), or is not to be run again
+ /// with intWarmStartOnce
+ bool f_Warmed = false;
  bool f_NoHeur = false;  ///< only the Lagrangian Dual of the original one
  bool f_PenConstr = false;    ///< some binary only in Constraint is penalized
  bool f_Seeded = false;  ///< add_solution() seeded the pool since compute()

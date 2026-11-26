@@ -127,22 +127,8 @@ void PrimalProximalHeur::set_Block( Block * block )
  if( f_Block )           // was already attached to a Block
   guts_of_destructor();  // release the PPH-specific state first
 
- // with intWarmStartOnce the warm start is done here, before the
- // Lagrangian Dual is formed and the inner Solver attached, so that the
- // base set_Block() starts the multipliers from the duals just computed,
- // and the inner Solver from the multipliers; compute() then has none
- f_Warmed = f_WarmAtSet = false;
- if( block && WarmOnce && ( ! WarmStartBSC.empty() ) ) {
-  auto warmstart = new_aux_solver( WarmStartBSC );
-  warmstart->set_Block( block );
-  warmstart->compute( false );
-  if( warmstart->has_dual_solution() )
-   warmstart->get_dual_solution();
-  if( warmstart->has_var_solution() )
-   warmstart->get_var_solution();
-  delete warmstart;
-  f_Warmed = f_WarmAtSet = true;
-  }
+ // with intWarmStartOnce the warm start is that of the first compute()
+ f_Warmed = false;
 
  LagrangianDualSolver::set_Block( block );  // call the base method
 
@@ -718,9 +704,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  const bool warm = ( ! WarmStartBSC.empty() ) &&
                   ( ! ( WarmOnce && f_Warmed ) );
  f_Warmed |= warm;
- // the warm start that set_Block() did counts as one of this call
- const bool warmed = warm || f_WarmAtSet;
- f_WarmAtSet = false;
+ const bool warmed = warm;
 
  if( warm ) {
   LOG_VERB( 2 )
