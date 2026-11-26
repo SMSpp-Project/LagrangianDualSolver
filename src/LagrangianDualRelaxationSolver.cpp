@@ -183,6 +183,8 @@ void LagrangianDualRelaxationSolver::set_Block( Block * block )
  f_pc = PseudoCosts();
  f_n_branch = 0;
  f_ncompute = 0;
+ if( f_calls_cell )      // a new search
+  f_calls_cell->store( 0 , std::memory_order_relaxed );
  f_solved = false;
  f_NoHeur = false;
  f_depth = 0;
@@ -514,8 +516,16 @@ void LagrangianDualRelaxationSolver::set_global_information(
  map_varToSol = nullptr;
  f_scalars.reset();
  f_inc_cell = f_bound_cell = nullptr;
+ f_counts.reset();
+ f_calls_cell = nullptr;
  if( ! gi )
   return;
+
+ if( ! gi->exists( str_HeurCount ) )
+  gi->add_to_Universe< std::atomic< long > >( str_HeurCount );
+ f_counts = gi->get_from_Universe< std::atomic< long > >( str_HeurCount );
+ if( f_counts )
+  f_calls_cell = &( ( *f_counts )[ str_Calls ] );
 
  if( ! gi->exists( str_VarToSol ) )
   gi->add_to_Universe< PurgedColumn >( str_VarToSol );
@@ -550,8 +560,13 @@ int LagrangianDualRelaxationSolver::compute( bool changedvars )
  // the nodes down to the depth f_heur_depth, and at those whose bound is
  // close to the best one, which after_Lagrangian_dual() tells [see
  // dblHeurGap]
- const bool by_count = ( f_ncompute == 0 ) ||
-                       ( f_heur_freq && ( f_ncompute % f_heur_freq == 0 ) );
+ // the calls are those of all the Solver sharing the GlobalInformation, if
+ // any [see str_HeurCount]
+ const auto calls = f_calls_cell ?
+  Index( f_calls_cell->fetch_add( 1 , std::memory_order_relaxed ) ) :
+  f_ncompute;
+ const bool by_count = ( calls == 0 ) ||
+                       ( f_heur_freq && ( calls % f_heur_freq == 0 ) );
  const bool by_depth = ( f_heur_depth >= 0 ) &&
                        ( f_depth <= Index( f_heur_depth ) );
  f_NoHeur = ! ( by_count || by_depth );

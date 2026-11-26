@@ -32,7 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PrimalProximalHeur` runs at the first `compute()` and then at one every
   `intHeurFreq` of them, 0 meaning at the first only, the others solving
   only the Lagrangian Dual of the original objective, which gives the bound
-  and the convexified solution the branching needs
+  and the convexified solution the branching needs; the calls are counted
+  over all the Solver that share the GlobalInformation, so that the copies
+  of the workers of a parallel branch-and-bound do not run the heuristic of
+  the first call again
 
 - `intLagFixing` of `LagrangianDualRelaxationSolver`, which fixes by
   Lagrangian reduced cost, in both children of a node, the binaries that

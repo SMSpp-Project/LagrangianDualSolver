@@ -275,6 +275,16 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
 
  static constexpr const char * str_PurgedColumns = "purgedColumns";
 
+ /// name of the Collection of the GlobalInformation with the calls to
+ /// compute() of all the LagrangianDualRelaxationSolver sharing it, i.e.,
+ /// those of all the workers of a search [see intHeurFreq]
+
+ static constexpr const char * str_HeurCount = "LDRSHeurCount";
+
+ /// key, in that Collection, of the calls to compute()
+
+ static constexpr const char * str_Calls = "calls";
+
  /// the purged columns, by the variable whose fixing purged them
 
  using PurgedColumn = std::map< ColVariable * ,
@@ -343,7 +353,11 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   only; at the others only the Lagrangian Dual of the original
   *   objective is solved, which gives the bound and the convexified
   *   solution the branching needs, and no solution is recorded, unless
-  *   intHeurDepth or dblHeurGap ask for the heuristic there;
+  *   intHeurDepth or dblHeurGap ask for the heuristic there; the calls are
+  *   counted over all the Solver that share the GlobalInformation [see
+  *   set_global_information() and str_HeurCount], so that the copies of
+  *   the workers of a parallel search do not count their own first call as
+  *   the first one;
   *
   * - intHeurDepth [-1]: the heuristic is also run at the nodes at depth at
   *   most intHeurDepth, i.e., at most intHeurDepth branchings from the
@@ -929,6 +943,10 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  /// read with f_lag_fix [see ePenalties]
  std::unordered_map< ColVariable * , std::array< double , 2 > > f_lag_pen;
  Index f_ncompute = 0;                     ///< the calls to compute()
+ /// the Collection of the GlobalInformation with the calls to compute()
+ /// of all the Solver sharing it, and its cell [see str_HeurCount]
+ std::shared_ptr< Collection< std::atomic< long > > > f_counts;
+ std::atomic< long > * f_calls_cell = nullptr;  ///< see f_counts
  std::string f_estimate_model;             ///< strEstimateModel
 
  /// the model of eLearned, read from strBranchModel at its first use
