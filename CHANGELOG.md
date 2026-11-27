@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `intStrongIter` of `LagrangianDualRelaxationSolver`, the iterations of
+  the inner Solver given to each child solved by strong branching, so that
+  the trials of `eStrongBranching` and of `intReliability` cost a fixed
+  share of a node at the price of weaker bounds of the children
+
 - `intBranchBound` of `LagrangianDualRelaxationSolver`, by which it is a
   `BranchBounder` of SMS++ whose bound of each child of a branching is the
   value of the Lagrangian function at the multipliers of the node worsened

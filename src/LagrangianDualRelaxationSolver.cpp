@@ -245,6 +245,12 @@ void LagrangianDualRelaxationSolver::set_par( idx_type par , int value )
 				  "intBranchBound is neither 0 nor 1" ) );
    f_branch_bound = value;
    break;
+  case( intStrongIter ):
+   if( value < 0 )
+    throw( std::invalid_argument( "LagrangianDualRelaxationSolver::set_par: "
+				  "intStrongIter is negative" ) );
+   f_strong_iter = value;
+   break;
   default: PrimalProximalHeur::set_par( par , value );
   }
  }
@@ -275,6 +281,7 @@ int LagrangianDualRelaxationSolver::get_dflt_int_par( idx_type par ) const
   case( intCutOffReread ):   return( 0 );
   case( intReliability ):    return( 0 );
   case( intBranchBound ):    return( 0 );
+  case( intStrongIter ):     return( 0 );
   default: return( PrimalProximalHeur::get_dflt_int_par( par ) );
   }
  }
@@ -295,6 +302,7 @@ int LagrangianDualRelaxationSolver::get_int_par( idx_type par ) const
   case( intCutOffReread ):   return( f_cutoff_reread );
   case( intReliability ):    return( f_reliability );
   case( intBranchBound ):    return( f_branch_bound );
+  case( intStrongIter ):     return( f_strong_iter );
   default: return( PrimalProximalHeur::get_int_par( par ) );
   }
  }
@@ -326,6 +334,8 @@ Solver::idx_type LagrangianDualRelaxationSolver::int_par_str2idx(
   return( intReliability );
  if( name == "intBranchBound" )
   return( intBranchBound );
+ if( name == "intStrongIter" )
+  return( intStrongIter );
  return( PrimalProximalHeur::int_par_str2idx( name ) );
  }
 
@@ -345,6 +355,7 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
  static const std::string reread = "intCutOffReread";
  static const std::string reliab = "intReliability";
  static const std::string bbound = "intBranchBound";
+ static const std::string siter = "intStrongIter";
  switch( par ) {
   case( intApplyStrategy ):  return( apply );
   case( intBranchStrategy ): return( branch );
@@ -357,6 +368,7 @@ const std::string & LagrangianDualRelaxationSolver::int_par_idx2str(
   case( intCutOffReread ):   return( reread );
   case( intReliability ):    return( reliab );
   case( intBranchBound ):    return( bbound );
+  case( intStrongIter ):     return( siter );
   default: return( PrimalProximalHeur::int_par_idx2str( par ) );
   }
  }
@@ -921,10 +933,16 @@ LagrangianDualRelaxationSolver::strong_branching(
    // the trials are given what is left of dblMaxTime, a child not tried
    // counting as no improvement, and as no observation of the pseudocosts
    const double inner_time = InnerSolver->get_dbl_par( Solver::dblMaxTime );
+   const int inner_iter = InnerSolver->get_int_par( Solver::intMaxIter );
    ScopeExit restore_time( [ & ]() {
-    InnerSolver->set_par( Solver::dblMaxTime , inner_time ); } );
+    InnerSolver->set_par( Solver::dblMaxTime , inner_time );
+    InnerSolver->set_par( Solver::intMaxIter , inner_iter ); } );
    if( ! give_time_left( InnerSolver ) )
     break;
+   // and at most intStrongIter iterations, if positive
+   if( ( f_strong_iter > 0 ) && ( ( inner_iter <= 0 ) ||
+				  ( inner_iter > f_strong_iter ) ) )
+    InnerSolver->set_par( Solver::intMaxIter , f_strong_iter );
    bounds[ d ] = child_bound( owned[ d ].get() );
    tried[ bc.id ][ d ] = true;
    }

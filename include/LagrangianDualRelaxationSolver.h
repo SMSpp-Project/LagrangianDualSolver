@@ -426,7 +426,16 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   *   of the Lagrangian function with v fixed at those multipliers, which is
   *   what the bound is, whatever intApplyStrategy. The penalties are read
   *   as for ePenalties, and a child gets no bound (NaN) where they or L are
-  *   not known; with 0 branch_bounds() gives none. */
+  *   not known; with 0 branch_bounds() gives none;
+  *
+  * - intStrongIter [0]: with a positive value k, each child solved by
+  *   strong branching [see eStrongBranching and intReliability] is given
+  *   at most k iterations of the inner Solver (its intMaxIter, for that
+  *   solve only), and its bound is the one the inner Solver has when it
+  *   stops, which is still valid but weaker than that of the Lagrangian
+  *   Dual of the child; with 0 the inner Solver keeps its own intMaxIter.
+  *   The pseudocosts learned from such children are thus underestimated,
+  *   as those of a strong branching with few iterations always are. */
 
  enum int_par_type_LDRS {
   intApplyStrategy = intLastPPHPar ,  ///< where the branching is applied
@@ -440,6 +449,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
   intCutOffReread ,                   ///< the incumbent read during a node
   intReliability ,                    ///< observations of a reliable variable
   intBranchBound ,                    ///< the bounds of the children
+  intStrongIter ,                     ///< iterations of a strong trial
   intLastLDRSPar      ///< first allowed new int parameter for derived classes
   };
 
@@ -974,6 +984,7 @@ class LagrangianDualRelaxationSolver : public RelaxationSolver ,
  int f_cutoff_reread = 0;                  ///< intCutOffReread
  int f_reliability = 0;                    ///< intReliability
  int f_branch_bound = 0;                   ///< intBranchBound
+ int f_strong_iter = 0;                    ///< intStrongIter
  /// the value of the Lagrangian function at the multipliers of the last
  /// compute(), NaN if not known [see intBranchBound]
  double f_pen_L = std::numeric_limits< double >::quiet_NaN();
