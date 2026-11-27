@@ -367,7 +367,9 @@ class PrimalProximalHeur : public LagrangianDualSolver
   * - intWarmStartOnce [0]: whether the warm start of strWarmStartBSC is run
   *                 once, at the first call to compute() after set_Block(),
   *                 as the root of a branch-and-bound wants, rather than at
-  *                 each call to compute().
+  *                 each call to compute(); the inner Solver is then attached
+  *                 to the Lagrangian Dual at that call, after the warm start,
+  *                 rather than by set_Block().
   *
   * - intRecoveryMIPStart [0]: whether the restricted problems of the primal
   *                 recovery are given the best solution found so far as a MIP
@@ -1371,6 +1373,18 @@ class PrimalProximalHeur : public LagrangianDualSolver
 /*--------------------------------------------------------------------------*/
 
  void remove_penalty_terms( void );
+
+/*--------------------------------------------------------------------------*/
+
+ /// attaches the inner Solver that set_Block() has left detached
+ /** With intWarmStartOnce and a warm start set_Block() leaves the inner
+  * Solver detached [see f_defer_inner], and compute() attaches it once,
+  * after the warm start if it runs, before running it otherwise. */
+
+ void attach_inner_Solver( void ) {
+  if( InnerSolver->get_Block() != LagrDual )
+   register_inner_Solver();
+  }
 
 /*--------------------------------------------------------------------------*/
 

@@ -29,7 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and not at every node; in `LagrangianDualRelaxationSolver` the first
   `compute()` is that of all the Solver sharing the GlobalInformation [see
   `intHeurFreq`], so that the copies of the workers of a parallel
-  branch-and-bound do not solve it again
+  branch-and-bound do not solve it again; the inner Solver of the
+  Lagrangian Dual is then attached at that `compute()`, once, starting from
+  the duals of the warm start, rather than in `set_Block()` and again after
+  the warm start, which would give a different search
 
 - `intHeurFreq` of `LagrangianDualRelaxationSolver`: the heuristic of
   `PrimalProximalHeur` runs at the first `compute()` and then at one every

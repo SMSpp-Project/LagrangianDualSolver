@@ -2222,7 +2222,9 @@ public:
   * parameters of the inner Solver, has been set (BlockSolverConfig sets it
   * before registering the Solver): a parameter that the inner Solver reads
   * only when it is attached, as BundleSolver does with vintNoEasy and
-  * vstrNoEasy, is therefore there by then. */
+  * vstrNoEasy, is therefore there by then. With f_defer_inner set,
+  * set_Block() does not call it, and the derived class does at the first
+  * compute(). */
 
  void register_inner_Solver( void ) {
   if( ! LagrDual )
@@ -2485,6 +2487,11 @@ FRowConstraint * constraint_with_index( Index i ) {
  int WDualSCfg;       ///< the Configuration for IS->get_dual_solution()
 
  bool PushCostToOwner;  ///< how to set the same-named LagBFunction parameter
+
+ /// whether set_Block() leaves the inner Solver detached, for a derived
+ /// class that attaches it at the first compute() [see
+ /// register_inner_Solver()]
+ bool f_defer_inner = false;
 
  bool SparseLagPairs;
 

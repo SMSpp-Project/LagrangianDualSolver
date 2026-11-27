@@ -127,8 +127,11 @@ void PrimalProximalHeur::set_Block( Block * block )
  if( f_Block )           // was already attached to a Block
   guts_of_destructor();  // release the PPH-specific state first
 
- // with intWarmStartOnce the warm start is that of the first compute()
+ // with intWarmStartOnce the warm start is that of the first compute(),
+ // and the inner Solver is attached only then, starting from its duals, as
+ // a second attachment would not start it as the first one does
  f_Warmed = false;
+ f_defer_inner = WarmOnce && ( ! WarmStartBSC.empty() );
 
  LagrangianDualSolver::set_Block( block );  // call the base method
 
@@ -539,6 +542,7 @@ int PrimalProximalHeur::compute( bool changedvars )
  // its primal solution is then the point the consensus recovery starts
  // from, if the relaxed Constraint tie copies of a decision
  if( NumStatVar == 0 ) {
+  attach_inner_Solver();
   const double inner_time = InnerSolver->get_dbl_par( dblMaxTime );
   if( MaxTime < Inf< double >() )
    InnerSolver->set_par( dblMaxTime ,
@@ -756,11 +760,14 @@ int PrimalProximalHeur::compute( bool changedvars )
    // the inner Solver reads its starting point from the Lambda Variables
    // when it is attached to the Lagrangian Dual Block [see ReSetAlg() of
    // BundleSolver], and set_value() issues no Modification: it is attached
-   // again, so that it starts from the multipliers just written
-   unregister_inner_Solver();
-   register_inner_Solver();
+   // now if set_Block() has not [see f_defer_inner], again otherwise, so
+   // that it starts from the multipliers just written
+   if( InnerSolver->get_Block() == LagrDual )
+    unregister_inner_Solver();
    }
   }
+
+ attach_inner_Solver();
 
  // the cutoffs of the inner Solver, which only bound the unpenalized
  // iteration and are given back to it at the end

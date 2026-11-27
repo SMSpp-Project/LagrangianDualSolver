@@ -791,9 +791,11 @@ void LagrangianDualSolver::set_Block( Block * block )
  // Block[Solver]Config-uration to the inner Block of the LagBFunction via
  // their ComputeConfig; since there are plenty of other ways to obtain the
  // same result, this should not happen at least for BlockConfig if the
- // corresponding information was needed before
+ // corresponding information was needed before; with f_defer_inner it is
+ // the derived class that does it, at the first compute()
 
- register_inner_Solver();
+ if( ! f_defer_inner )
+  register_inner_Solver();
 
  // register the appropriate UpdateSolver- - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
