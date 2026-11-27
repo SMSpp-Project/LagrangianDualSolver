@@ -194,8 +194,8 @@ class LagrangianChange : public AbstractChange {
  * that branch on it, which apply() applies [see intApplyStrategy]. The
  * Lagrangian Dual has to be solved accurately enough (see dblNZEps and
  * intWZNorm of the inner Solver) that an integral Lagrangian solution
- * satisfies the relaxed constraints, and hence solves the node: branch()
- * finding none fractional throws.
+ * satisfies the relaxed constraints, and hence solves the node: compute()
+ * then says so, and branch() returns no Change [see compute()].
  *
  *
  * The LagrangianChange identify the variable by its AbstractPath relative
