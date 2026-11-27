@@ -133,6 +133,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `LagrangianDualRelaxationSolver::compute()` gives `kLowPrecision`, not the
+  status of the Lagrangian Dual, for a node that it can neither branch nor
+  fence when the Lagrangian Dual has stopped by a budget: a branch-and-bound
+  that branches on partial results branched such a node, cut by its time
+  limit, and `branch()` threw for want of a fractional variable
+
 - `LagrangianDualRelaxationSolver` queues the parent multipliers while
   navigating the search tree and restores them only before the next inner
   solve, with newer coordinates set to zero; the restart requested through
